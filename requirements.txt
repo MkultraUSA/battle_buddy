@@ -1,0 +1,19 @@
+# Battle Buddy — Python Dependencies
+# Install with: pip3 install -r requirements.txt --break-system-packages
+
+# Speech-to-text (runs locally, no API key needed)
+openai-whisper
+
+# Audio recording and processing
+pyaudio
+sounddevice
+soundfile
+
+# Text-to-speech (Piper TTS - install separately via apt or binary)
+# See: https://github.com/rhasspy/piper
+
+# HTTP requests (for OpenClaw/Home Assistant integration)
+requests
+
+# Utilities
+numpy
