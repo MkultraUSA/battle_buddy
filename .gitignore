@@ -61,6 +61,12 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Battle Buddy runtime files
+logs/
+config.env
+*.db
+.radio_*_offset
+
 # Flask stuff:
 instance/
 .webassets-cache
