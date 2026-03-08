@@ -81,6 +81,18 @@ def get_rms_db(wav_path):
         return -100.0
 
 
+def find_hdmi_source():
+    import subprocess
+    result = subprocess.run(['pactl', 'list', 'sources', 'short'], capture_output=True, text=True)
+    for line in result.stdout.splitlines():
+        if 'hdmi' in line.lower() and 'monitor' in line.lower():
+            parts = line.split()
+            if parts:
+                print(f"[Audio] Auto-detected HDMI monitor source: {parts[0]}")
+                return int(parts[0])
+    print("[Audio] HDMI source not found, using default 50")
+    return 50
+
 def record_chunk(source, duration, output_path):
     cmd = [
         "pw-record",
@@ -139,6 +151,8 @@ def listen_loop(args):
     print(f"  Log    : {log_path}")
     print(f"  Display: {args.display}")
     print()
+    if args.source == 50:
+        args.source = find_hdmi_source()
     model = load_model(args.model)
     send_to_display(args.display, f"STATUS: Battle Buddy Listener v{VERSION} -- monitoring radio traffic...")
     log_entry(log_path, "SYSTEM", f"Listener started. Model: {args.model}, Source: {args.source}")
