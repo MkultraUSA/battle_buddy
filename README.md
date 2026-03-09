@@ -1,11 +1,9 @@
 # ⚔ Battle Buddy — AI Situational Awareness System
 
-Battle Buddy is an open-source application designed to help the public stay informed about law enforcement activity and public safety events in their area.
-
-The goal of the project is to improve situational awareness by providing transparent, community-driven information about public safety activity.
-
-This project is intended for journalists, community members, and researchers interested in public safety transparency.
+Battle Buddy is an open-source application designed to help the public stay informed about law enforcement activity and public safety events in their area. The goal of the project is to improve situational awareness by providing transparent, community-driven information about public safety activity. This project is intended for journalists, community members, and researchers interested in public safety transparency.
 ![Battle Buddy Screenshot](battlebuddyscreen.png)
+
+
 ## Status
 🚧 Active development — v0.5.0
 
