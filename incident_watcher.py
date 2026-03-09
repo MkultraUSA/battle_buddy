@@ -5,7 +5,7 @@ Tails a log file, geocodes new incidents, and pushes them to PhoneTrack in real 
 
 Usage:
     cd ~/battle_buddy
-    python incident_watcher_v1.1.py --log logs/incidents.log
+    python incident_watcher.py --log logs/incidents.log
 
 PhoneTrack endpoint: https://kevcloud.ddns.net/apps/phonetrack/log/owntracks/23b91519e13f254f4fecb9a6802f6cc5/Urban Battle Buddy
 """

@@ -7,13 +7,13 @@ Usage:
     cd ~/battle_buddy
 
     # Phase 1 — demo
-    python incident_to_geojson_v1.1.py --demo
+    python incident_to_geojson.py --demo
 
     # Phase 1 — real log
-    python incident_to_geojson_v1.1.py --log logs/incidents.log --out logs/incidents.geojson
+    python incident_to_geojson.py --log logs/incidents.log --out logs/incidents.geojson
 
     # Phase 2 — bulk push to PhoneTrack
-    python incident_to_geojson_v1.1.py --log logs/incidents.log --live
+    python incident_to_geojson.py --log logs/incidents.log --live
 """
 
 import argparse
