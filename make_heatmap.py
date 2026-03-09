@@ -93,7 +93,7 @@ def build_html(incidents: list[dict]) -> str:
             "color":     color,
         })
 
-    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    generated = datetime.now().strftime("%Y-%m-%d %H:%M CDT")
     incident_count = len(incidents)
 
     heat_json    = json.dumps(heat_points)
@@ -205,7 +205,7 @@ def build_html(incidents: list[dict]) -> str:
 <body>
 <div id="header">
   <h1>⚡ Battle Buddy — Incident Heatmap</h1>
-  <span class="meta">Austin Metro &nbsp;|&nbsp; {incident_count} incidents &nbsp;|&nbsp; Generated: {generated}</span>
+  <span class="meta">Austin Metro &nbsp;|&nbsp; {incident_count} incidents &nbsp;|&nbsp; Map updated: {generated} (every 30 min)</span>
 </div>
 <div id="summary">{type_summary}</div>
 {sitrep_block}
