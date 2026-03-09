@@ -33,12 +33,17 @@ import urllib.parse
 VERSION = "1.2.0"
 
 # ---------------------------------------------------------------------------
-# Broadcastify stream URLs — Premium authenticated (no ads)
+# Broadcastify stream URLs — credentials loaded from environment
+# Set BROADCASTIFY_USER and BROADCASTIFY_PASS in config.env
 # ---------------------------------------------------------------------------
+_BUSER = os.environ.get("BROADCASTIFY_USER", "")
+_BPASS = os.environ.get("BROADCASTIFY_PASS", "")
+_BBASE = f"https://{_BUSER}:{_BPASS}@audio.broadcastify.com"
+
 STREAMS = {
-    "law":  "https://Mkultra2000:Egbdf2026!@audio.broadcastify.com/14439.mp3",  # Travis County Law Enforcement
-    "fire": "https://Mkultra2000:Egbdf2026!@audio.broadcastify.com/28517.mp3",  # Austin-Travis County Fire & EMS
-    "ems":  "https://Mkultra2000:Egbdf2026!@audio.broadcastify.com/21284.mp3",  # Austin-Travis County EMS Official
+    "law":  f"{_BBASE}/14439.mp3",  # Travis County Law Enforcement
+    "fire": f"{_BBASE}/28517.mp3",  # Austin-Travis County Fire & EMS
+    "ems":  f"{_BBASE}/21284.mp3",  # Austin-Travis County EMS Official
 }
 
 DEFAULT_STREAM      = "law"
@@ -163,10 +168,11 @@ def fetch_stream_title(stream_url: str) -> str:
 
 
 def poll_stream_title(stream_url: str, log_path: str,
-                      stream_name: str, interval: float = 30.0):
+                      stream_name: str, pipe_path: str,
+                      interval: float = 30.0):
     """
     Background thread — polls StreamTitle every `interval` seconds.
-    Logs [TALKGROUP] entry when the title changes.
+    Logs [TALKGROUP] entry when the title changes and notifies the display.
     """
     global current_title, running
     while running:
@@ -175,6 +181,7 @@ def poll_stream_title(stream_url: str, log_path: str,
             current_title = title
             print(f"[{stream_name}] Talkgroup: {title}")
             log_entry(log_path, "TALKGROUP", title)
+            send_to_display(pipe_path, f"TALKGROUP: {title}")
         time.sleep(interval)
 
 
@@ -318,7 +325,7 @@ def listen_loop(args):
     if use_stream:
         title_thread = threading.Thread(
             target=poll_stream_title,
-            args=(stream_url, log_path, stream_name, 30.0),
+            args=(stream_url, log_path, stream_name, args.display, 30.0),
             daemon=True
         )
         title_thread.start()
@@ -367,7 +374,8 @@ def listen_loop(args):
             # Log talkgroup context with the transcript if we have one
             talkgroup_context = f" [{current_title}]" if current_title else ""
             print(f"[{stream_name}:{chunk_count}]{talkgroup_context} {transcript}")
-            send_to_display(args.display, f"HEARD: {transcript}")
+            heard_msg = f"[{current_title}] {transcript}" if current_title else transcript
+            send_to_display(args.display, f"HEARD: {heard_msg}")
             log_entry(log_path, "HEARD",
                       f"{transcript} | TALKGROUP: {current_title}" if current_title else transcript)
 

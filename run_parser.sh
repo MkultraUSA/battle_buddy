@@ -16,4 +16,5 @@ if [ -z "$LOG_FILE" ]; then
 fi
 
 echo "[run_parser] $(date '+%Y-%m-%d %H:%M:%S') — Processing $LOG_FILE"
-python3 radio_parser_v1.3.py --log "$LOG_FILE" --push >> "$LOG_DIR/parser_$(date +%Y%m%d).log" 2>&1
+python3 radio_parser_v1.3.py --log "$LOG_FILE" >> "$LOG_DIR/parser_$(date +%Y%m%d).log" 2>&1
+python3 make_heatmap.py >> "$LOG_DIR/parser_$(date +%Y%m%d).log" 2>&1

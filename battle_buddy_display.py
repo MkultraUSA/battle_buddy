@@ -36,12 +36,12 @@ STATUS_COLOR    = "#888888"       # Grey for status bar
 HEADER_COLOR    = "#FF4444"       # Red for header
 TIMESTAMP_COLOR = "#444444"       # Dark grey for timestamps
 MAX_LINES       = 50              # Max lines in scroll buffer
-FONT_HEARD      = ("DejaVu Sans", 28, "bold")
-FONT_AGENT      = ("DejaVu Sans Mono", 24, "normal")
-FONT_SUMMARY    = ("DejaVu Sans", 20, "italic")
-FONT_STATUS     = ("DejaVu Sans Mono", 14, "normal")
-FONT_HEADER     = ("DejaVu Sans", 16, "bold")
-FONT_TIMESTAMP  = ("DejaVu Sans Mono", 11, "normal")
+FONT_HEARD      = ("DejaVu Sans", 16, "bold")
+FONT_AGENT      = ("DejaVu Sans Mono", 14, "normal")
+FONT_SUMMARY    = ("DejaVu Sans", 13, "italic")
+FONT_STATUS     = ("DejaVu Sans Mono", 11, "normal")
+FONT_HEADER     = ("DejaVu Sans", 13, "bold")
+FONT_TIMESTAMP  = ("DejaVu Sans Mono", 9, "normal")
 # ───────────────────────────────────────────────────────────────────────────────
 
 
@@ -111,6 +111,17 @@ class BattleBuddyDisplay:
         # ── Legend bar ──
         legend_frame = tk.Frame(self.root, bg="#111111", pady=4)
         legend_frame.pack(fill=tk.X, side=tk.TOP)
+
+        # Talkgroup indicator — must be packed RIGHT before LEFT items
+        self.talkgroup_var = tk.StringVar(value="")
+        tk.Label(
+            legend_frame,
+            textvariable=self.talkgroup_var,
+            font=self.font_status,
+            bg="#111111",
+            fg="#00CFFF",
+            padx=12,
+        ).pack(side=tk.RIGHT)
 
         tk.Label(legend_frame, text="● HEARD / RADIO",  font=self.font_status, bg="#111111", fg=HEARD_COLOR,   padx=12).pack(side=tk.LEFT)
         tk.Label(legend_frame, text="● AGENT SPEAKING", font=self.font_status, bg="#111111", fg=AGENT_COLOR,   padx=12).pack(side=tk.LEFT)
@@ -202,6 +213,9 @@ class BattleBuddyDisplay:
             self.text_area.delete("1.0", tk.END)
             self.text_area.configure(state=tk.DISABLED)
             self.lines.clear()
+        elif raw.upper().startswith("TALKGROUP:"):
+            tg = raw[10:].strip()
+            self.talkgroup_var.set(f"📡 {tg}" if tg else "")
         elif raw.upper().startswith("STATUS:"):
             self.status_var.set("● " + raw[7:].strip())
         elif raw.upper().startswith("HEARD:"):
