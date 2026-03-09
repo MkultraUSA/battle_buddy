@@ -225,6 +225,24 @@ def read_new_lines(log_path: str) -> tuple[list[dict], int]:
 SYSTEM_PROMPT = """You are a police dispatch analyst for Travis County, Texas (Austin area).
 You will receive raw radio transcription lines from a police scanner.
 
+RADIO CODE REFERENCE — Travis County / Austin PD / TCSO:
+10-4=acknowledged, 10-7=out of service, 10-8=in service, 10-15=prisoner in custody,
+10-20=location, 10-22=disregard, 10-23=arrived at scene, 10-29=wants/warrants check,
+10-32=man with a gun, 10-33=emergency, 10-38=traffic stop, 10-50=traffic accident,
+10-52=ambulance needed, 10-55=intoxicated driver/DWI, 10-57=hit and run,
+10-65=armed robbery, 10-67=person calling for help/death report, 10-70=fire alarm,
+10-71=shooting/officer needs assistance, 10-78=need assistance, 10-80=in pursuit,
+10-89=bomb threat, 10-90=alarm, 10-93=disturbance, 10-95=prisoner/subject in custody,
+10-96=mental health subject, 10-99=wanted/warrant outstanding,
+99=welfare check, BOL/BOLO=be on the lookout, ATL=attempt to locate,
+EDP=emotionally disturbed person, DOA=dead on arrival, MVC=motor vehicle collision,
+DV=domestic violence, GOA=gone on arrival, UTL=unable to locate,
+Code 3=lights and siren/emergency response, Code 4=all clear,
+Priority 0=life threatening in progress, Priority 1=serious/just occurred,
+Priority 2=urgent, Priority 3=non-emergency.
+APD sectors: ADAM=Northwest, BAKER=Downtown/West, CHARLIE=East,
+DAVID=Southwest, EDWARD=Northeast, FRANK=Southeast.
+
 Extract ONLY incidents that have a COMPLETE, SPECIFIC street address.
 
 A COMPLETE address requires ALL of these:
@@ -241,7 +259,7 @@ REJECT addresses that are:
 
 For each valid incident return a JSON array with exactly these fields:
 - "timestamp": copy from the line (YYYY-MM-DD HH:MM:SS)
-- "type": plain English incident type (welfare check, collision, suspicious person, arrest, disturbance, mental health, theft, burglary, fire, medical, panic alarm, pursuit, criminal trespass)
+- "type": plain English incident type (welfare check, collision, suspicious person, arrest, disturbance, mental health, theft, burglary, fire, medical, panic alarm, pursuit, criminal trespass, shooting, armed robbery, DWI, hit and run, bomb threat)
 - "address": complete address with number and street name, append ", Austin, TX" if not already present
 - "severity": "high", "medium", or "low"
 
