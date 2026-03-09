@@ -46,10 +46,10 @@ Changes in v1.1:
 
 Usage:
     cd ~/battle_buddy
-    python3 radio_parser_v1.3.py --log logs/radio_law_20260306.log
-    python3 radio_parser_v1.3.py --log logs/radio_law_20260306.log --push
-    python3 radio_parser_v1.3.py --log logs/radio_law_20260306.log --push --verify
-    python3 radio_parser_v1.3.py --log logs/radio_law_20260306.log --reset --push
+    python3 radio_parser.py --log logs/radio_law_20260306.log
+    python3 radio_parser.py --log logs/radio_law_20260306.log --push
+    python3 radio_parser.py --log logs/radio_law_20260306.log --push --verify
+    python3 radio_parser.py --log logs/radio_law_20260306.log --reset --push
 
 Pipeline:
     [HEARD] lines → llama3 (Ollama) → structured incidents

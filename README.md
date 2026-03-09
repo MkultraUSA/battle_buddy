@@ -76,7 +76,7 @@ cp config.env.example config.env
 # Edit config.env with your credentials
 ```
 
-Stream URLs are configured directly in `battle_buddy_listener_v1.2.py` in the `STREAMS` dict:
+Stream URLs are configured directly in `battle_buddy_listener.py` in the `STREAMS` dict:
 ```python
 STREAMS = {
     "law":  "https://USER:PASS@audio.broadcastify.com/14439.mp3",
@@ -163,13 +163,13 @@ Daily logs are written to `logs/radio_<stream>_<YYYYMMDD>.log`:
 ./run_parser.sh
 
 # Or run manually
-python3 radio_parser_v1.3.py --log logs/radio_law_20260309.log
+python3 radio_parser.py --log logs/radio_law_20260309.log
 
 # Generate heatmap
 python3 make_heatmap.py
 
 # Export incidents to GeoJSON
-python3 incident_to_geojson_v1.1.py --log logs/incidents.log --out logs/incidents.geojson
+python3 incident_to_geojson.py --log logs/incidents.log --out logs/incidents.geojson
 ```
 
 Cron schedule:
@@ -208,16 +208,16 @@ battle_buddy/
 ├── config.env.example               # Config template (copy to config.env)
 ├── config.env                       # Local credentials — NOT committed
 ├── battle_buddy_display.py          # Heads-up display application
-├── battle_buddy_listener_v1.2.py    # Broadcastify stream listener
+├── battle_buddy_listener.py    # Broadcastify stream listener
 ├── battle_buddy_summary.py          # AI sitrep generator (Claude + Piper TTS)
 ├── battle_buddy_db.py               # Incident database
 ├── battle-buddy-law.service         # systemd service — Travis County Law
 ├── run_parser.sh                    # Cron wrapper: parse logs + regenerate map
 ├── run_sitrep.sh                    # Cron wrapper: generate 4h sitrep audio
-├── radio_parser_v1.3.py             # Log parser / incident extractor (Claude Haiku)
+├── radio_parser.py             # Log parser / incident extractor (Claude Haiku)
 ├── make_heatmap.py                  # Public heatmap generator
-├── incident_to_geojson_v1.1.py      # Incident → GeoJSON converter
-├── incident_watcher_v1.1.py         # Incident log watcher
+├── incident_to_geojson.py      # Incident → GeoJSON converter
+├── incident_watcher.py         # Incident log watcher
 └── logs/                            # Daily radio logs, DB, map — NOT committed
     └── map/
         ├── index.html               # Public heatmap (served by nginx)

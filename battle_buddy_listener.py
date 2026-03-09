@@ -404,18 +404,18 @@ Examples:
   cd ~/battle_buddy
 
   # Listen to Travis County Law Enforcement (default)
-  python3 battle_buddy_listener_v1.2.py --stream law
+  python3 battle_buddy_listener.py --stream law
 
   # Listen to Fire & EMS
-  python3 battle_buddy_listener_v1.2.py --stream fire
+  python3 battle_buddy_listener.py --stream fire
 
   # Listen to all three in separate screen sessions
-  screen -S law  && python3 battle_buddy_listener_v1.2.py --stream law
-  screen -S fire && python3 battle_buddy_listener_v1.2.py --stream fire
-  screen -S ems  && python3 battle_buddy_listener_v1.2.py --stream ems
+  screen -S law  && python3 battle_buddy_listener.py --stream law
+  screen -S fire && python3 battle_buddy_listener.py --stream fire
+  screen -S ems  && python3 battle_buddy_listener.py --stream ems
 
   # Use local audio device (original behavior)
-  python3 battle_buddy_listener_v1.2.py --source 50
+  python3 battle_buddy_listener.py --source 50
         """
     )
     parser.add_argument("--stream",  type=str,   default=DEFAULT_STREAM,
