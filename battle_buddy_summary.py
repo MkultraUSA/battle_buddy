@@ -87,7 +87,7 @@ def load_recent_data(hours: int) -> tuple[list[dict], list[dict]]:
         dict(r)
         for r in conn.execute(
             """SELECT timestamp, text, stream
-               FROM heard_lines
+               FROM transcriptions
                WHERE timestamp >= ?
                ORDER BY timestamp DESC
                LIMIT 200""",
