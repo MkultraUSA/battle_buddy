@@ -12,7 +12,10 @@ soundfile
 # Text-to-speech (Piper TTS - install separately via apt or binary)
 # See: https://github.com/rhasspy/piper
 
-# HTTP requests (for OpenClaw/Home Assistant integration)
+# Claude API (incident extraction + situational summaries)
+anthropic
+
+# HTTP requests
 requests
 
 # Utilities

@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH  = Path(__file__).parent / "logs" / "battle_buddy.db"
-OUT_PATH = Path(__file__).parent / "logs" / "heatmap.html"
+OUT_DIR  = Path(__file__).parent / "logs" / "map"
+OUT_PATH = OUT_DIR / "index.html"
 
 SEVERITY_COLOR = {
     "high":    "#e63946",
@@ -288,6 +289,7 @@ legend.addTo(map);
 """
 
 def main():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
     incidents = load_incidents()
     html = build_html(incidents)
     OUT_PATH.write_text(html, encoding="utf-8")

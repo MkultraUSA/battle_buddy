@@ -1,11 +1,13 @@
 #!/bin/bash
-# run_parser.sh — finds today's radio log and runs the incident parser
-# Designed to be called by cron every 30 minutes
+# run_parser.sh — finds today's radio log and runs the incident pipeline
+# Designed to be called by cron every 30 minutes:
+#   */30 * * * * /home/pi/battle_buddy/run_parser.sh
 
 cd "$(dirname "$0")"
 
 LOG_DIR="logs"
 DATE=$(date +%Y%m%d)
+PARSER_LOG="$LOG_DIR/parser_${DATE}.log"
 
 # Find today's log file (supports law, fire, ems streams)
 LOG_FILE=$(ls "$LOG_DIR"/radio_*_${DATE}.log 2>/dev/null | head -1)
@@ -16,5 +18,11 @@ if [ -z "$LOG_FILE" ]; then
 fi
 
 echo "[run_parser] $(date '+%Y-%m-%d %H:%M:%S') — Processing $LOG_FILE"
-python3 radio_parser_v1.3.py --log "$LOG_FILE" >> "$LOG_DIR/parser_$(date +%Y%m%d).log" 2>&1
-python3 make_heatmap.py >> "$LOG_DIR/parser_$(date +%Y%m%d).log" 2>&1
+
+# Extract incidents via Claude
+python3 radio_parser_v1.3.py --log "$LOG_FILE" >> "$PARSER_LOG" 2>&1
+
+# Regenerate public heatmap → logs/map/index.html
+python3 make_heatmap.py >> "$PARSER_LOG" 2>&1
+
+echo "[run_parser] Done — $(date '+%H:%M:%S')"
