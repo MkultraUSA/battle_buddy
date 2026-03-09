@@ -54,6 +54,7 @@ When given a list of recent radio incidents and transcripts, produce a briefing 
 - Uses plain English — no jargon, no codes (translate any 10-codes if present)
 - Is concise — aim for 3-6 sentences for routine periods, up to 10 for busy periods
 - Ends with the time window covered
+- Uses plain text only — NO markdown, NO asterisks, NO bullet symbols, NO headers
 
 Do NOT include: speculation, personal details, names, or information not in the data.
 If there are no significant incidents, say so briefly.
@@ -148,8 +149,22 @@ def send_to_display(text: str) -> None:
         print(f"[display] Could not send to pipe: {e}", file=sys.stderr)
 
 
+def clean_for_tts(text: str) -> str:
+    """Strip markdown formatting so TTS doesn't read symbols aloud."""
+    import re
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)   # **bold**
+    text = re.sub(r'\*(.+?)\*',     r'\1', text)   # *italic*
+    text = re.sub(r'#{1,6}\s*',     '',    text)   # ## headers
+    text = re.sub(r'^---+$',        '',    text, flags=re.MULTILINE)  # --- dividers
+    text = re.sub(r'`(.+?)`',       r'\1', text)   # `code`
+    text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text) # [link](url)
+    text = re.sub(r'\n{3,}',        '\n\n', text)  # collapse excess blank lines
+    return text.strip()
+
+
 def speak(text: str) -> None:
     """Speak text via Piper TTS → aplay."""
+    text = clean_for_tts(text)
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             wav_path = f.name
