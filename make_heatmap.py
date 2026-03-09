@@ -109,6 +109,22 @@ def build_html(incidents: list[dict]) -> str:
         for t, n in sorted(type_counts.items(), key=lambda x: -x[1])
     ) or "No incidents yet"
 
+    # Sitrep audio player — only shown if sitrep.wav exists
+    sitrep_wav = OUT_DIR / "sitrep.wav"
+    sitrep_txt = OUT_DIR / "sitrep.txt"
+    if sitrep_wav.exists():
+        sitrep_ts = ""
+        if sitrep_txt.exists():
+            first_line = sitrep_txt.read_text(encoding="utf-8").splitlines()[0]
+            sitrep_ts = first_line.replace("Generated: ", "")
+        sitrep_block = f"""<div id="sitrep-bar">
+  🎙️ <b>Latest Sitrep</b>
+  <span class="sitrep-ts">{sitrep_ts}</span>
+  <audio controls src="sitrep.wav" style="vertical-align:middle;height:28px;"></audio>
+</div>"""
+    else:
+        sitrep_block = ""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -157,6 +173,17 @@ def build_html(incidents: list[dict]) -> str:
     padding: 4px 8px;
     font-size: 0.8rem;
   }}
+  #sitrep-bar {{
+    padding: 6px 16px;
+    background: #0a2a1a;
+    border-bottom: 1px solid #2a9d8f;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.8rem;
+    color: #7effc4;
+  }}
+  .sitrep-ts {{ color: #aaa; font-size: 0.72rem; }}
   #map {{ height: calc(100vh - 130px); width: 100%; }}
   .legend {{
     background: rgba(22,33,62,0.92);
@@ -181,6 +208,7 @@ def build_html(incidents: list[dict]) -> str:
   <span class="meta">Austin Metro &nbsp;|&nbsp; {incident_count} incidents &nbsp;|&nbsp; Generated: {generated}</span>
 </div>
 <div id="summary">{type_summary}</div>
+{sitrep_block}
 <div id="controls">
   <label>Severity:
     <select id="sevFilter" onchange="applyFilters()">

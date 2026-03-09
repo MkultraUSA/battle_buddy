@@ -66,7 +66,7 @@ def load_recent_data(hours: int) -> tuple[list[dict], list[dict]]:
     if not DB_PATH.exists():
         return [], []
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
+    cutoff = (datetime.now() - timedelta(hours=hours)).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
@@ -162,21 +162,37 @@ def clean_for_tts(text: str) -> str:
     return text.strip()
 
 
+MAP_DIR  = Path(__file__).parent / "logs" / "map"
+WAV_PATH = MAP_DIR / "sitrep.wav"
+TXT_PATH = MAP_DIR / "sitrep.txt"
+
+
 def speak(text: str) -> None:
-    """Speak text via Piper TTS → aplay."""
-    text = clean_for_tts(text)
+    """Speak text via Piper TTS → aplay, and save WAV + text to map dir."""
+    tts_text = clean_for_tts(text)
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             wav_path = f.name
 
         proc = subprocess.run(
             [PIPER_BIN, "--model", PIPER_MODEL, "--output_file", wav_path],
-            input=text.encode(),
+            input=tts_text.encode(),
             capture_output=True,
         )
         if proc.returncode != 0:
             print(f"[tts] Piper error: {proc.stderr.decode()}", file=sys.stderr)
             return
+
+        # Save to map dir for web playback
+        MAP_DIR.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy2(wav_path, WAV_PATH)
+        WAV_PATH.chmod(0o644)
+        TXT_PATH.write_text(
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n{text}",
+            encoding="utf-8",
+        )
+        print(f"[tts] Saved sitrep audio → {WAV_PATH}")
 
         subprocess.run(["aplay", "-q", wav_path])
     except Exception as e:

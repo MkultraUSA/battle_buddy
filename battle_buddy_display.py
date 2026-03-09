@@ -64,6 +64,11 @@ class BattleBuddyDisplay:
 
     def _setup_window(self):
         self.root.title("Battle Buddy — Situational Awareness Display")
+        try:
+            icon = tk.PhotoImage(file=os.path.join(os.path.dirname(__file__), "urban-battle-buddy-smiley.png"))
+            self.root.wm_iconphoto(True, icon)
+        except Exception:
+            pass
         self.root.configure(bg=BG_COLOR)
         # Start maximized but windowed — F11 for fullscreen, ESC to exit fullscreen
         self.root.attributes("-zoomed", True)
