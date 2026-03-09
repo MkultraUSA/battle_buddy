@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 """
-Battle Buddy — Radio Log → Incident Parser  v1.3
-Uses local Ollama (llama3) to extract incidents from raw radio transcription.
+Battle Buddy — Radio Log → Incident Parser  v1.4
+Uses Claude API (Haiku) to extract incidents from raw radio transcription.
 Incremental: only processes new lines since last run via logs/.processed_offset
+
+Changes in v1.4:
+  - Replaced Ollama/llama3 with Claude API (claude-haiku) — faster, more accurate,
+    no longer dependent on local GPU/CPU inference
+  - Expanded incident type library with 15+ new major incident categories:
+      air unit search, swat/tactical, barricaded subject, shots fired, shooting,
+      armed robbery, officer needs assistance, officer down, missing person,
+      amber alert, death investigation, homicide, kidnapping, bank robbery,
+      major accident, water rescue, hazmat, structure fire, explosion,
+      DWI, hit and run, bomb threat
+  - ANTHROPIC_API_KEY loaded from config.env / environment
 
 Changes in v1.3:
   - Expanded geocoding from Travis County only → full Austin Metro region
@@ -77,11 +88,11 @@ except ImportError:
 # CONFIG
 # ---------------------------------------------------------------------------
 
-VERSION         = "1.3"
+VERSION         = "1.4"
 
-OLLAMA_URL      = "http://localhost:11434/api/generate"
-OLLAMA_MODEL    = "llama3"
-BATCH_SIZE      = 15          # [HEARD] lines per LLM call
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL    = "claude-haiku-4-5-20251001"
+BATCH_SIZE      = 20          # [HEARD] lines per LLM call
 BATCH_OVERLAP   = 2           # lines of overlap between batches (context continuity)
 GEOCODE_DELAY   = 1.1         # seconds between Nominatim requests
 
@@ -105,24 +116,63 @@ PHONETRACK_API_BASE = os.environ.get("PHONETRACK_API_BASE", "https://kevcloud.dd
 # Map incident types → PhoneTrack device names (spaces → underscores, URL-safe)
 # Each device name becomes its own track/layer on the PhoneTrack map.
 INCIDENT_DEVICE_MAP = {
-    "welfare check":      "Welfare_Check",
-    "medical":            "Medical",
-    "mental health":      "Mental_Health",
-    "collision":          "Collision",
-    "accident":           "Collision",
-    "fire":               "Fire",
-    "disturbance":        "Disturbance",
-    "fight":              "Disturbance",
-    "suspicious person":  "Suspicious",
-    "suspicious vehicle": "Suspicious",
-    "arrest":             "Arrest",
-    "warrant":            "Arrest",
-    "theft":              "Theft",
-    "burglary":           "Theft",
-    "trespass":           "Trespass",
-    "criminal trespass":  "Trespass",
-    "panic alarm":        "Alarm",
-    "pursuit":            "Pursuit",
+    # ── Major / high-priority ──────────────────────────────────────────────
+    "air unit search":        "Air_Search",
+    "air unit":               "Air_Search",
+    "helicopter search":      "Air_Search",
+    "swat":                   "SWAT",
+    "tactical":               "SWAT",
+    "barricaded subject":     "SWAT",
+    "barricaded":             "SWAT",
+    "shots fired":            "Shots_Fired",
+    "shooting":               "Shooting",
+    "armed robbery":          "Armed_Robbery",
+    "officer needs assistance": "Officer_Assist",
+    "officer down":           "Officer_Assist",
+    "officer assist":         "Officer_Assist",
+    "missing person":         "Missing_Person",
+    "amber alert":            "Missing_Person",
+    "death investigation":    "Death_Investigation",
+    "homicide":               "Death_Investigation",
+    "murder":                 "Death_Investigation",
+    "kidnapping":             "Kidnapping",
+    "abduction":              "Kidnapping",
+    "bank robbery":           "Bank_Robbery",
+    "robbery":                "Armed_Robbery",
+    "major accident":         "Major_Accident",
+    "highway accident":       "Major_Accident",
+    "water rescue":           "Water_Rescue",
+    "flood":                  "Water_Rescue",
+    "swift water":            "Water_Rescue",
+    "hazmat":                 "Hazmat",
+    "gas leak":               "Hazmat",
+    "chemical":               "Hazmat",
+    "structure fire":         "Structure_Fire",
+    "building fire":          "Structure_Fire",
+    "house fire":             "Structure_Fire",
+    "explosion":              "Explosion",
+    "bomb threat":            "Bomb_Threat",
+    "dwi":                    "DWI",
+    "hit and run":            "Hit_And_Run",
+    "pursuit":                "Pursuit",
+    # ── Standard ──────────────────────────────────────────────────────────
+    "welfare check":          "Welfare_Check",
+    "medical":                "Medical",
+    "mental health":          "Mental_Health",
+    "collision":              "Collision",
+    "accident":               "Collision",
+    "fire":                   "Fire",
+    "disturbance":            "Disturbance",
+    "fight":                  "Disturbance",
+    "suspicious person":      "Suspicious",
+    "suspicious vehicle":     "Suspicious",
+    "arrest":                 "Arrest",
+    "warrant":                "Arrest",
+    "theft":                  "Theft",
+    "burglary":               "Theft",
+    "trespass":               "Trespass",
+    "criminal trespass":      "Trespass",
+    "panic alarm":            "Alarm",
 }
 DEFAULT_DEVICE = "Incident"   # fallback for unrecognised types
 
@@ -134,24 +184,59 @@ SEVERITY_COLORS = {
 }
 
 INCIDENT_ICONS = {
-    "welfare check":      "🏥",
-    "collision":          "🚗",
-    "accident":           "🚗",
-    "suspicious person":  "🚔",
-    "suspicious vehicle": "🚔",
-    "arrest":             "🚔",
-    "warrant":            "🚔",
-    "disturbance":        "⚠️",
-    "fight":              "⚠️",
-    "fire":               "🔥",
-    "medical":            "🏥",
-    "mental health":      "🏥",
-    "theft":              "🚔",
-    "burglary":           "🚔",
-    "trespass":           "🚔",
-    "panic alarm":        "🚨",
-    "pursuit":            "🚔",
-    "criminal trespass":  "🚔",
+    # ── Major / high-priority ──────────────────────────────────────────────
+    "air unit":               "🚁",
+    "helicopter":             "🚁",
+    "swat":                   "🛡️",
+    "tactical":               "🛡️",
+    "barricaded":             "🛡️",
+    "shots fired":            "🔫",
+    "shooting":               "🔫",
+    "armed robbery":          "🔫",
+    "robbery":                "🔫",
+    "officer needs":          "🚨",
+    "officer down":           "🚨",
+    "missing person":         "👤",
+    "amber alert":            "👶",
+    "death investigation":    "💀",
+    "homicide":               "💀",
+    "murder":                 "💀",
+    "kidnapping":             "👤",
+    "abduction":              "👤",
+    "bank robbery":           "🏦",
+    "major accident":         "🚧",
+    "highway accident":       "🚧",
+    "water rescue":           "💧",
+    "swift water":            "💧",
+    "flood":                  "💧",
+    "hazmat":                 "☣️",
+    "gas leak":               "☣️",
+    "structure fire":         "🏠",
+    "building fire":          "🏠",
+    "house fire":             "🏠",
+    "explosion":              "💥",
+    "bomb threat":            "💣",
+    "dwi":                    "🍺",
+    "hit and run":            "🚗",
+    "pursuit":                "🚔",
+    # ── Standard ──────────────────────────────────────────────────────────
+    "welfare check":          "🏥",
+    "collision":              "🚗",
+    "accident":               "🚗",
+    "suspicious person":      "🚔",
+    "suspicious vehicle":     "🚔",
+    "arrest":                 "🚔",
+    "warrant":                "🚔",
+    "disturbance":            "⚠️",
+    "fight":                  "⚠️",
+    "fire":                   "🔥",
+    "medical":                "🏥",
+    "mental health":          "🏥",
+    "theft":                  "🚔",
+    "burglary":               "🚔",
+    "trespass":               "🚔",
+    "panic alarm":            "🚨",
+    "criminal trespass":      "🚔",
 }
 
 
@@ -259,42 +344,45 @@ REJECT addresses that are:
 
 For each valid incident return a JSON array with exactly these fields:
 - "timestamp": copy from the line (YYYY-MM-DD HH:MM:SS)
-- "type": plain English incident type (welfare check, collision, suspicious person, arrest, disturbance, mental health, theft, burglary, fire, medical, panic alarm, pursuit, criminal trespass, shooting, armed robbery, DWI, hit and run, bomb threat)
-- "address": complete address with number and street name, append ", Austin, TX" if not already present
-- "severity": "high", "medium", or "low"
+- "type": plain English incident type — choose from:
+    MAJOR: air unit search, swat, barricaded subject, shots fired, shooting, armed robbery,
+           officer needs assistance, officer down, missing person, amber alert,
+           death investigation, homicide, kidnapping, bank robbery, major accident,
+           water rescue, hazmat, structure fire, explosion, bomb threat
+    STANDARD: welfare check, collision, disturbance, suspicious person, suspicious vehicle,
+              arrest, theft, burglary, trespass, fire, medical, mental health,
+              panic alarm, pursuit, criminal trespass, DWI, hit and run
+- "address": complete address with number and street name, append city and state if not present
+- "severity": "high" (air unit search, swat, barricaded, shots fired, shooting, officer down,
+               officer needs assistance, amber alert, kidnapping, bank robbery, explosion),
+              "medium" (armed robbery, death investigation, major accident, hazmat,
+               structure fire, missing person, water rescue, bomb threat, pursuit),
+              "low" (everything else)
 
 Return ONLY a valid JSON array. No explanation, no markdown, no commentary.
 If no valid incidents found, return exactly: []
 """
 
 
-def call_ollama(batch: list[dict]) -> str:
-    """Send a batch of [HEARD] lines to local llama3 via Ollama."""
+def call_claude(batch: list[dict]) -> str:
+    """Send a batch of [HEARD] lines to Claude Haiku for incident extraction."""
+    import anthropic
     lines_text = "\n".join(
         f"[{l['timestamp']}] {l['text']}" for l in batch
     )
     prompt = f"Analyze these Travis County radio transcription lines:\n\n{lines_text}"
 
-    payload = json.dumps({
-        "model":  OLLAMA_MODEL,
-        "prompt": prompt,
-        "system": SYSTEM_PROMPT,
-        "stream": False,
-        "options": {"temperature": 0.1},
-    }).encode()
-
-    req = urllib.request.Request(
-        OLLAMA_URL,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read())
-            return data.get("response", "[]").strip()
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text.strip()
     except Exception as e:
-        print(f"  [ollama] ERROR: {e}", file=sys.stderr)
+        print(f"  [claude] ERROR: {e}", file=sys.stderr)
         return "[]"
 
 
@@ -329,7 +417,7 @@ def extract_incidents(heard_lines: list[dict]) -> list[dict]:
         batch_num = (i // (BATCH_SIZE - BATCH_OVERLAP)) + 1
         print(f"  [llm] Batch {batch_num}/{total_batches} ({len(batch)} lines) …", end=" ", flush=True)
 
-        raw = call_ollama(batch)
+        raw = call_claude(batch)
         incidents = parse_llm_response(raw)
 
         print(f"{len(incidents)} incident(s) found")
@@ -628,7 +716,7 @@ def main():
         print(f"[db] {len(heard_lines)} [HEARD] lines saved")
 
     # LLM extraction
-    print(f"\n[llm] Extracting incidents via {OLLAMA_MODEL} …")
+    print(f"\n[llm] Extracting incidents via {CLAUDE_MODEL} …")
     incidents = extract_incidents(heard_lines)
     if not incidents:
         print("No incidents extracted. Saving offset.")

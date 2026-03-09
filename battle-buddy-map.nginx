@@ -1,0 +1,21 @@
+# Battle Buddy — Public Incident Map
+# Adds /map location to the existing kevcloud.ddns.net server block.
+#
+# Install:
+#   sudo cp battle-buddy-map.nginx /etc/nginx/snippets/battle-buddy-map.conf
+#   Then add this line inside the HTTPS server block in /etc/nginx/sites-enabled/nextcloud:
+#       include snippets/battle-buddy-map.conf;
+#   Then: sudo nginx -t && sudo systemctl reload nginx
+#
+# Map will be live at: https://kevcloud.ddns.net/map
+
+location = /map {
+    return 301 /map/;
+}
+
+location /map/ {
+    alias /home/pi/battle_buddy/logs/map/;
+    index index.html;
+    add_header Cache-Control "no-cache, must-revalidate";
+    add_header X-Robots-Tag "noindex";
+}
