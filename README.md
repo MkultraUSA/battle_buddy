@@ -7,7 +7,7 @@ The goal of the project is to improve situational awareness by providing transpa
 This project is intended for journalists, community members, and researchers interested in public safety transparency.
 
 ## Status
-🚧 Active development — v0.3.0
+🚧 Active development — v0.5.0
 
 ---
 
@@ -15,9 +15,12 @@ This project is intended for journalists, community members, and researchers int
 - Streams live radio traffic from Broadcastify (law, fire, EMS feeds)
 - Transcribes speech in real time using faster-whisper (runs fully local, no cloud)
 - Tracks the active talkgroup (unit/channel) from ICY stream metadata
-- Displays transcriptions and talkgroup on a dedicated heads-up screen
+- Displays transcriptions and talkgroup on a dedicated heads-up display
 - Logs all traffic to daily log files for post-processing
-- Parses logs for incidents and exports to GeoJSON / heatmap
+- Parses logs with Claude AI to extract and classify incidents
+- Geocodes incidents and publishes a live public heatmap
+- Generates spoken AI situational summaries (sitreps) via Claude + Piper TTS
+- Serves sitrep audio on the public map, auto-refreshed every 4 hours
 
 ---
 
@@ -39,8 +42,10 @@ This project is intended for journalists, community members, and researchers int
 | faster-whisper | Local speech-to-text transcription (CPU, int8) |
 | ffmpeg | Audio stream capture from Broadcastify |
 | Python / tkinter | Heads-up display application |
-| Claude (Anthropic) | Planned: reasoning, summarization, report generation |
-| Piper TTS | Planned: local text-to-speech agent voice |
+| Claude (Anthropic) | Incident extraction, sitrep generation (Haiku + Sonnet) |
+| Piper TTS | Local text-to-speech for spoken sitreps |
+| SQLite | Incident and transcription database |
+| nginx | Serves public heatmap and sitrep audio |
 
 ---
 
@@ -156,7 +161,7 @@ Daily logs are written to `logs/radio_<stream>_<YYYYMMDD>.log`:
 ## Incident Pipeline
 
 ```bash
-# Parse today's log for incidents
+# Parse today's log for incidents (auto-runs via cron every 30 min)
 ./run_parser.sh
 
 # Or run manually
@@ -169,10 +174,30 @@ python3 make_heatmap.py
 python3 incident_to_geojson_v1.1.py --log logs/incidents.log --out logs/incidents.geojson
 ```
 
-`run_parser.sh` is designed to be run via cron every 30 minutes:
+Cron schedule:
 ```bash
-*/30 * * * * /home/pi/battle_buddy/run_parser.sh
+# Parse logs and regenerate heatmap every 30 minutes
+*/30 * * * * nice -n 15 flock -n /tmp/battle_buddy_parser.lock /home/pi/battle_buddy/run_parser.sh
+
+# Generate 4h sitrep audio every 4 hours (skips if Ollama is busy)
+15 */4 * * * nice -n 19 flock -n /tmp/battle_buddy_sitrep.lock /home/pi/battle_buddy/run_sitrep.sh
 ```
+
+---
+
+## Sitrep
+
+Battle Buddy generates a spoken situational summary using Claude Sonnet + Piper TTS.
+
+```bash
+python3 battle_buddy_summary.py              # last 4h, display + speak
+python3 battle_buddy_summary.py --hours 8    # 8h window
+python3 battle_buddy_summary.py --hours 24   # full day
+python3 battle_buddy_summary.py --no-display # terminal only
+```
+
+The sitrep audio is saved to `logs/map/sitrep.wav` and served on the public map page.
+Desktop launcher icons are included for on-demand sitreps at 4h, 8h, 12h, and 24h windows.
 
 ---
 
@@ -186,14 +211,20 @@ battle_buddy/
 ├── config.env                       # Local credentials — NOT committed
 ├── battle_buddy_display.py          # Heads-up display application
 ├── battle_buddy_listener_v1.2.py    # Broadcastify stream listener
+├── battle_buddy_summary.py          # AI sitrep generator (Claude + Piper TTS)
+├── battle_buddy_db.py               # Incident database
 ├── battle-buddy-law.service         # systemd service — Travis County Law
-├── run_parser.sh                    # Cron wrapper for incident parser
-├── radio_parser_v1.3.py             # Log parser / incident extractor
+├── run_parser.sh                    # Cron wrapper: parse logs + regenerate map
+├── run_sitrep.sh                    # Cron wrapper: generate 4h sitrep audio
+├── radio_parser_v1.3.py             # Log parser / incident extractor (Claude Haiku)
+├── make_heatmap.py                  # Public heatmap generator
 ├── incident_to_geojson_v1.1.py      # Incident → GeoJSON converter
 ├── incident_watcher_v1.1.py         # Incident log watcher
-├── make_heatmap.py                  # Heatmap generator
-├── battle_buddy_db.py               # Incident database
-└── logs/                            # Daily radio logs — NOT committed
+└── logs/                            # Daily radio logs, DB, map — NOT committed
+    └── map/
+        ├── index.html               # Public heatmap (served by nginx)
+        ├── sitrep.wav               # Latest spoken sitrep audio
+        └── sitrep.txt               # Latest sitrep text + timestamp
 ```
 
 ---
@@ -209,8 +240,12 @@ battle_buddy/
 - [x] Incident parser and GeoJSON export
 - [x] Heatmap generator
 - [x] systemd service (auto-start, auto-restart)
-- [ ] Claude AI periodic summarization → display
-- [ ] Piper TTS agent voice output
+- [x] Claude AI incident extraction and sitrep generation
+- [x] Piper TTS spoken sitrep output
+- [x] Public heatmap with incident markers (served via nginx)
+- [x] Sitrep audio on public map, auto-refreshed every 4 hours
+- [x] Desktop launcher icons for on-demand sitreps
+- [ ] Wake word trigger for hands-free sitrep
 - [ ] Fire / EMS systemd services
 - [ ] RTL-SDR direct SDR integration
 - [ ] Web dashboard (browser-based live view)
