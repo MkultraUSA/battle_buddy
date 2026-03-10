@@ -56,6 +56,19 @@
 
 ---
 
+## [0.7.2] — 2026-03-09
+
+### Fixed
+- **Mic feedback loop** — microphone is now muted via `pactl` for the full duration of every
+  Piper TTS playback (`speak()`) and unmuted with a 400ms settle afterward. Eliminates the
+  case where Piper's output was picked up by the mic, re-transcribed by Whisper, and
+  incorrectly triggered commands mid-sitrep or mid-response.
+- **Sitrep command tightened** — changed trigger from `"sitrep"` (single word, easily matched
+  by ambient transcription) to `"Give Sitrep"` / `"Give me sitrep"` / `"Give me a sitrep"`.
+  The two-word phrase is far less likely to appear in random radio traffic or TTS playback.
+
+---
+
 ## [0.7.1] — 2026-03-09
 
 ### Added

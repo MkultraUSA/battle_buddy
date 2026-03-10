@@ -4,7 +4,7 @@ Battle Buddy — Voice Command Listener  v0.7.0
 ==============================================
 State machine:
   LISTENING  →  "Hey Battle Buddy"   →  speak "Yes sir"     →  COMMAND
-  COMMAND    →  "Sitrep"             →  show/read sitrep    →  LISTENING
+  COMMAND    →  "Give Sitrep"        →  show/read sitrep    →  LISTENING
   COMMAND    →  "Ask Claude"         →  enter Q&A mode      →  ASK
   COMMAND    →  timeout              →                      →  LISTENING
   ASK        →  (any question)       →  Claude answers      →  ASK (loop)
@@ -94,10 +94,30 @@ def display(msg: str):
 
 # ── Piper TTS ────────────────────────────────────────────────────────────────
 
-def speak(text: str):
-    """Synthesize text via Piper and play it."""
-    print(f"[voice] speak: {text}", flush=True)
+MIC_SOURCE = (
+    "alsa_input.usb-Generic_Blue_Microphones_LT_2511100856069D020125_111000-00"
+    ".analog-stereo"
+)
+
+
+def _mic_mute(mute: bool):
+    """Mute or unmute the Blue Mic via pactl."""
     try:
+        subprocess.run(
+            ["pactl", "set-source-mute", MIC_SOURCE, "1" if mute else "0"],
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+def speak(text: str):
+    """Synthesize text via Piper and play it. Mic is muted for the duration
+    to prevent TTS audio from feeding back into the wake-word listener."""
+    print(f"[voice] speak: {text}", flush=True)
+    wav_path = None
+    try:
+        _mic_mute(True)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             wav_path = f.name
         subprocess.run(
@@ -110,10 +130,13 @@ def speak(text: str):
     except Exception as e:
         print(f"[voice] speak error: {e}", flush=True)
     finally:
-        try:
-            os.unlink(wav_path)
-        except Exception:
-            pass
+        _mic_mute(False)
+        time.sleep(0.4)   # brief settle before mic goes live again
+        if wav_path:
+            try:
+                os.unlink(wav_path)
+            except Exception:
+                pass
 
 
 def play_chime():
@@ -331,7 +354,7 @@ def main():
                     display("STATUS: Voice listener active")
                     state = "LISTENING"
 
-                elif contains(t, ["sitrep", "sit rep", "sit-rep"]):
+                elif contains(t, ["give sitrep", "give me sitrep", "give me a sitrep"]):
                     print("[voice] Command: SITREP", flush=True)
                     display("FREEZE")
                     display("CLEAR")
@@ -358,7 +381,7 @@ def main():
                     t2 = text2.lower()
                     print(f"[voice] Retry command: '{text2}'", flush=True)
 
-                    if contains(t2, ["sitrep", "sit rep"]):
+                    if contains(t2, ["give sitrep", "give me sitrep"]):
                         display("FREEZE")
                         display("CLEAR")
                         run_sitrep_blocking()
