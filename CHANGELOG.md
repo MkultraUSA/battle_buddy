@@ -2,6 +2,22 @@
 
 ---
 
+## [0.7.8] — 2026-03-09
+
+### Fixed
+- **Two simultaneous voices** — root cause was two voice listener instances running at the
+  same time: the systemd service plus a manually-started `--debug` session from earlier in
+  the evening. Both responded to the wake word and both called aplay independently, producing
+  overlapping audio. Killed the stale debug instance; single-instance operation confirmed.
+- **Buffer contamination (definitive fix)** — replaced read-based drain strategies with
+  `_flush_stream()`: calls `stream.abort()` then `stream.start()` to atomically clear the
+  sounddevice ring buffer. Read-draining (both fixed-time and silence-threshold variants)
+  failed because ambient room noise was always above `SILENCE_RMS`, causing drain loops to
+  time out without actually flushing stale audio. `abort()`/`start()` resets the buffer
+  completely regardless of ambient noise level.
+
+---
+
 ## [0.7.7] — 2026-03-09
 
 ### Fixed
