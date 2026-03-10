@@ -284,8 +284,27 @@ def run_sitrep_blocking(stream=None):
             time.sleep(0.8)
 
 
+LOCK_PATH = "/tmp/battle_buddy_voice.lock"
+
+
+def _acquire_lock():
+    """Exit immediately if another instance is already running."""
+    import fcntl
+    lock_file = open(LOCK_PATH, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("[voice] Another instance is already running. Exiting.", flush=True)
+        sys.exit(1)
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    return lock_file   # keep reference so lock is held until process exits
+
+
 def main():
     global _debug
+
+    _lock = _acquire_lock()   # enforce single instance
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", type=int, default=None)
