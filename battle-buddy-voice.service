@@ -1,0 +1,18 @@
+[Unit]
+Description=Battle Buddy — Voice Wake Word Listener
+After=sound.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/battle_buddy
+EnvironmentFile=/home/pi/battle_buddy/config.env
+ExecStartPre=/usr/bin/pactl set-source-mute alsa_input.usb-Generic_Blue_Microphones_LT_2511100856069D020125_111000-00.analog-stereo 0
+ExecStartPre=/usr/bin/pactl set-source-volume alsa_input.usb-Generic_Blue_Microphones_LT_2511100856069D020125_111000-00.analog-stereo 55924
+ExecStart=/usr/bin/python3 /home/pi/battle_buddy/battle_buddy_voice.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/pi/battle_buddy/logs/voice.log
+StandardError=append:/home/pi/battle_buddy/logs/voice.log
+
+[Install]
+WantedBy=default.target
