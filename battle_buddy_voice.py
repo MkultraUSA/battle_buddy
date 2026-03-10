@@ -108,22 +108,20 @@ def _mic_mute(mute: bool):
         pass
 
 
-def _flush_stream(stream):
-    """Abort and restart the input stream to atomically clear all buffered audio.
-    More reliable than read-based draining when ambient noise is above the
-    silence threshold (drain loops would time out without clearing the buffer)."""
-    try:
-        stream.abort()
-        time.sleep(0.3)
-        stream.start()
-    except Exception as e:
-        print(f"[voice] stream flush: {e}", flush=True)
+def _drain_stream(stream, seconds: float):
+    """Read and discard audio to flush buffered audio after TTS."""
+    n = max(1, int(SAMPLE_RATE * seconds / STEP_SAMPLES))
+    for _ in range(n):
+        try:
+            stream.read(STEP_SAMPLES)
+        except Exception:
+            break
 
 
 def speak(text: str, stream=None):
     """Synthesize text via Piper. Mutes mic during playback.
-    If stream is provided, resets the stream buffer after unmuting so no
-    stale audio reaches the next record_utterance() call."""
+    If stream is provided, drains the buffer after unmuting so stale
+    audio is gone before the next record_utterance() call."""
     print(f"[voice] speak: {text}", flush=True)
     wav_path = None
     try:
@@ -142,8 +140,7 @@ def speak(text: str, stream=None):
     finally:
         _mic_mute(False)
         if stream is not None:
-            time.sleep(0.3)      # let unmute settle before flush
-            _flush_stream(stream)
+            _drain_stream(stream, 2.0)
         else:
             time.sleep(0.4)
         if wav_path:
@@ -282,8 +279,7 @@ def run_sitrep_blocking(stream=None):
     finally:
         _mic_mute(False)
         if stream is not None:
-            time.sleep(0.3)
-            _flush_stream(stream)    # reset buffer — sitrep audio can be very long
+            _drain_stream(stream, 3.5)   # sitrep is long — drain generously
         else:
             time.sleep(0.8)
 
