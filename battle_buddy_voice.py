@@ -118,10 +118,31 @@ def _drain_stream(stream, seconds: float):
             break
 
 
-def speak(text: str, stream=None, drain_sec: float = 2.0):
+def _drain_until_quiet(stream, max_sec: float = 8.0):
+    """Drain stream until audio is quiet (RMS below SILENCE_RMS) for 1.5s,
+    or until max_sec is reached.  Much more reliable than a fixed delay
+    when the previous TTS was long (e.g. a full sitrep)."""
+    deadline = time.time() + max_sec
+    quiet_chunks = 0
+    needed = max(1, int(SILENCE_END_SEC / STEP_SEC))  # chunks of silence needed
+    while time.time() < deadline:
+        try:
+            data, _ = stream.read(STEP_SAMPLES)
+            rms = float(np.sqrt(np.mean(data.flatten() ** 2)))
+            if rms < SILENCE_RMS:
+                quiet_chunks += 1
+                if quiet_chunks >= needed:
+                    break
+            else:
+                quiet_chunks = 0
+        except Exception:
+            break
+
+
+def speak(text: str, stream=None):
     """Synthesize text via Piper. Mutes mic during playback.
-    If stream is provided, drains its buffer after unmuting so stale
-    TTS audio is gone before the next record_utterance() call."""
+    If stream is provided, drains until the room goes quiet so stale
+    TTS reverb is gone before the next record_utterance() call."""
     print(f"[voice] speak: {text}", flush=True)
     wav_path = None
     try:
@@ -140,7 +161,7 @@ def speak(text: str, stream=None, drain_sec: float = 2.0):
     finally:
         _mic_mute(False)
         if stream is not None:
-            _drain_stream(stream, drain_sec)
+            _drain_until_quiet(stream)
         else:
             time.sleep(0.4)
         if wav_path:
@@ -279,7 +300,7 @@ def run_sitrep_blocking(stream=None):
     finally:
         _mic_mute(False)
         if stream is not None:
-            _drain_stream(stream, 3.0)   # sitrep audio lingers — drain generously
+            _drain_until_quiet(stream)   # sitrep audio lingers — drain until quiet
         else:
             time.sleep(0.8)
 

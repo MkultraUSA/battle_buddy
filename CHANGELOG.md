@@ -2,6 +2,19 @@
 
 ---
 
+## [0.7.7] — 2026-03-09
+
+### Fixed
+- **Buffer drain now waits for actual silence** — replaced fixed-time `_drain_stream(seconds)`
+  with `_drain_until_quiet(max_sec=8.0)`. After mic unmute, audio chunks are read and discarded
+  until 1.5s of silence is detected (RMS below threshold) or 8 seconds max. This correctly handles
+  long sitrep audio still sitting in the PipeWire buffer regardless of how long the TTS was.
+  Previously, a 2-second fixed drain was often not enough — the user's weather question was
+  landing in the same `record_utterance()` capture window as leftover sitrep text, causing
+  Whisper to transcribe a combined blob that sent garbage context to Claude.
+
+---
+
 ## [0.7.6] — 2026-03-09
 
 ### Fixed
