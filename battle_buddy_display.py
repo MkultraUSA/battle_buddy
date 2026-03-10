@@ -50,6 +50,7 @@ class BattleBuddyDisplay:
         self.root = root
         self.message_queue = queue.Queue()
         self.lines = []  # list of (kind, timestamp, text)
+        self._frozen = False  # when True, HEARD/TALKGROUP messages are suppressed
 
         self._setup_window()
         self._setup_fonts()
@@ -213,6 +214,20 @@ class BattleBuddyDisplay:
         raw = raw.strip()
         if not raw:
             return
+
+        # Voice mode gate — suppress live feed while voice is active
+        if self._frozen and raw.upper().startswith(("HEARD:", "TALKGROUP:")):
+            return
+
+        if raw.upper() == "FREEZE":
+            self._frozen = True
+            self.status_var.set("● VOICE MODE — Live feed paused")
+            return
+        if raw.upper() == "UNFREEZE":
+            self._frozen = False
+            self.status_var.set("● READY — Listening...")
+            return
+
         if raw.upper() == "CLEAR":
             self.text_area.configure(state=tk.NORMAL)
             self.text_area.delete("1.0", tk.END)
