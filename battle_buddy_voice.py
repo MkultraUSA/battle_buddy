@@ -66,10 +66,12 @@ WAKE_PHRASES  = [
     "battle buddy",
 ]
 
-CLAUDE_SYSTEM = """You are Battle Buddy, a helpful AI assistant. \
-Answer questions clearly and concisely — keep responses to 3 to 5 sentences unless the user \
-asks for more detail. Use plain speech only: no markdown, no bullet points, no numbered lists, \
-no asterisks, no special characters. Your responses will be read aloud immediately."""
+CLAUDE_SYSTEM = """You are Battle Buddy, a helpful AI assistant with web search capability. \
+You can search the internet to answer questions about current events, news, weather, facts, \
+or any topic the user asks about. Answer clearly and concisely — 3 to 5 sentences unless the \
+user asks for more detail. Use plain speech only: no markdown, no bullet points, no numbered \
+lists, no asterisks, no URLs, no citation numbers, no special characters. \
+Your responses will be read aloud immediately, so write as if speaking naturally."""
 # ────────────────────────────────────────────────────────────────────────────
 
 _debug = False
@@ -122,26 +124,75 @@ def play_chime():
 
 
 
-# ── Claude Q&A ───────────────────────────────────────────────────────────────
+# ── Claude Q&A with web search ───────────────────────────────────────────────
+
+import re
+
+def strip_citations(text: str) -> str:
+    """Remove citation markers and URLs that sound odd when read aloud."""
+    text = re.sub(r'\[\[?\d+\]?\]\([^)]*\)', '', text)   # [[1]](url)
+    text = re.sub(r'\[\d+\]', '', text)                   # [1]
+    text = re.sub(r'https?://\S+', '', text)              # bare URLs
+    text = re.sub(r' {2,}', ' ', text).strip()
+    return text
+
 
 def ask_claude(history: list, question: str) -> str:
     """
-    Send conversation history + new question to Claude.
+    Send conversation history + new question to Claude with web search enabled.
+    Implements the tool-use loop so Claude can search before answering.
     history is a list of {"role": "user"|"assistant", "content": str} dicts.
-    Returns plain text answer.
+    Returns plain-text answer suitable for TTS.
     """
     if not ANTHROPIC_API_KEY:
         return "No API key configured."
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         messages = history + [{"role": "user", "content": question}]
-        msg = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=400,
-            system=CLAUDE_SYSTEM,
-            messages=messages,
-        )
-        return msg.content[0].text.strip()
+
+        for _ in range(8):      # max tool-use iterations (search → read → answer)
+            response = client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=512,
+                system=CLAUDE_SYSTEM,
+                tools=[{"type": "web_search_20250305"}],
+                messages=messages,
+            )
+
+            # Collect any text blocks present in this response turn
+            text = " ".join(
+                b.text for b in response.content if hasattr(b, "text")
+            ).strip()
+
+            if response.stop_reason == "end_turn":
+                return strip_citations(text) or "No response received."
+
+            if response.stop_reason == "tool_use":
+                # Add Claude's turn (with tool_use blocks) to message history
+                messages.append({"role": "assistant", "content": response.content})
+                # Acknowledge each tool_use so the loop can continue
+                tool_results = [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": b.id,
+                        "content": "",
+                    }
+                    for b in response.content
+                    if hasattr(b, "type") and b.type == "tool_use"
+                ]
+                if tool_results:
+                    messages.append({"role": "user", "content": tool_results})
+                # If Claude already produced text alongside the tool use, surface it
+                if text:
+                    return strip_citations(text)
+                continue  # go around for the answer turn
+
+            # Unexpected stop reason — return whatever text we have
+            if text:
+                return strip_citations(text)
+            break
+
+        return "I wasn't able to complete the search."
     except Exception as e:
         return f"Error contacting Claude: {e}"
 
@@ -345,7 +396,7 @@ def main():
 
                 # Send to Claude with full conversation history
                 display(f"AGENT: Q: {text}")
-                display("STATUS: Asking Claude…")
+                display("STATUS: Searching and thinking…")
                 answer = ask_claude(conversation_history, text)
                 print(f"[voice] Claude: {answer}", flush=True)
                 display(f"AGENT: {answer}")
