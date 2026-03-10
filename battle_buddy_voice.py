@@ -108,9 +108,20 @@ def _mic_mute(mute: bool):
         pass
 
 
-def speak(text: str):
-    """Synthesize text via Piper and play it. Mic is muted for the duration
-    to prevent TTS audio from feeding back into the wake-word listener."""
+def _drain_stream(stream, seconds: float):
+    """Read and discard audio to flush buffered/reverb audio after TTS."""
+    n = max(1, int(SAMPLE_RATE * seconds / STEP_SAMPLES))
+    for _ in range(n):
+        try:
+            stream.read(STEP_SAMPLES)
+        except Exception:
+            break
+
+
+def speak(text: str, stream=None, drain_sec: float = 2.0):
+    """Synthesize text via Piper. Mutes mic during playback.
+    If stream is provided, drains its buffer after unmuting so stale
+    TTS audio is gone before the next record_utterance() call."""
     print(f"[voice] speak: {text}", flush=True)
     wav_path = None
     try:
@@ -128,7 +139,10 @@ def speak(text: str):
         print(f"[voice] speak error: {e}", flush=True)
     finally:
         _mic_mute(False)
-        time.sleep(0.4)   # brief settle before mic goes live again
+        if stream is not None:
+            _drain_stream(stream, drain_sec)
+        else:
+            time.sleep(0.4)
         if wav_path:
             try:
                 os.unlink(wav_path)
@@ -250,11 +264,10 @@ def contains(text: str, phrases) -> bool:
 
 # ── State machine ─────────────────────────────────────────────────────────────
 
-def run_sitrep_blocking():
+def run_sitrep_blocking(stream=None):
     """Generate + speak 4h sitrep. Blocks until complete.
     Mic is muted for the duration because the sitrep subprocess runs its own
-    Piper TTS internally — if the mic stays live it hears and re-transcribes
-    everything spoken."""
+    Piper TTS internally. Drains 3s of buffered audio after unmuting."""
     display("STATUS: Generating sitrep…")
     _mic_mute(True)
     try:
@@ -265,7 +278,10 @@ def run_sitrep_blocking():
         )
     finally:
         _mic_mute(False)
-        time.sleep(0.8)   # longer settle — sitrep audio lingers in the room
+        if stream is not None:
+            _drain_stream(stream, 3.0)   # sitrep audio lingers — drain generously
+        else:
+            time.sleep(0.8)
 
 
 def main():
@@ -327,8 +343,7 @@ def main():
                     print("[voice] Wake phrase detected — entering COMMAND", flush=True)
                     play_chime()
                     time.sleep(0.3)
-                    threading.Thread(target=speak, args=("Yes sir.",), daemon=True).start()
-                    time.sleep(1.2)   # let "Yes sir" start before listening
+                    speak("Yes sir.", stream)   # drains buffer before command listen
                     wake_buf = np.zeros(0, dtype=np.float32)
                     state = "COMMAND"
 
@@ -355,7 +370,7 @@ def main():
                     display("FREEZE")
                     display("CLEAR")
                     display("STATUS: Generating sitrep…")
-                    run_sitrep_blocking()
+                    run_sitrep_blocking(stream)
                     display("UNFREEZE")
                     display("STATUS: Voice listener active")
                     state = "LISTENING"
@@ -364,14 +379,14 @@ def main():
                                    "as claude", "as cloud"]):
                     print("[voice] Command: ASK CLAUDE", flush=True)
                     display("FREEZE")
-                    speak("Ready. Go ahead.")
+                    speak("Ready. Go ahead.", stream)
                     conversation_history = []
                     state = "ASK"
 
                 else:
                     # Unrecognised command — prompt and stay in COMMAND briefly
                     print(f"[voice] Unrecognised command: '{text}', re-prompting", flush=True)
-                    speak("Sorry, I didn't catch that. Say Sitrep or Ask Claude.")
+                    speak("Sorry, I didn't catch that. Say Sitrep or Ask Claude.", stream)
                     # one more chance
                     audio2 = record_utterance(stream)
                     text2 = transcribe(model, audio2)
@@ -381,13 +396,13 @@ def main():
                     if contains(t2, ["give sitrep", "give me sitrep", "give set rep", "give sit rep"]):
                         display("FREEZE")
                         display("CLEAR")
-                        run_sitrep_blocking()
+                        run_sitrep_blocking(stream)
                         display("UNFREEZE")
                         display("STATUS: Voice listener active")
                         state = "LISTENING"
                     elif contains(t2, ["ask claude", "ask cloud", "as claude", "as cloud"]):
                         display("FREEZE")
-                        speak("Ready. Go ahead.")
+                        speak("Ready. Go ahead.", stream)
                         conversation_history = []
                         state = "ASK"
                     else:
@@ -408,7 +423,7 @@ def main():
 
                 if contains(text, ["leave claude", "leave clod", "leave cloud"]):
                     print("[voice] Leaving ASK mode", flush=True)
-                    speak("Roger. Returning to monitor.")
+                    speak("Roger. Returning to monitor.", stream)
                     display("UNFREEZE")
                     display("STATUS: Voice listener active")
                     state = "LISTENING"
@@ -423,7 +438,7 @@ def main():
                 # Append to history so follow-ups have context
                 conversation_history.append({"role": "user", "content": text})
                 conversation_history.append({"role": "assistant", "content": answer})
-                speak(answer)
+                speak(answer, stream)
                 # Stay in ASK state for follow-up questions
 
 

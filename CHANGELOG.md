@@ -2,6 +2,20 @@
 
 ---
 
+## [0.7.6] — 2026-03-09
+
+### Fixed
+- **Stale audio buffer contamination in Ask Claude mode** — after Battle Buddy finishes speaking
+  ("Ready. Go ahead." or any TTS response), `record_utterance()` was immediately reading stale
+  audio still buffered in the PipeWire stream (residual sitrep text, room reverb). The fix passes
+  the live `stream` handle into every `speak()` call in the ASK state, triggering `_drain_stream()`
+  after unmuting. This discards buffered audio before the next question is recorded, preventing
+  Whisper from transcribing TTS playback as a user utterance.
+- All `speak()` call sites now pass `stream` consistently — wake response, COMMAND prompts,
+  ASK mode responses, and "Leave Claude" exit — ensuring the drain runs after every TTS event.
+
+---
+
 ## [0.6.0] — 2026-03-09
 
 ### Added
