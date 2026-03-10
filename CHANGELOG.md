@@ -56,6 +56,25 @@
 
 ---
 
+## [0.7.1] — 2026-03-09
+
+### Added
+- **Web search in Ask Claude mode** — Claude can now search the internet to answer questions
+  about current events, weather, news, research topics, or anything else
+- `strip_citations()` — removes citation markers (`[1]`, `[[1]](url)`) and bare URLs from
+  Claude's response before it is spoken, so Piper reads cleanly
+- Tool-use loop in `ask_claude()` — handles Anthropic's `web_search_20250305` built-in tool;
+  Claude decides autonomously when a web search is needed
+- Status bar shows **"Searching and thinking…"** during web-search turns
+
+### Changed
+- System prompt updated to inform Claude it has web search capability and to write
+  responses suitable for speech (no URLs, no citation numbers)
+- `ask_claude()` now passes `tools=[{"type": "web_search_20250305"}]` on every call
+- `max_tokens` raised from 400 → 512 to accommodate richer research answers
+
+---
+
 ## [0.7.0] — 2026-03-09
 
 ### Added
