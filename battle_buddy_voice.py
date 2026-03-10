@@ -120,8 +120,9 @@ def _drain_stream(stream, seconds: float):
 
 def speak(text: str, stream=None):
     """Synthesize text via Piper. Mutes mic during playback.
-    If stream is provided, drains the buffer after unmuting so stale
-    audio is gone before the next record_utterance() call."""
+    Drains the stream buffer WHILE the mic is still muted, then unmutes.
+    This way stale buffered audio is discarded without throwing away the
+    user's response (which only arrives after unmute)."""
     print(f"[voice] speak: {text}", flush=True)
     wav_path = None
     try:
@@ -135,14 +136,14 @@ def speak(text: str, stream=None):
             timeout=30,
         )
         subprocess.run(["aplay", "-q", wav_path], timeout=60)
+        # Drain while mic is still muted — gets silence, clears old buffer
+        if stream is not None:
+            _drain_stream(stream, 1.5)
     except Exception as e:
         print(f"[voice] speak error: {e}", flush=True)
     finally:
-        _mic_mute(False)
-        if stream is not None:
-            _drain_stream(stream, 2.0)
-        else:
-            time.sleep(0.4)
+        _mic_mute(False)   # unmute last — user speech captured from here
+        time.sleep(0.15)   # brief settle after unmute
         if wav_path:
             try:
                 os.unlink(wav_path)
@@ -266,8 +267,8 @@ def contains(text: str, phrases) -> bool:
 
 def run_sitrep_blocking(stream=None):
     """Generate + speak 4h sitrep. Blocks until complete.
-    Mic is muted for the duration because the sitrep subprocess runs its own
-    Piper TTS internally. Drains 3s of buffered audio after unmuting."""
+    Mic is muted for the duration. Drains buffer while still muted so stale
+    sitrep audio is gone before unmuting — user speech only arrives after."""
     display("STATUS: Generating sitrep…")
     _mic_mute(True)
     try:
@@ -276,12 +277,11 @@ def run_sitrep_blocking(stream=None):
             [sys.executable, str(script), "--hours", "4", "--speak"],
             cwd=str(SCRIPT_DIR),
         )
+        if stream is not None:
+            _drain_stream(stream, 3.5)   # drain while still muted
     finally:
         _mic_mute(False)
-        if stream is not None:
-            _drain_stream(stream, 3.5)   # sitrep is long — drain generously
-        else:
-            time.sleep(0.8)
+        time.sleep(0.15)
 
 
 LOCK_PATH = "/tmp/battle_buddy_voice.lock"
@@ -384,7 +384,9 @@ def main():
                     state = "LISTENING"
 
                 elif contains(t, ["give sitrep", "give me sitrep", "give me a sitrep",
-                                   "give set rep", "give me a set rep", "give sit rep"]):
+                                   "give set rep", "give me a set rep", "give sit rep",
+                                   "give shit rep", "give me a sit", "sit rep", "sitrep",
+                                   "sit, rep", "give sit", "give me sit"]):
                     print("[voice] Command: SITREP", flush=True)
                     display("FREEZE")
                     display("CLEAR")
@@ -412,7 +414,8 @@ def main():
                     t2 = text2.lower()
                     print(f"[voice] Retry command: '{text2}'", flush=True)
 
-                    if contains(t2, ["give sitrep", "give me sitrep", "give set rep", "give sit rep"]):
+                    if contains(t2, ["give sitrep", "give me sitrep", "give set rep", "give sit rep",
+                                     "give shit rep", "sit rep", "sitrep", "sit, rep", "give sit"]):
                         display("FREEZE")
                         display("CLEAR")
                         run_sitrep_blocking(stream)
