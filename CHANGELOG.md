@@ -56,6 +56,21 @@
 
 ---
 
+## [0.7.3] — 2026-03-09
+
+### Fixed
+- **Sitrep mic feedback (root cause)** — `run_sitrep_blocking()` now mutes the mic before
+  launching `battle_buddy_summary.py --speak` and unmutes with an 800ms settle afterward.
+  Previously the mic stayed live during the entire sitrep reading, causing Whisper to
+  transcribe the spoken sitrep and feed it back as a command or Claude question.
+  (Confirmed in logs: sitrep text appearing verbatim as a transcribed "retry command".)
+- **Web search tool loop** — removed the empty `tool_result content: ""` that was being sent
+  back to the API. Anthropic's `web_search_20250305` is server-side: Anthropic executes the
+  search and injects results automatically on the next API call. Sending empty tool_results
+  caused Claude to answer from contaminated context rather than actual search results.
+
+---
+
 ## [0.7.2] — 2026-03-09
 
 ### Fixed

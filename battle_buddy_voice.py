@@ -191,24 +191,14 @@ def ask_claude(history: list, question: str) -> str:
                 return strip_citations(text) or "No response received."
 
             if response.stop_reason == "tool_use":
-                # Add Claude's turn (with tool_use blocks) to message history
+                # Add Claude's turn (with tool_use blocks) to message history.
+                # For Anthropic's server-side web_search tool we do NOT send a
+                # tool_result — Anthropic executes the search and injects results
+                # automatically on the next API call.
                 messages.append({"role": "assistant", "content": response.content})
-                # Acknowledge each tool_use so the loop can continue
-                tool_results = [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": b.id,
-                        "content": "",
-                    }
-                    for b in response.content
-                    if hasattr(b, "type") and b.type == "tool_use"
-                ]
-                if tool_results:
-                    messages.append({"role": "user", "content": tool_results})
-                # If Claude already produced text alongside the tool use, surface it
                 if text:
                     return strip_citations(text)
-                continue  # go around for the answer turn
+                continue  # go around — next response will have the answer
 
             # Unexpected stop reason — return whatever text we have
             if text:
@@ -264,13 +254,21 @@ def contains(text: str, phrases) -> bool:
 # ── State machine ─────────────────────────────────────────────────────────────
 
 def run_sitrep_blocking():
-    """Generate + speak 4h sitrep. Blocks until complete."""
+    """Generate + speak 4h sitrep. Blocks until complete.
+    Mic is muted for the duration because the sitrep subprocess runs its own
+    Piper TTS internally — if the mic stays live it hears and re-transcribes
+    everything spoken."""
     display("STATUS: Generating sitrep…")
-    script = SCRIPT_DIR / "battle_buddy_summary.py"
-    subprocess.run(
-        [sys.executable, str(script), "--hours", "4", "--speak"],
-        cwd=str(SCRIPT_DIR),
-    )
+    _mic_mute(True)
+    try:
+        script = SCRIPT_DIR / "battle_buddy_summary.py"
+        subprocess.run(
+            [sys.executable, str(script), "--hours", "4", "--speak"],
+            cwd=str(SCRIPT_DIR),
+        )
+    finally:
+        _mic_mute(False)
+        time.sleep(0.8)   # longer settle — sitrep audio lingers in the room
 
 
 def main():
