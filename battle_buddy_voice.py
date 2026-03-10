@@ -94,10 +94,7 @@ def display(msg: str):
 
 # ── Piper TTS ────────────────────────────────────────────────────────────────
 
-MIC_SOURCE = (
-    "alsa_input.usb-Generic_Blue_Microphones_LT_2511100856069D020125_111000-00"
-    ".analog-stereo"
-)
+MIC_SOURCE = "echo-cancel-source"   # AEC virtual source (wraps Blue Mic)
 
 
 def _mic_mute(mute: bool):
