@@ -50,8 +50,8 @@ CHIME_WAV     = SCRIPT_DIR / "chime.wav"
 SAMPLE_RATE   = 16_000
 STEP_SEC      = 0.5           # sliding step for wake detection
 CHUNK_SEC     = 3.0           # window size for wake detection
-SILENCE_RMS   = 0.005         # below = silence
-SPEECH_RMS    = 0.015         # above = speech detected
+SILENCE_RMS   = 0.003         # below = silence (lowered — ambient ~0.004)
+SPEECH_RMS    = 0.012         # above = speech detected
 COMMAND_TIMEOUT = 12.0        # seconds to wait for a command after "Yes sir"
 SILENCE_END_SEC = 2.0         # seconds of silence that ends an utterance
 MAX_UTTERANCE_SEC = 20.0      # max recording length in COMMAND/ASK mode
@@ -178,7 +178,7 @@ def ask_claude(history: list, question: str) -> str:
                 model=CLAUDE_MODEL,
                 max_tokens=512,
                 system=CLAUDE_SYSTEM,
-                tools=[{"type": "web_search_20250305"}],
+                tools=[{"type": "web_search_20250305", "name": "web_search"}],
                 messages=messages,
             )
 
@@ -352,7 +352,8 @@ def main():
                     display("STATUS: Voice listener active")
                     state = "LISTENING"
 
-                elif contains(t, ["give sitrep", "give me sitrep", "give me a sitrep"]):
+                elif contains(t, ["give sitrep", "give me sitrep", "give me a sitrep",
+                                   "give set rep", "give me a set rep", "give sit rep"]):
                     print("[voice] Command: SITREP", flush=True)
                     display("FREEZE")
                     display("CLEAR")
@@ -362,7 +363,8 @@ def main():
                     display("STATUS: Voice listener active")
                     state = "LISTENING"
 
-                elif contains(t, ["ask claude", "ask cloud", "ask clod"]):
+                elif contains(t, ["ask claude", "ask cloud", "ask clod",
+                                   "as claude", "as cloud"]):
                     print("[voice] Command: ASK CLAUDE", flush=True)
                     display("FREEZE")
                     speak("Ready. Go ahead.")
@@ -379,14 +381,14 @@ def main():
                     t2 = text2.lower()
                     print(f"[voice] Retry command: '{text2}'", flush=True)
 
-                    if contains(t2, ["give sitrep", "give me sitrep"]):
+                    if contains(t2, ["give sitrep", "give me sitrep", "give set rep", "give sit rep"]):
                         display("FREEZE")
                         display("CLEAR")
                         run_sitrep_blocking()
                         display("UNFREEZE")
                         display("STATUS: Voice listener active")
                         state = "LISTENING"
-                    elif contains(t2, ["ask claude", "ask cloud"]):
+                    elif contains(t2, ["ask claude", "ask cloud", "as claude", "as cloud"]):
                         display("FREEZE")
                         speak("Ready. Go ahead.")
                         conversation_history = []
