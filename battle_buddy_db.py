@@ -77,7 +77,10 @@ CREATE TABLE IF NOT EXISTS incidents (
     address_corrected   TEXT,                   -- corrected address (if archive_corrected=1)
 
     -- Stream source
-    stream          TEXT    DEFAULT 'law',      -- law / fire / ems
+    stream          TEXT    DEFAULT 'law',      -- law / fire / ems / ipn
+
+    -- IPN (Incident Page Network) deduplication key
+    ipn_id          TEXT    UNIQUE,             -- IPN incident ID (NULL for non-IPN rows)
 
     -- Soft delete
     deleted         INTEGER DEFAULT 0
@@ -187,6 +190,14 @@ class BattleBuddyDB:
     def _migrate(self):
         """Create tables and seed data (idempotent)."""
         self.conn.executescript(SCHEMA)
+        # Add columns introduced after initial schema (ALTER TABLE is not idempotent)
+        for sql in [
+            "ALTER TABLE incidents ADD COLUMN ipn_id TEXT UNIQUE",
+        ]:
+            try:
+                self.conn.execute(sql)
+            except Exception:
+                pass  # column already exists
         self.conn.commit()
 
     def close(self):

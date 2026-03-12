@@ -22,6 +22,9 @@ echo "[run_parser] $(date '+%Y-%m-%d %H:%M:%S') — Processing $LOG_FILE"
 # Extract incidents via Claude
 python3 radio_parser.py --log "$LOG_FILE" >> "$PARSER_LOG" 2>&1
 
+# Poll Broadcastify IPN (Incident Page Network) for Travis County
+python3 ipn_poller.py >> "$PARSER_LOG" 2>&1
+
 # Regenerate public heatmap → logs/map/index.html
 python3 make_heatmap.py >> "$PARSER_LOG" 2>&1
 
