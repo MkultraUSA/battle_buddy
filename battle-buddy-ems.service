@@ -1,0 +1,18 @@
+[Unit]
+Description=Battle Buddy Listener — Austin-Travis County EMS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/battle_buddy
+EnvironmentFile=/home/pi/battle_buddy/config.env
+ExecStart=/usr/bin/python3 /home/pi/battle_buddy/battle_buddy_listener.py --stream ems --model small
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/pi/battle_buddy/logs/listener_ems.log
+StandardError=append:/home/pi/battle_buddy/logs/listener_ems.log
+
+[Install]
+WantedBy=multi-user.target
