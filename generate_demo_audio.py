@@ -27,43 +27,63 @@ CHIME_SRC = Path("/home/pi/battle_buddy/chime.wav")
 
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Voice characters (applied to HEARD lines only) ────────────────────────────
+# Each voice is a pitch/tempo ffmpeg filter added before the radio effect.
+# asetrate shifts pitch; atempo compensates duration so speed stays natural.
+#
+#  A — Law dispatch (TCSO)     : pitch -12%  → deeper, authoritative
+#  B — Law field units         : pitch -6%   → male officer in the field
+#  C — Fire dispatch / LOCUTION: pitch +8%   → slightly higher, crisp dispatch
+#  D — Fire field crews        : pitch +4%   → different male, physical/urgent
+#  E — EMS dispatch/field      : pitch +14%  → calm, higher — distinct from fire
+#  F — Pursuit officer         : pitch -10%, tempo +5% → tense, faster cadence
+
+VOICES = {
+    "A": "asetrate=22050*0.88,atempo=1.136",   # Law dispatch  — deep
+    "B": "asetrate=22050*0.94,atempo=1.064",   # Law field     — male officer
+    "C": "asetrate=22050*1.08,atempo=0.926",   # Fire dispatch — higher crisp
+    "D": "asetrate=22050*1.04,atempo=0.962",   # Fire field    — urgent male
+    "E": "asetrate=22050*1.14,atempo=0.877",   # EMS           — calm higher
+    "F": "asetrate=22050*0.90,atempo=1.050",   # Pursuit       — tense faster
+}
+
 # ── All lines from the scenario in order ──────────────────────────────────────
-# (kind, filename, text)
+# (kind, filename, voice, text)   voice=None for agent/summary
 LINES = [
     # Block 1 — Law
-    ("heard", "l01", "Adam 7 show me out at FM 2222 and 620, traffic stop on a white Silverado."),
-    ("heard", "l02", "Dispatch, run Texas plate Hotel-Kilo-Romeo 4-4-9."),
-    ("heard", "l03", "Adam 7 that plate comes back clear, registered to a Kevin Flores, Austin."),
-    ("heard", "l04", "Baker 12, I'm out at 6200 Springdale, welfare check on a female. Caller says she hasn't been seen in two days."),
-    ("heard", "l05", "Baker 12, no answer at the door, going around back."),
-    ("heard", "l06", "Dispatch, Baker 12, I'm gonna need EMS out here. Female is conscious, appears disoriented, possible overdose."),
+    ("heard", "l01", "B", "Adam 7 show me out at FM 2222 and 620, traffic stop on a white Silverado."),
+    ("heard", "l02", "B", "Dispatch, run Texas plate Hotel-Kilo-Romeo 4-4-9."),
+    ("heard", "l03", "A", "Adam 7 that plate comes back clear, registered to a Kevin Flores, Austin."),
+    ("heard", "l04", "B", "Baker 12, I'm out at 6200 Springdale, welfare check on a female. Caller says she hasn't been seen in two days."),
+    ("heard", "l05", "B", "Baker 12, no answer at the door, going around back."),
+    ("heard", "l06", "B", "Dispatch, Baker 12, I'm gonna need EMS out here. Female is conscious, appears disoriented, possible overdose."),
 
     # Block 2 — Fire / EMS
-    ("heard", "f01", "Engine 18, Rescue 18. Respond to 6200 Springdale Road, medical assist, Travis County Sheriff on scene."),
-    ("heard", "f02", "Medic 4 is en route to Springdale, ETA 6 minutes."),
-    ("heard", "f03", "Medic 4 on scene at 6200 Springdale. Female, mid-30s, altered mental status, suspected opiate overdose. Administering Narcan."),
+    ("heard", "f01", "C", "Engine 18, Rescue 18. Respond to 6200 Springdale Road, medical assist, Travis County Sheriff on scene."),
+    ("heard", "f02", "E", "Medic 4 is en route to Springdale, ETA 6 minutes."),
+    ("heard", "f03", "E", "Medic 4 on scene at 6200 Springdale. Female, mid-30s, altered mental status, suspected opiate overdose. Administering Narcan."),
 
     # Block 3 — Structure fire
-    ("heard", "f04", "Engine 8, Ladder 1, Rescue 8. Structure fire, AFD Box 42-07, 4800 Manor Road. Investigate reported smoke showing from a two-story residential."),
-    ("heard", "f05", "Engine 8 on scene, we've got smoke showing from the second floor, Alpha side. Laying a line, going in."),
-    ("heard", "f06", "Engine 8, fire's in the wall cavity, second floor bedroom. Pulling ceiling, getting water on it."),
-    ("heard", "f07", "Ladder 1 on scene, venting the roof. All civilians are confirmed out of the structure."),
-    ("heard", "f08", "Engine 8, fire's knocked down, starting overhaul. Requesting salvage crew."),
+    ("heard", "f04", "C", "Engine 8, Ladder 1, Rescue 8. Structure fire, AFD Box 42-07, 4800 Manor Road. Investigate reported smoke showing from a two-story residential."),
+    ("heard", "f05", "D", "Engine 8 on scene, we've got smoke showing from the second floor, Alpha side. Laying a line, going in."),
+    ("heard", "f06", "D", "Engine 8, fire's in the wall cavity, second floor bedroom. Pulling ceiling, getting water on it."),
+    ("heard", "f07", "D", "Ladder 1 on scene, venting the roof. All civilians are confirmed out of the structure."),
+    ("heard", "f08", "D", "Engine 8, fire's knocked down, starting overhaul. Requesting salvage crew."),
 
     # Block 4 — Pursuit
-    ("heard", "l07", "All units Adam-West, pursuit in progress. Black Honda northbound on I-35 from Ben White, unit failed to stop for a felony warrant stop. All units stay clear of the corridor."),
-    ("heard", "l08", "Pursuit is at I-35 and Rundberg, vehicle now exiting onto Rundberg Lane westbound, speeds around 65."),
-    ("heard", "l09", "Vehicle has stopped at 1200 Rundberg, subject fleeing on foot, setting up perimeter. Air support requested."),
-    ("heard", "l10", "Suspect in custody at 1240 Rundberg Lane, no injuries. Units can stand down on perimeter."),
+    ("heard", "l07", "A", "All units Adam-West, pursuit in progress. Black Honda northbound on I-35 from Ben White, unit failed to stop for a felony warrant stop. All units stay clear of the corridor."),
+    ("heard", "l08", "F", "Pursuit is at I-35 and Rundberg, vehicle now exiting onto Rundberg Lane westbound, speeds around 65."),
+    ("heard", "l09", "F", "Vehicle has stopped at 1200 Rundberg, subject fleeing on foot, setting up perimeter. Air support requested."),
+    ("heard", "l10", "F", "Suspect in custody at 1240 Rundberg Lane, no injuries. Units can stand down on perimeter."),
 
     # Block 5 — Agent / voice
-    ("agent", "a01", "Yes sir."),
-    ("agent", "a02", "Ready. Go ahead."),
-    ("agent", "a03", "Tonight in Austin expect clear skies with a low around 58 degrees. Winds will be light out of the southeast at 5 to 10 miles per hour. No precipitation expected. A warm front moves in Thursday bringing a chance of storms by evening, but tonight looks clear."),
-    ("agent", "a04", "Roger. Returning to monitor."),
+    ("agent",   "a01", None, "Yes sir."),
+    ("agent",   "a02", None, "Ready. Go ahead."),
+    ("agent",   "a03", None, "Tonight in Austin expect clear skies with a low around 58 degrees. Winds will be light out of the southeast at 5 to 10 miles per hour. No precipitation expected. A warm front moves in Thursday bringing a chance of storms by evening, but tonight looks clear."),
+    ("agent",   "a04", None, "Roger. Returning to monitor."),
 
     # Block 6 — Sitrep
-    ("summary", "s01",
+    ("summary", "s01", None,
      "Activity across the Austin metro area during this window was moderate with three notable incidents. "
      "A suspected opiate overdose at 6200 Springdale Road brought Sheriff's deputies and Travis County EMS Medic 4 to the scene — "
      "patient received Narcan and was transported. A structure fire at 4800 Manor Road was brought under control by Engine 8 and Ladder 1 "
@@ -92,26 +112,28 @@ def run_piper(text: str, wav_path: str, length_scale: float = 1.0):
     return True
 
 
-def apply_radio_effect(wav_in: str, mp3_out: str):
+def apply_radio_effect(wav_in: str, mp3_out: str, voice: str = None):
     """
-    Apply scanner radio effect:
-    - Bandpass 300-3000 Hz (voice frequency range)
-    - Slight overdrive / saturation
-    - Light noise floor
+    Apply scanner radio effect with optional voice pitch/tempo shift.
+    - Optional pitch shift via asetrate+atempo (voice character)
+    - Bandpass 300-3200 Hz
+    - Compression + light noise artifact
     - Mono, 22050 Hz
     """
+    voice_filter = (VOICES[voice] + "," ) if voice and voice in VOICES else ""
+    af = (
+        f"{voice_filter}"
+        "highpass=f=300,"
+        "lowpass=f=3200,"
+        "volume=2.5,"
+        "acompressor=threshold=-20dB:ratio=4:attack=5:release=50,"
+        "anlmdn=s=0.003,"
+        "volume=1.8"
+    )
     cmd = [
         "ffmpeg", "-y",
         "-i", wav_in,
-        "-af",
-        (
-            "highpass=f=300,"
-            "lowpass=f=3200,"
-            "volume=2.5,"
-            "acompressor=threshold=-20dB:ratio=4:attack=5:release=50,"
-            "anlmdn=s=0.003,"          # light noise reduction → adds slight artifact
-            "volume=1.8"
-        ),
+        "-af", af,
         "-ar", "22050",
         "-ac", "1",
         "-q:a", "4",
@@ -153,14 +175,15 @@ def main():
 
     manifest = {}
 
-    for kind, fname, text in LINES:
+    for kind, fname, voice, text in LINES:
         mp3_out = OUT_DIR / f"{fname}.mp3"
         if mp3_out.exists():
             print(f"  {fname}.mp3 already exists, skipping")
             manifest[fname] = {"kind": kind, "file": f"demo_audio/{fname}.mp3"}
             continue
 
-        print(f"  [{kind}] {fname}: {text[:60]}...")
+        voice_label = f" voice={voice}" if voice else ""
+        print(f"  [{kind}{voice_label}] {fname}: {text[:60]}...")
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             tmp_wav = tmp.name
@@ -173,7 +196,7 @@ def main():
                 continue
 
             if kind == "heard":
-                ok = apply_radio_effect(tmp_wav, str(mp3_out))
+                ok = apply_radio_effect(tmp_wav, str(mp3_out), voice=voice)
             else:
                 ok = apply_clean_tts(tmp_wav, str(mp3_out))
 
