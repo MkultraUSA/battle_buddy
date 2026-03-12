@@ -2,6 +2,28 @@
 
 ---
 
+## [0.8.0] — 2026-03-12
+
+### Added
+- **IPN poller** (`ipn_poller.py`) — polls the Broadcastify Incident Page Network
+  proxy for Travis County (ctid=2749) and loads confirmed incidents into the DB
+  - Endpoint: `broadcastify.com/scripts/ajax/ipnProxy.php?ctid=2749`
+  - IPN incidents carry dispatcher-confirmed incident type, city, frequency, and
+    timestamp (data is delayed up to 2 hours for the public)
+  - Geocodes to city centroid via Nominatim (Austin Metro bounded)
+  - Deduplicates via `ipn_id` — each IPN incident is only imported once
+  - Inserted with `stream='ipn'` so heatmap and sitreps can distinguish IPN
+    incidents from radio-parser incidents
+  - Severity auto-classified from incident type keywords
+  - Runs as part of the 30-minute parser pipeline (`run_parser.sh`)
+
+### Changed
+- `battle_buddy_db.py` — added `ipn_id TEXT UNIQUE` column to `incidents` table
+  with automatic migration for existing databases
+- `run_parser.sh` — now calls `ipn_poller.py` before regenerating the heatmap
+
+---
+
 ## [0.7.8] — 2026-03-09
 
 ### Fixed
