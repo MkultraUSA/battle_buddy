@@ -50,7 +50,7 @@ CHIME_WAV     = SCRIPT_DIR / "chime.wav"
 SAMPLE_RATE   = 16_000
 STEP_SEC      = 0.5           # sliding step for wake detection
 CHUNK_SEC     = 3.0           # window size for wake detection
-SILENCE_RMS   = 0.003         # below = silence (lowered — ambient ~0.004)
+SILENCE_RMS   = 0.008         # below = silence (ambient noise ~0.004, speech well above 0.012)
 SPEECH_RMS    = 0.012         # above = speech detected
 COMMAND_TIMEOUT = 12.0        # seconds to wait for a command after "Yes sir"
 SILENCE_END_SEC = 2.0         # seconds of silence that ends an utterance

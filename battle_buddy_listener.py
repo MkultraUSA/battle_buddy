@@ -47,7 +47,7 @@ STREAMS = {
 }
 
 DEFAULT_STREAM      = "law"
-DEFAULT_MODEL       = "small"
+DEFAULT_MODEL       = "medium"
 DEFAULT_CHUNK       = 15
 DEFAULT_PIPE        = "/tmp/battle_buddy_display.pipe"
 DEFAULT_SILENCE_DB  = -40.0
@@ -275,6 +275,18 @@ def load_model(model_size):
         sys.exit(1)
 
 
+RADIO_PROMPT = (
+    "Police scanner, Austin Travis County Texas, sheriff deputy, dispatch, "
+    "units, 10-4, copy, en route, code 3, talkgroup, Adam, Baker, Charlie, "
+    "David, Edward, Frank, George, Henry, Ida, John, King, Lincoln, Mary, "
+    "Nora, Ocean, Paul, Queen, Robert, Sam, Tom, Union, Victor, William, "
+    "X-ray, Young, Zebra. "
+    "Campus emergency blue phone activation, blue phone, UT campus, "
+    "University of Texas, ACC campus, panic alarm, welfare check, "
+    "10-4, UTL, code 4, clear, en route, on scene."
+)
+
+
 def transcribe(mdl, wav_path):
     try:
         segments, info = mdl.transcribe(
@@ -283,8 +295,15 @@ def transcribe(mdl, wav_path):
             beam_size=5,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
+            initial_prompt=RADIO_PROMPT,
+            condition_on_previous_text=False,
+            no_speech_threshold=0.6,
         )
-        parts = [seg.text.strip() for seg in segments if seg.text.strip()]
+        parts = [
+            seg.text.strip()
+            for seg in segments
+            if seg.text.strip() and seg.no_speech_prob < 0.6
+        ]
         return " ".join(parts)
     except Exception as e:
         print(f"[Whisper] Transcription error: {e}")
