@@ -9,18 +9,21 @@ LOG_DIR="logs"
 DATE=$(date +%Y%m%d)
 PARSER_LOG="$LOG_DIR/parser_${DATE}.log"
 
-# Find today's log file (supports law, fire, ems streams)
-LOG_FILE=$(ls "$LOG_DIR"/radio_*_${DATE}.log 2>/dev/null | head -1)
+# Find today's log files for all active streams
+LAW_LOG=$(ls "$LOG_DIR"/radio_law_${DATE}.log 2>/dev/null | head -1)
+CALLS_LOG=$(ls "$LOG_DIR"/radio_calls_${DATE}.log 2>/dev/null | head -1)
 
-if [ -z "$LOG_FILE" ]; then
-    echo "[run_parser] No log file found for $DATE — skipping"
+if [ -z "$LAW_LOG" ] && [ -z "$CALLS_LOG" ]; then
+    echo "[run_parser] No log files found for $DATE — skipping"
     exit 0
 fi
 
-echo "[run_parser] $(date '+%Y-%m-%d %H:%M:%S') — Processing $LOG_FILE"
-
-# Extract incidents via Claude
-python3 radio_parser.py --log "$LOG_FILE" >> "$PARSER_LOG" 2>&1
+# Extract incidents via Claude — run each stream log found
+for LOG_FILE in $LAW_LOG $CALLS_LOG; do
+    [ -z "$LOG_FILE" ] && continue
+    echo "[run_parser] $(date '+%Y-%m-%d %H:%M:%S') — Processing $LOG_FILE"
+    python3 radio_parser.py --log "$LOG_FILE" >> "$PARSER_LOG" 2>&1
+done
 
 # Poll Broadcastify IPN (Incident Page Network) for Travis County
 python3 ipn_poller.py >> "$PARSER_LOG" 2>&1

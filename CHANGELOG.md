@@ -2,6 +2,25 @@
 
 ---
 
+## [0.8.1] — 2026-03-12
+
+### Added
+- **Broadcastify Calls listener** (`calls_listener.py`) — polls the Calls API
+  for individual pre-segmented call audio files instead of a continuous stream
+  - Default playlist: Austin-Travis County Fire/EMS (`ecbfd29b-...`)
+  - Works without authentication (public playlist, premium account recommended)
+  - Falls back to Broadcastify login using credentials from `config.env` if API
+    returns 403
+  - Downloads each call as m4a, transcribes with faster-whisper (small model)
+  - Writes to `radio_calls_YYYYMMDD.log` in identical format to the MP3 listener
+    so `radio_parser.py` processes it unchanged
+  - Sends `HEARD:` and `TALKGROUP:` messages to display pipe
+  - Cursor-based deduplication — each call processed exactly once
+- **`battle-buddy-calls.service`** — systemd service for the calls listener
+- **`run_parser.sh`** — now processes `radio_calls_YYYYMMDD.log` alongside law log
+
+---
+
 ## [0.8.0] — 2026-03-12
 
 ### Added
