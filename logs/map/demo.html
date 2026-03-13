@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Battle Buddy — Live Demo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DejaVu+Sans:wght@400;700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0a;
+    color: #fff;
+    font-family: 'Segoe UI', 'DejaVu Sans', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  #header {
+    background: #1a0000;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    border-bottom: 1px solid #330000;
+  }
+  #header-title {
+    color: #FF4444;
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+  #clock {
+    color: #888;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+  }
+
+  /* ── Legend bar ── */
+  #legend {
+    background: #111;
+    padding: 5px 12px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    border-bottom: 1px solid #1a1a1a;
+    gap: 0;
+  }
+  .legend-item {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 0 12px;
+  }
+  .legend-heard   { color: #fff; }
+  .legend-agent   { color: #00FF41; }
+  .legend-summary { color: #FFD700; }
+  #talkgroup {
+    margin-left: auto;
+    color: #00CFFF;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 0 12px;
+    min-width: 200px;
+    text-align: right;
+  }
+
+  /* ── Scroll area ── */
+  #scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 10px;
+    scroll-behavior: smooth;
+  }
+  #scroll-area::-webkit-scrollbar { width: 6px; }
+  #scroll-area::-webkit-scrollbar-track { background: #111; }
+  #scroll-area::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+  .entry {
+    margin-bottom: 2px;
+    opacity: 0;
+    animation: fadein 0.4s forwards;
+  }
+  @keyframes fadein {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .ts {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #444;
+    margin-right: 8px;
+  }
+  .text-heard   { font-size: 20px; font-weight: bold; color: #fff; }
+  .text-agent   { font-size: 17px; font-family: 'Courier New', monospace; color: #00FF41; }
+  .text-summary { font-size: 16px; font-style: italic; color: #FFD700; }
+  .divider {
+    color: #1e1e1e;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    user-select: none;
+    line-height: 1.4;
+  }
+
+  /* ── Status bar ── */
+  #status-bar {
+    background: #111;
+    padding: 6px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #888;
+    flex-shrink: 0;
+    border-top: 1px solid #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #replay-btn {
+    background: #1a0000;
+    color: #FF4444;
+    border: 1px solid #FF4444;
+    border-radius: 4px;
+    padding: 3px 12px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+  }
+  #replay-btn:hover { background: #2a0000; }
+
+  /* ── Wake word overlay ── */
+  #wake-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #wake-overlay.active { display: flex; }
+  #wake-ring {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 3px solid #00FF41;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(0,255,65,0.4); }
+    50%      { box-shadow: 0 0 0 20px rgba(0,255,65,0); }
+  }
+  #wake-icon { font-size: 48px; }
+  #wake-text {
+    color: #00FF41;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    letter-spacing: 2px;
+    text-align: center;
+  }
+  #wake-sub {
+    color: #888;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  /* demo badge */
+  #demo-badge {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    background: #FF4444;
+    color: #fff;
+    font-size: 9px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 2px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    z-index: 200;
+    opacity: 0.7;
+  }
+</style>
+</head>
+<body>
+
+<div id="demo-badge">SIMULATION</div>
+
+<!-- Header -->
+<div id="header">
+  <div id="header-title">⚔&nbsp; BATTLE BUDDY &nbsp;//&nbsp; SITUATIONAL AWARENESS</div>
+  <div id="clock">--:--:--</div>
+</div>
+
+<!-- Legend -->
+<div id="legend">
+  <span class="legend-item legend-heard">● HEARD / RADIO</span>
+  <span class="legend-item legend-agent">● AGENT SPEAKING</span>
+  <span class="legend-item legend-summary">● SUMMARY</span>
+  <div id="talkgroup"></div>
+</div>
+
+<!-- Scroll area -->
+<div id="scroll-area"></div>
+
+<!-- Status bar -->
+<div id="status-bar">
+  <span id="status-text">● READY — Listening...</span>
+  <button id="replay-btn" onclick="startScenario()">↺ REPLAY</button>
+</div>
+
+<!-- Wake word overlay -->
+<div id="wake-overlay">
+  <div id="wake-ring"><div id="wake-icon">🎙️</div></div>
+  <div id="wake-text">HEY BATTLE BUDDY</div>
+  <div id="wake-sub" id="wake-sub-text">Wake phrase detected</div>
+</div>
+
+<script>
+// ── Clock ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', {hour12:false});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+const scrollArea = document.getElementById('scroll-area');
+const talkgroupEl = document.getElementById('talkgroup');
+const statusEl = document.getElementById('status-text');
+
+function setStatus(txt) { statusEl.textContent = '● ' + txt; }
+function setTalkgroup(tg) {
+  talkgroupEl.textContent = tg ? '📡 ' + tg : '';
+}
+
+function addEntry(kind, text) {
+  const ts = new Date().toLocaleTimeString('en-US', {hour12:false});
+  const prefix = {heard:'📻 ', agent:'🤖 ', summary:'📋 SUMMARY — '}[kind] || '';
+
+  const div = document.createElement('div');
+  div.className = 'entry';
+  div.innerHTML =
+    `<span class="ts">[${ts}]</span>` +
+    `<span class="text-${kind}">${prefix}${text}</span>`;
+  scrollArea.appendChild(div);
+
+  const divider = document.createElement('div');
+  divider.className = 'divider';
+  divider.textContent = '─'.repeat(80);
+  scrollArea.appendChild(divider);
+
+  scrollArea.scrollTop = scrollArea.scrollHeight;
+}
+
+function clear() {
+  scrollArea.innerHTML = '';
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showWake(msg, sub) {
+  document.getElementById('wake-text').textContent = msg || 'HEY BATTLE BUDDY';
+  document.getElementById('wake-sub').textContent  = sub  || 'Wake phrase detected';
+  document.getElementById('wake-overlay').classList.add('active');
+}
+function hideWake() {
+  document.getElementById('wake-overlay').classList.remove('active');
+}
+
+// ── Audio ──────────────────────────────────────────────────────────────────
+const audioCache = {};
+
+function playAudio(file) {
+  return new Promise(resolve => {
+    const src = 'demo_audio/' + file + '.mp3';
+    if (!audioCache[src]) audioCache[src] = new Audio(src);
+    const a = audioCache[src];
+    a.currentTime = 0;
+    a.onended = resolve;
+    a.onerror = resolve;  // don't block on missing file
+    a.play().catch(resolve);
+  });
+}
+
+function playChime() { return playAudio('chime'); }
+
+// ── Scenario ───────────────────────────────────────────────────────────────
+let scenarioRunning = false;
+
+async function startScenario() {
+  if (scenarioRunning) return;
+  scenarioRunning = true;
+  clear();
+  setStatus('READY — Listening...');
+  setTalkgroup('');
+  hideWake();
+
+  await delay(800);
+
+  // ── Block 1: Law stream opens ──────────────────────────────────────────
+  setStatus('Stream connected — Travis County Law (14439)');
+  setTalkgroup('TCSO ADAM-WEST');
+  await delay(1000);
+
+  addEntry('heard', '[TCSO ADAM-WEST] Adam 7 show me out at FM 2222 and 620, traffic stop on a white Silverado.');
+  setStatus('HEARD — transcribing...');
+  await playAudio('l01');
+  await delay(600);
+
+  addEntry('heard', '[TCSO ADAM-WEST] Dispatch, run Texas plate Hotel-Kilo-Romeo 4-4-9.');
+  await playAudio('l02');
+  await delay(600);
+
+  addEntry('heard', '[TCSO ADAM-WEST] Adam 7 that plate comes back clear, registered to a Kevin Flores, Austin.');
+  await playAudio('l03');
+  await delay(1000);
+
+  setTalkgroup('TCSO BAKER-EAST');
+  await delay(600);
+
+  addEntry('heard', '[TCSO BAKER-EAST] Baker 12, I\'m out at 6200 Springdale, welfare check on a female — caller says she hasn\'t been seen in two days.');
+  setStatus('HEARD — transcribing...');
+  await playAudio('l04');
+  await delay(600);
+
+  addEntry('heard', '[TCSO BAKER-EAST] Baker 12, no answer at the door, going around back.');
+  await playAudio('l05');
+  await delay(600);
+
+  addEntry('heard', '[TCSO BAKER-EAST] Dispatch, Baker 12, I\'m gonna need EMS out here — female is conscious, appears disoriented, possible overdose.');
+  await playAudio('l06');
+  await delay(800);
+
+  // ── Block 2: Fire/EMS calls come in ───────────────────────────────────
+  setTalkgroup('AFD FCOM N');
+  await delay(700);
+
+  addEntry('heard', '[AFD FCOM N] Engine 18, Rescue 18 — respond to 6200 Springdale Road, medical assist, Travis County SO on scene.');
+  setStatus('HEARD — transcribing...');
+  await playAudio('f01');
+  await delay(600);
+
+  setTalkgroup('TCEMS MCOM C');
+  await delay(500);
+
+  addEntry('heard', '[TCEMS MCOM C] Medic 4 is en route to Springdale, ETA 6 minutes.');
+  await playAudio('f02');
+  await delay(600);
+
+  addEntry('heard', '[TCEMS MCOM C] Medic 4 on scene at 6200 Springdale. Female, mid-30s, altered mental status, suspected opiate overdose. Administering Narcan.');
+  await playAudio('f03');
+  await delay(800);
+
+  // ── Block 3: Separate fire incident ───────────────────────────────────
+  setTalkgroup('AFD LOCUTION');
+  await delay(700);
+
+  addEntry('heard', '[AFD LOCUTION] Engine 8, Ladder 1, Rescue 8 — structure fire, AFD Box 42-07, 4800 Manor Road. Investigate reported smoke showing from a two-story residential.');
+  setStatus('HEARD — transcribing...');
+  await playAudio('f04');
+  await delay(600);
+
+  setTalkgroup('AFD FTAC203');
+  await delay(600);
+
+  addEntry('heard', '[AFD FTAC203] Engine 8 on scene, we\'ve got smoke showing from the second floor, Alpha side. Laying a line, going in.');
+  await playAudio('f05');
+  await delay(600);
+
+  addEntry('heard', '[AFD FTAC203] Engine 8, fire\'s in the wall cavity, second floor bedroom. Pulling ceiling, getting water on it.');
+  await playAudio('f06');
+  await delay(600);
+
+  addEntry('heard', '[AFD FTAC203] Ladder 1 on scene, venting the roof. All civilians are confirmed out of the structure.');
+  await playAudio('f07');
+  await delay(600);
+
+  addEntry('heard', '[AFD FTAC203] Engine 8 — fire\'s knocked down, starting overhaul. Requesting salvage crew.');
+  await playAudio('f08');
+  await delay(800);
+
+  // ── Block 4: Law escalation ───────────────────────────────────────────
+  setTalkgroup('TCSO ADAM-WEST');
+  await delay(700);
+
+  addEntry('heard', '[TCSO ADAM-WEST] All units Adam-West, pursuit in progress — black Honda northbound on I-35 from Ben White, unit failed to stop for a felony warrant stop. All units stay clear of the corridor.');
+  setStatus('HEARD — transcribing...');
+  await playAudio('l07');
+  await delay(600);
+
+  addEntry('heard', '[TCSO ADAM-WEST] Pursuit is at I-35 and Rundberg, vehicle now exiting onto Rundberg Lane westbound, speeds around 65.');
+  await playAudio('l08');
+  await delay(600);
+
+  addEntry('heard', '[TCSO ADAM-WEST] Vehicle has stopped at 1200 Rundberg, subject fleeing on foot, setting up perimeter. Air support requested.');
+  await playAudio('l09');
+  await delay(600);
+
+  addEntry('heard', '[TCSO ADAM-WEST] Suspect in custody at 1240 Rundberg Lane, no injuries. Units can stand down on perimeter.');
+  await playAudio('l10');
+  await delay(1200);
+
+  // ── Block 5: Wake word + Ask Claude ───────────────────────────────────
+  setTalkgroup('');
+  await delay(800);
+
+  // User says "Hey Battle Buddy"
+  setStatus('Mic active — listening for wake phrase...');
+  addEntry('heard', '🎙 [ User: "Hey Battle Buddy" ]');
+  await playAudio('user_heybattlebuddy');
+  await delay(300);
+
+  showWake('HEY BATTLE BUDDY', 'Wake phrase detected');
+  setStatus('VOICE MODE — Live feed paused');
+  await playChime();
+  await delay(400);
+  hideWake();
+
+  addEntry('agent', 'Yes sir.');
+  await playAudio('a01');
+  await delay(800);
+
+  // User says "Ask Claude"
+  addEntry('heard', '🎙 [ User: "Ask Claude" ]');
+  await playAudio('user_askclaude');
+  await delay(300);
+
+  showWake('ASK CLAUDE', 'Entering Q&A mode...');
+  await delay(1200);
+  hideWake();
+
+  addEntry('agent', 'Ready. Go ahead.');
+  await playAudio('a02');
+  await delay(800);
+
+  // User asks weather question
+  addEntry('heard', '🎙 [ User: "What\'s the weather looking like tonight in Austin?" ]');
+  await playAudio('user_weatherreportask');
+  await delay(400);
+  setStatus('Searching and thinking...');
+  await delay(1200);
+
+  addEntry('agent', 'Tonight in Austin expect clear skies with a low around 58 degrees. Winds will be light out of the southeast at 5 to 10 miles per hour. No precipitation expected. A warm front moves in Thursday bringing a chance of storms by evening — but tonight looks clear.');
+  await playAudio('a03');
+  setStatus('Ask Claude — say "Leave Claude" to exit');
+  await delay(800);
+
+  // User says "Give sitrep" before leaving
+  addEntry('heard', '🎙 [ User: "Give sitrep" ]');
+  await playAudio('user_sitrepask');
+  await delay(300);
+
+  showWake('LEAVE CLAUDE', 'Returning to monitor mode...');
+  await delay(1200);
+  hideWake();
+
+  addEntry('agent', 'Roger. Returning to monitor.');
+  await playAudio('a04');
+  setStatus('READY — Listening...');
+  await delay(1000);
+
+  // ── Block 6: Sitrep ───────────────────────────────────────────────────
+  setTalkgroup('');
+  await delay(800);
+
+  setStatus('Generating situational summary...');
+  await delay(2000);
+
+  addEntry('summary',
+    'Activity across the Austin metro area during this window was moderate with three notable incidents. ' +
+    'A suspected opiate overdose at 6200 Springdale Road brought Sheriff\'s deputies and TCEMS Medic 4 to the scene — ' +
+    'patient received Narcan and was transported. A structure fire at 4800 Manor Road (AFD Box 42-07) was brought under ' +
+    'control by Engine 8 and Ladder 1 with no civilian injuries; overhaul is underway. Separately, a felony warrant ' +
+    'pursuit on I-35 northbound concluded with a foot pursuit and arrest at 1240 Rundberg Lane — no injuries reported. ' +
+    'All three incidents appear resolved. No active scenes outstanding at this time. ' +
+    'Window: ' + new Date().toLocaleTimeString('en-US',{hour12:false}) + ' CDT.'
+  );
+  setStatus('SUMMARY DELIVERED');
+  await playAudio('s01');
+  await delay(2000);
+
+  // ── Loop ──────────────────────────────────────────────────────────────
+  setStatus('Restarting simulation...');
+  await delay(2000);
+  scenarioRunning = false;
+  startScenario();
+}
+
+// Start automatically
+window.addEventListener('load', () => setTimeout(startScenario, 500));
+</script>
+</body>
+</html>

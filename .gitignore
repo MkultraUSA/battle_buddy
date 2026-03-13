@@ -67,6 +67,15 @@ config.env
 *.db
 .radio_*_offset
 
+# Track web-served source files inside logs/map/
+!logs/
+!logs/map/
+!logs/map/*.html
+!logs/map/robots.txt
+
+# user_recordings — track source assets, skip large videos
+user_recordings/*.mp4
+
 # Flask stuff:
 instance/
 .webassets-cache

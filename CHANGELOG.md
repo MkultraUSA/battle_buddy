@@ -2,6 +2,39 @@
 
 ---
 
+## [0.8.2] — 2026-03-13
+
+### Added
+- **GATRRS talkgroup import** (`import_talkgroups.py`) — loads all 1,795 talkgroups
+  from RadioReference CSV export (System ID 2) into the `talkgroups` DB table
+  - Columns mapped: Decimal→talkgroup_id, Alpha Tag, Description, Mode, Tag, Category
+  - Coverage area set to `GATRRS` for all imported records
+  - Uses existing `upsert_talkgroup()` — safe to re-run
+- **Showcase page** (`logs/map/showcase.html`) — public-facing project page at
+  `https://kevcloud.ddns.net/map/showcase.html`
+  - Hero section with feature pills and links to demo + heatmap + GitHub
+  - Real screenshots: live display (TCSO BAKER-EAST traffic) and incident heatmap
+  - Full-width video player for live display recording
+  - 8-clip video gallery from live session recordings
+  - Open Graph / LinkedIn preview meta tags
+  - Tech stack grid
+- **Demo updated** (`logs/map/demo.html`) — user's real voice recordings integrated
+  - Wake word (`heybattlebuddy.m4a`), Ask Claude (`askclaude.m4a`), weather question
+    (`weatherreportask.m4a`), and sitrep request (`sitrepask.m4a`) now play in sync
+  - User voice entries shown as `🎙 [ User: "..." ]` in the scroll area
+- **User recordings** (`user_recordings/`) — source assets committed
+  - 4 × voice command recordings (m4a)
+  - 2 × screenshots (display.png, heatmapscreen.png)
+  - GATRRS talkgroup CSV (trs_tg_2.csv, 1,795 rows)
+
+### Fixed
+- nginx `robots.txt` was blocking all crawlers (Nextcloud default `Disallow: /`)
+  — added `location = /robots.txt` override to allow `/map/` for LinkedIn and others
+- nginx `/map/` location upgraded to `^~ /map/` to prevent Nextcloud's static asset
+  regex from intercepting `.png` and other files under `/map/assets/`
+
+---
+
 ## [0.8.1] — 2026-03-12
 
 ### Added
