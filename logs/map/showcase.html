@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Battle Buddy — Situational Awareness Platform</title>
+
+<!-- Open Graph / LinkedIn preview -->
+<meta property="og:type"        content="website">
+<meta property="og:url"         content="https://kevcloud.ddns.net/map/showcase.html">
+<meta property="og:title"       content="Battle Buddy — AI Situational Awareness">
+<meta property="og:description" content="Real-time scanner transcription, AI incident extraction, and voice command interface for Austin/Travis County public safety. 58k+ transcriptions, 121+ geocoded incidents.">
+<meta property="og:image"       content="https://kevcloud.ddns.net/map/assets/heatmapscreen.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:alt"   content="Battle Buddy incident heatmap — 121 incidents across the Austin metro">
+
+<!-- Twitter/X card (also used by some platforms) -->
+<meta name="twitter:card"        content="summary_large_image">
+<meta name="twitter:title"       content="Battle Buddy — AI Situational Awareness">
+<meta name="twitter:description" content="Real-time scanner transcription, AI incident extraction, and voice command interface for Austin/Travis County public safety.">
+<meta name="twitter:image"       content="https://kevcloud.ddns.net/map/assets/heatmapscreen.png">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --red:    #FF4444;
+    --green:  #00FF41;
+    --gold:   #FFD700;
+    --cyan:   #00CFFF;
+    --bg:     #0a0a0a;
+    --bg2:    #111;
+    --bg3:    #161616;
+    --border: #1e1e1e;
+    --muted:  #666;
+  }
+
+  body {
+    background: var(--bg);
+    color: #e0e0e0;
+    font-family: 'Segoe UI', sans-serif;
+    line-height: 1.6;
+  }
+
+  /* ── Nav ── */
+  nav {
+    position: sticky;
+    top: 0;
+    background: rgba(10,10,10,0.95);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+  .nav-brand {
+    color: var(--red);
+    font-weight: bold;
+    font-size: 16px;
+    letter-spacing: 1px;
+    text-decoration: none;
+  }
+  .nav-links { display: flex; gap: 24px; }
+  .nav-links a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 14px;
+    transition: color .2s;
+  }
+  .nav-links a:hover { color: #e0e0e0; }
+
+  /* ── Hero ── */
+  #hero {
+    background: linear-gradient(160deg, #0f0000 0%, var(--bg) 60%);
+    border-bottom: 1px solid #1a0000;
+    padding: 80px 32px 60px;
+    text-align: center;
+  }
+  .hero-badge {
+    display: inline-block;
+    background: #1a0000;
+    color: var(--red);
+    border: 1px solid #330000;
+    font-size: 11px;
+    letter-spacing: 3px;
+    padding: 4px 14px;
+    border-radius: 20px;
+    margin-bottom: 24px;
+    font-family: 'Courier New', monospace;
+  }
+  #hero h1 {
+    font-size: 48px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 8px;
+    letter-spacing: -1px;
+  }
+  #hero h1 span { color: var(--red); }
+  .hero-sub {
+    font-size: 20px;
+    color: var(--muted);
+    margin-bottom: 32px;
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .hero-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 40px;
+  }
+  .pill {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    color: #aaa;
+    font-size: 12px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-family: 'Courier New', monospace;
+  }
+  .hero-btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary {
+    background: var(--red);
+    color: #fff;
+    padding: 12px 28px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+    transition: background .2s;
+  }
+  .btn-primary:hover { background: #cc3333; }
+  .btn-outline {
+    background: transparent;
+    color: #ccc;
+    padding: 12px 28px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 15px;
+    border: 1px solid #333;
+    transition: border-color .2s, color .2s;
+  }
+  .btn-outline:hover { border-color: #666; color: #fff; }
+
+  /* ── Section layout ── */
+  section { padding: 64px 32px; border-bottom: 1px solid var(--border); }
+  .section-label {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--red);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 30px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .section-sub {
+    color: var(--muted);
+    font-size: 16px;
+    margin-bottom: 40px;
+    max-width: 640px;
+  }
+  .centered { text-align: center; }
+  .centered .section-sub { margin-left: auto; margin-right: auto; }
+
+  /* ── Screenshot showcase ── */
+  .screenshots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  @media (max-width: 700px) { .screenshots { grid-template-columns: 1fr; } }
+  .screenshot-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color .25s;
+  }
+  .screenshot-card:hover { border-color: #333; }
+  .screenshot-card img {
+    width: 100%;
+    display: block;
+    object-fit: cover;
+  }
+  .screenshot-card .cap {
+    padding: 14px 16px;
+  }
+  .screenshot-card .cap strong {
+    display: block;
+    color: #fff;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .screenshot-card .cap span {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ── Feature grid ── */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 20px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .feature-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+  }
+  .feature-icon { font-size: 28px; margin-bottom: 12px; }
+  .feature-card h3 { color: #fff; font-size: 15px; margin-bottom: 6px; }
+  .feature-card p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+  /* ── Video player ── */
+  .video-hero {
+    max-width: 900px;
+    margin: 0 auto;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: #000;
+  }
+  .video-hero video { width: 100%; display: block; }
+
+  /* ── Video grid ── */
+  .video-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .video-card {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .video-card video { width: 100%; display: block; max-height: 200px; object-fit: cover; }
+  .video-card .vcap {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'Courier New', monospace;
+  }
+
+  /* ── Tech stack ── */
+  .tech-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .tech-item {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .tech-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+  .tech-item .name { font-size: 13px; color: #ccc; font-weight: 600; }
+  .tech-item .desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Demo CTA ── */
+  #demo-cta {
+    background: linear-gradient(160deg, #0f0000 0%, var(--bg) 100%);
+    text-align: center;
+    padding: 80px 32px;
+  }
+  #demo-cta h2 { font-size: 34px; color: #fff; margin-bottom: 12px; }
+  #demo-cta p { color: var(--muted); font-size: 17px; margin-bottom: 32px; }
+
+  /* ── Terminal block ── */
+  .terminal {
+    background: #0d0d0d;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    max-width: 700px;
+    margin: 0 auto;
+    text-align: left;
+  }
+  .terminal .c-red    { color: var(--red); }
+  .terminal .c-green  { color: var(--green); }
+  .terminal .c-gold   { color: var(--gold); }
+  .terminal .c-cyan   { color: var(--cyan); }
+  .terminal .c-muted  { color: #444; }
+
+  /* ── Footer ── */
+  footer {
+    padding: 32px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    border-top: 1px solid var(--border);
+  }
+  footer a { color: #555; text-decoration: none; }
+  footer a:hover { color: #999; }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <a class="nav-brand" href="#">⚔ BATTLE BUDDY</a>
+  <div class="nav-links">
+    <a href="#display">Display</a>
+    <a href="#features">Features</a>
+    <a href="#clips">Live Clips</a>
+    <a href="#stack">Stack</a>
+    <a href="demo.html">▶ Demo</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section id="hero">
+  <div class="hero-badge">Austin, TX · Travis County</div>
+  <h1>Battle <span>Buddy</span></h1>
+  <p class="hero-sub">AI situational awareness for Austin/Travis County — real-time scanner transcription, incident mapping, and voice command interface.</p>
+  <div class="hero-pills">
+    <span class="pill">faster-whisper · real-time STT</span>
+    <span class="pill">Claude Haiku · incident extraction</span>
+    <span class="pill">Broadcastify · Law + Fire/EMS</span>
+    <span class="pill">1,795 GATRRS talkgroups</span>
+    <span class="pill">Wake word voice control</span>
+    <span class="pill">Live heatmap · 121+ incidents</span>
+  </div>
+  <div class="hero-btns">
+    <a class="btn-primary" href="demo.html">▶ Interactive Demo</a>
+    <a class="btn-outline" href="index.html">🗺 Live Heatmap</a>
+    <a class="btn-outline" href="https://github.com/MkultraUSA/battle_buddy" target="_blank">GitHub</a>
+  </div>
+</section>
+
+<!-- Display screenshot -->
+<section id="display">
+  <div class="centered">
+    <div class="section-label">Real System</div>
+    <h2 class="section-title">Live Display in Action</h2>
+    <p class="section-sub">The Battle Buddy heads-up display showing live TCSO traffic, talkgroup tracking, and timestamped transcriptions as they come in from the scanner.</p>
+  </div>
+  <div class="screenshots">
+    <div class="screenshot-card">
+      <img src="assets/display.png" alt="Battle Buddy live display showing TCSO BAKER-EAST traffic">
+      <div class="cap">
+        <strong>Live Heads-Up Display</strong>
+        <span>TCSO BAKER-EAST — real radio traffic, transcribed live via faster-whisper</span>
+      </div>
+    </div>
+    <div class="screenshot-card">
+      <img src="assets/heatmapscreen.png" alt="Incident heatmap with 121 incidents across Austin metro">
+      <div class="cap">
+        <strong>Incident Heatmap — Austin Metro</strong>
+        <span>121 geocoded incidents · sitrep audio player · auto-refreshed every 30 min</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features">
+  <div class="centered">
+    <div class="section-label">Capabilities</div>
+    <h2 class="section-title">What It Does</h2>
+    <p class="section-sub">Battle Buddy runs 24/7 on a local AMD machine, pulling public safety radio traffic and turning it into actionable intelligence.</p>
+  </div>
+  <div class="features">
+    <div class="feature-card">
+      <div class="feature-icon">📻</div>
+      <h3>Real-Time Transcription</h3>
+      <p>Listens to Travis County Law (TCSO) and Austin Fire/EMS via Broadcastify. Transcribes every transmission with faster-whisper in under 2 seconds.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧠</div>
+      <h3>AI Incident Extraction</h3>
+      <p>Claude Haiku reads each log window and extracts structured incidents — type, address, severity, talkgroup — and geocodes them to the Austin metro.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎙️</div>
+      <h3>Wake Word Voice Control</h3>
+      <p>"Hey Battle Buddy" activates the agent. Ask for a sitrep, ask Claude anything, then "Leave Claude" to return to monitoring. Mic mutes during playback.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🗺️</div>
+      <h3>Live Incident Heatmap</h3>
+      <p>All geocoded incidents plotted on an interactive Austin map. Refreshes automatically every 30 minutes. Publicly accessible at kevcloud.ddns.net/map.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📡</div>
+      <h3>1,795 GATRRS Talkgroups</h3>
+      <p>Full RadioReference talkgroup database loaded — APD dispatch zones, TCSO, AFD, EMS, utilities. Every transmission tagged to its talkgroup automatically.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <h3>IPN Incident Feed</h3>
+      <p>Polls Broadcastify's Incident Page Network for dispatcher-confirmed Travis County incidents every 30 minutes as a supplementary data source.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔊</div>
+      <h3>Spoken Sitrep</h3>
+      <p>Battle Buddy synthesizes a spoken situational summary covering all incidents in the last 4 hours. Delivered via Piper TTS or on-demand via voice command.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚙️</div>
+      <h3>Always-On Services</h3>
+      <p>Runs as systemd services on Ubuntu. Law stream and Fire/EMS Calls listener auto-restart. Display auto-starts on login. Zero manual intervention needed.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Display in action video -->
+<section id="main-video" style="background: var(--bg2);">
+  <div class="centered">
+    <div class="section-label">Field Recording</div>
+    <h2 class="section-title">Display Updating Live</h2>
+    <p class="section-sub">Unedited screen capture of the Battle Buddy display receiving and showing live radio traffic in real time.</p>
+  </div>
+  <div class="video-hero">
+    <video controls preload="metadata" poster="assets/display.png">
+      <source src="assets/displayinaction.mp4" type="video/mp4">
+      Your browser does not support HTML5 video.
+    </video>
+  </div>
+</section>
+
+<!-- Clip gallery -->
+<section id="clips">
+  <div class="centered">
+    <div class="section-label">Gallery</div>
+    <h2 class="section-title">Live Session Clips</h2>
+    <p class="section-sub">Screen recordings from a live Battle Buddy session monitoring Austin/Travis County public safety traffic.</p>
+  </div>
+  <div class="video-grid">
+    <div class="video-card">
+      <video controls preload="none">
+        <source src="assets/clip1.mp4" type="video/mp4">
+      </video>
+      <div class="vcap">clip-01 · live radio traffic</div>
+    </div>
+    <div class="video-card">
+      <video controls preload="none">
+        <source src="assets/clip2.mp4" type="video/mp4">
+      </video>
+      <div class="vcap">clip-02 · live radio traffic</div>
+    </div>
+    <div class="video-card">
+      <video controls preload="none">
+        <source src="assets/clip3.mp4" type="video/mp4">
+      </video>
+      <div class="vcap">clip-03 · live radio traffic</div>
+    </div>
+    <div class="video-card">
+      <video controls preload="none">
+        <source src="assets/clip4.mp4" type="video/mp4">
+      </video>
+      <div class="vcap">clip-04 · live radio traffic</div>
+    </div>
+    <div class="video-card">
+      <video controls preload="none">
+        <source src="assets/clip5.mp4" type="video/mp4">
+      </video>
+      <div class="vcap">clip-05 · live radio traffic</div>
+    </div>
+    <div class="video-card">
+      <video controls preload="none">
+        <source src="assets/clip6.mp4" type="video/mp4">
+      </video>
+      <div class="vcap">clip-06 · live radio traffic</div>
+    </div>
+    <div class="video-card">
+      <video controls preload="none">
+        <source src="assets/clip7.mp4" type="video/mp4">
+      </video>
+      <div class="vcap">clip-07 · live radio traffic</div>
+    </div>
+    <div class="video-card">
+      <video controls preload="none">
+        <source src="assets/clip8.mp4" type="video/mp4">
+      </video>
+      <div class="vcap">clip-08 · live radio traffic</div>
+    </div>
+  </div>
+</section>
+
+<!-- Terminal block -->
+<section id="stack" style="background: var(--bg2);">
+  <div class="centered">
+    <div class="section-label">Under the Hood</div>
+    <h2 class="section-title">Display Message Types</h2>
+    <p class="section-sub">The display receives a stream of typed messages over a named pipe from listener services running in the background.</p>
+  </div>
+  <div class="terminal">
+    <div><span class="c-muted"># /tmp/battle_buddy_display.pipe</span></div>
+    <br>
+    <div><span class="c-muted">[2026-03-13 03:14:22]</span> <span style="color:#fff">HEARD: [TCSO BAKER-EAST] Baker 12, I'm out at 6200 Springdale...</span></div>
+    <div><span class="c-muted">[2026-03-13 03:14:25]</span> <span class="c-cyan">TALKGROUP: TCSO BAKER-EAST</span></div>
+    <div><span class="c-muted">[2026-03-13 03:15:01]</span> <span style="color:#fff">HEARD: [AFD LOCUTION] Engine 8, Ladder 1 — structure fire at 4800 Manor Rd...</span></div>
+    <div><span class="c-muted">[2026-03-13 03:15:44]</span> <span class="c-green">AGENT: Yes sir.</span></div>
+    <div><span class="c-muted">[2026-03-13 03:15:47]</span> <span class="c-green">AGENT: Tonight in Austin expect clear skies with a low around 58...</span></div>
+    <div><span class="c-muted">[2026-03-13 03:30:00]</span> <span class="c-gold">SUMMARY: Three incidents this window — overdose at Springdale Road...</span></div>
+  </div>
+  <br>
+  <div class="tech-grid" style="margin-top: 32px;">
+    <div class="tech-item">
+      <div class="tech-dot" style="background: #00FF41;"></div>
+      <div><div class="name">faster-whisper</div><div class="desc">Real-time STT, small + medium models, CPU int8</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot" style="background: #FF4444;"></div>
+      <div><div class="name">Claude (Anthropic)</div><div class="desc">Haiku for incident extraction, Sonnet for sitrep</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot" style="background: #FFD700;"></div>
+      <div><div class="name">Piper TTS</div><div class="desc">en_US-lessac-medium, local neural voice synthesis</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot" style="background: #00CFFF;"></div>
+      <div><div class="name">Broadcastify</div><div class="desc">MP3 stream (law) + Calls API (Fire/EMS)</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot" style="background: #888;"></div>
+      <div><div class="name">Nominatim / OSM</div><div class="desc">Address geocoding bounded to Austin metro</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot" style="background: #f80;"></div>
+      <div><div class="name">SQLite / WAL</div><div class="desc">58k+ transcriptions, 1,795 GATRRS talkgroups</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot" style="background: #a0f;"></div>
+      <div><div class="name">tkinter display</div><div class="desc">Heads-up display, named pipe interface</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot" style="background: #0af;"></div>
+      <div><div class="name">systemd + nginx</div><div class="desc">Always-on services, public HTTPS map endpoint</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Demo CTA -->
+<section id="demo-cta">
+  <div class="section-label" style="color: var(--red); display: inline-block; margin-bottom: 16px;">Try It Now</div>
+  <h2>See the Demo Simulation</h2>
+  <p>An interactive walkthrough of a real Battle Buddy session — law enforcement, Fire/EMS, a vehicle pursuit, and a voice-commanded sitrep.</p>
+  <a class="btn-primary" href="demo.html">▶ Launch Interactive Demo</a>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>Battle Buddy · Austin, TX · Built with Claude Code</p>
+  <p style="margin-top: 8px;">
+    <a href="index.html">Heatmap</a> ·
+    <a href="demo.html">Demo</a> ·
+    <a href="https://github.com/MkultraUSA/battle_buddy" target="_blank">GitHub</a>
+  </p>
+</footer>
+
+</body>
+</html>
