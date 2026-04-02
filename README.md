@@ -1,26 +1,48 @@
 # ⚔ Battle Buddy — AI Situational Awareness System
 
-Battle Buddy is an open-source application designed to help the public stay informed about law enforcement activity and public safety events in their area. The goal of the project is to improve situational awareness by providing transparent, community-driven information about public safety activity. This project is intended for journalists, community members, and researchers interested in public safety transparency.
+Battle Buddy is an open-source platform for real-time P25 trunked radio monitoring with AI-powered incident detection, automatic transcription, and team alerting. Built for Austin/Travis County GATRRS but designed to work with any P25 trunked system.
 
 ![Battle Buddy](static/bgbattlebuddy.png)
 
-
-## Status
-🚧 Active development — v0.7.0
+**Status:** 🟢 Live — v2.1.0 (Pi 5 + OP25 + faster-whisper + Groq + Nextcloud stack)
 
 ---
 
-## What it does
-- Streams live radio traffic from Broadcastify (law, fire, EMS feeds)
-- Transcribes speech in real time using faster-whisper (runs fully local, no cloud)
-- Tracks the active talkgroup (unit/channel) from ICY stream metadata
-- Displays transcriptions and talkgroup on a dedicated heads-up display
-- Logs all traffic to daily log files for post-processing
-- Parses logs with Claude AI to extract and classify incidents
-- Geocodes incidents and publishes a live public heatmap
-- Generates spoken AI situational summaries (sitreps) via Claude + Piper TTS
-- Serves sitrep audio on the public map, auto-refreshed every 4 hours
-- Listens for the wake phrase "Hey Battle Buddy" and speaks the current sitrep on demand
+## What It Does
+
+- Decodes live P25 trunked radio traffic from GATRRS (Austin/TX) using an RTL-SDR dongle and OP25
+- Captures audio per call and transcribes each call locally using **faster-whisper** (base.en INT8) — no API cost, works offline
+- Sends transcripts to **Groq** (llama-3.3-70b) for incident classification — free tier, called directly from the server
+- Automatically identifies unknown talkgroups by analyzing their radio chatter with Groq
+- Posts alerts to Nextcloud Talk rooms sorted by agency beat (APD, fire/EMS, incidents, general)
+- Displays active incidents on a live map with geocoded locations
+- Detects multi-agency convergence, air asset deployment, APD surges, and DPS Capitol activations
+- Escalation tracking: welfare → disturbance → pursuit → weapons → SWAT → K9 → air
+- Nextcloud Deck integration — creates cards for high-priority incidents
+- Watchdog auto-restarts OP25 via SSH if audio goes silent
+- Talk bot with slash commands: `!sitrep`, `!incidents`, `!status`, `!unknowns`, `!addtag`
+
+---
+
+## Architecture
+
+```
+RTL-SDR Blog V4 (Pi 5)
+  → OP25 / gr-op25_repeater (Pi 5)
+      - Decodes P25 trunking, follows voice grants, outputs PCM via UDP
+  → call_recorder.py (Pi 5)
+      - Captures UDP audio per call, tracks TGID via systemd journal
+      - Encodes WAV, POSTs to VM /receive
+  → audio_receiver.py (VM :9001, Flask)
+      - faster-whisper transcription (local, offline-capable)
+      - Groq LLM incident analysis (direct HTTPS to api.groq.com)
+      - Groq TGID auto-identification (unknown channels)
+      - Nextcloud Talk / Deck / Banner alerts
+      - SQLite call + incident storage
+      - Serves map UI, sitrep, public splash page
+```
+
+> **Note on Groq relay:** A `groq_relay.py` proxy still runs on the Pi (port 9002) as a backup path. It was originally required because DigitalOcean datacenter IPs were blocked by Cloudflare. The VM is now hosted on Contabo, which is not blocked — Groq API calls go directly from the server. The Pi relay is retained as a fallback.
 
 ---
 
@@ -28,11 +50,11 @@ Battle Buddy is an open-source application designed to help the public stay info
 
 | Component | Notes |
 |-----------|-------|
-| Intel NUC (AMD CPU, 6 cores, 16GB RAM) | Tested on NUC running Ubuntu 24.04 LTS |
-| Dedicated display | Heads-up situational awareness screen |
-| USB microphone | Required for voice wake word (tested: Blue Microphones USB) |
-| Internet connection | Required for Broadcastify streams |
-| RTL-SDR dongle + antenna | Future: direct SDR integration |
+| Raspberry Pi 5 | Runs OP25, call_recorder, op25-collector — Debian Trixie |
+| RTL-SDR Blog V4 | USB SDR dongle, tuned to GATRRS control channel 851.3875 MHz |
+| Contabo VPS | Ubuntu 24.04, 8 cores, 24GB RAM — runs Flask brain + faster-whisper + Nextcloud |
+
+> **Bluetooth not used.** Audio is captured directly from OP25's UDP output. Bluetooth disconnections caused system crashes and have been permanently removed from the pipeline.
 
 ---
 
@@ -40,311 +62,175 @@ Battle Buddy is an open-source application designed to help the public stay info
 
 | Component | Purpose |
 |-----------|---------|
-| faster-whisper | Local speech-to-text (stream transcription + wake word detection) |
-| ffmpeg | Audio stream capture from Broadcastify |
-| sounddevice | Microphone capture via PipeWire |
-| Python / tkinter | Heads-up display application |
-| Claude (Anthropic) | Incident extraction, sitrep generation (Haiku + Sonnet) |
-| Piper TTS | Local text-to-speech for spoken sitreps and voice responses |
-| SQLite | Incident and transcription database |
-| nginx | Serves public heatmap and sitrep audio |
+| OP25 (boatbod/op25) | P25 trunk decoder — decodes GATRRS, outputs PCM audio via UDP |
+| call_recorder.py | Pi-side: captures UDP audio per call, tracks TGID via journalctl |
+| **faster-whisper** (base.en INT8) | Local speech-to-text on VM — 4–8× faster than openai-whisper, works offline |
+| Groq llama-3.3-70b | Incident analysis and TGID identification — free tier, direct API |
+| groq_relay.py | Pi 5 backup proxy for Groq (port 9002) — not required on Contabo |
+| Flask (audio_receiver.py) | VM brain: receives calls, runs transcription + Groq, stores to SQLite |
+| Nextcloud Talk | 5 chat rooms (incidents, apd, fire-ems, general, + catch-all) |
+| Nextcloud Deck | Kanban board — auto-creates cards for high-priority incidents |
+| SQLite | calls.db — calls, incidents, escalations, TGID guesses, subscriptions |
+| nginx | Reverse proxy — HTTPS on kevcloud.ddns.net → Flask + Nextcloud |
 
 ---
 
-## Installation
+## Pi Services
 
-### Prerequisites
-- Ubuntu 24.04 LTS
-- Python 3.12+
-- A Broadcastify Premium account (for authenticated stream URLs)
-- A USB microphone (for voice wake word feature)
+All Pi services are hardened with `Restart=always` and `StartLimitIntervalSec=0` (retries forever). User services require `loginctl enable-linger pi` (already set) to start without an interactive login.
 
-### 1. Clone the repository
-```bash
-git clone https://github.com/MkultraUSA/battle_buddy.git
-cd battle_buddy
-```
+| Service | Type | Description |
+|---------|------|-------------|
+| `op25-multi_rx.service` | system | OP25 P25 decoder — `ExecStartPre` kills any stale process holding port 8080 before start |
+| `op25-collector.service` | user | Polls OP25 HTTP API, logs talkgroup activity to activity.db |
+| `call_recorder.service` | user | Captures UDP audio, posts WAV calls to VM |
+| `groq-relay.service` | user | Backup HTTP proxy for Groq API (port 9002) |
+| `bb_command_poller.sh` | cron (1min) | Polls VM for restart/control commands |
 
-### 2. Install Python dependencies
-```bash
-pip3 install -r requirements.txt --break-system-packages
-```
-
-### 3. Install system dependencies
-```bash
-sudo apt install python3-tk ffmpeg -y
-```
-
-### 4. Configure streams
-```bash
-cp config.env.example config.env
-# Edit config.env with your credentials
-```
-
-Stream URLs are configured directly in `battle_buddy_listener.py` in the `STREAMS` dict:
-```python
-STREAMS = {
-    "law":  "https://USER:PASS@audio.broadcastify.com/14439.mp3",
-    "fire": "https://USER:PASS@audio.broadcastify.com/28517.mp3",
-    "ems":  "https://USER:PASS@audio.broadcastify.com/21284.mp3",
-}
-```
-
-### 5. Install the systemd service
-```bash
-sudo cp battle-buddy-law.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable battle-buddy-law.service
-sudo systemctl start battle-buddy-law.service
-```
-
-### 6. Set up display autostart
-Copy the desktop entry to autostart:
-```bash
-cp battle-buddy-display.desktop ~/.config/autostart/
-```
-
-Or launch manually:
-```bash
-cd ~/battle_buddy && python3 battle_buddy_display.py
-```
-
-For fullscreen ops mode:
-```bash
-python3 battle_buddy_display.py --fullscreen
-```
-
-Demo mode (no audio required):
-```bash
-python3 battle_buddy_display.py --demo
-```
-
-### 7. Enable the voice wake word listener
-```bash
-systemctl --user daemon-reload
-systemctl --user enable battle-buddy-voice.service
-systemctl --user start battle-buddy-voice.service
-```
+**Startup ordering:** `op25-collector` and `call_recorder` both declare `After=op25-multi_rx.service` — they wait for the decoder to be running before starting.
 
 ---
 
-## Display
+## VM Services
 
-| Color | Meaning |
-|-------|---------|
-| White bold | 📻 Heard / radio traffic |
-| Green monospace | 🤖 Agent speech / responses |
-| Gold italic | 📋 Intelligence summaries |
-| Cyan (top-right) | 📡 Active talkgroup name (updates live) |
+| Service | Description |
+|---------|-------------|
+| `battlebuddy.service` | Flask app on port 9001 — the system brain |
+| `nginx.service` | Reverse proxy, SSL termination |
+| `snap.nextcloud.*` | Nextcloud (Apache, MySQL, PHP-FPM, Redis) |
 
-### Keyboard shortcuts
-| Key | Action |
-|-----|--------|
-| F11 | Toggle fullscreen |
-| ESC | Exit fullscreen |
-| Q | Quit |
-
-### Pipe interface
-Any component can send messages to the display via the named pipe:
-```bash
-echo "HEARD: Alpha team, two vehicles eastbound Route 7" > /tmp/battle_buddy_display.pipe
-echo "AGENT: Logging contact. Two vehicles Route 7 eastbound." > /tmp/battle_buddy_display.pipe
-echo "SUMMARY: 2 dark vehicles eastbound Route 7, reported 14:32" > /tmp/battle_buddy_display.pipe
-echo "STATUS: Listening for radio traffic..." > /tmp/battle_buddy_display.pipe
-echo "TALKGROUP: TCSO ADAM-WEST" > /tmp/battle_buddy_display.pipe
-echo "CLEAR" > /tmp/battle_buddy_display.pipe
-```
+**battlebuddy.service** is hardened with `Restart=always`, `StartLimitIntervalSec=0`, and `After=network-online.target` (waits for actual network connectivity, not just stack init).
 
 ---
 
-## Voice Wake Word & Commands
+## System Resilience
 
-Battle Buddy listens for **"Hey Battle Buddy"** using faster-whisper (tiny model, local only). No cloud required for wake word detection.
+This system is designed for unattended and field operation. Every failure mode we've hit in production has been addressed:
 
-### Command Flow — timing is critical
-
-**IMPORTANT: Always wait for the audio prompt before speaking your command or question. The mic is muted during TTS playback.**
-
-| Step | You say | Wait for | Then |
-|------|---------|----------|------|
-| 1 | "Hey Battle Buddy" | Chime + **"Yes sir"** | Speak your command |
-| 2a | "Give sitrep" | Full sitrep readback to finish | Returns to listening automatically |
-| 2b | "Ask Claude" | **"Go ahead"** prompt | Ask your question |
-| — | *(follow-up question)* | Answer to finish | Ask another or exit |
-| — | **"Leave Claude"** | "Roger, returning to monitor" | Back to listening |
-
-> **Note:** If you do not say "Leave Claude", the system stays in Ask Claude mode and will pick up ambient room audio, potentially asking you to clarify things you didn't intend to say.
-
-### Commands recognized
-- **"Give sitrep"** / "Give me a sitrep" / "Sit rep" — generates and speaks the 4-hour sitrep
-- **"Ask Claude"** — enters interactive Q&A mode with web search
-- **"Leave Claude"** — exits Ask Claude mode and returns to monitoring
-
-### Setup
-- Requires a USB microphone connected to the system
-- The voice listener runs as a systemd user service and starts automatically on login
-- Mic input volume is set automatically on each service start
-- Service auto-restarts every 12 hours to prevent audio stream freeze
-
-### Service management
-```bash
-systemctl --user status battle-buddy-voice.service
-systemctl --user restart battle-buddy-voice.service
-systemctl --user stop battle-buddy-voice.service
-```
-
-### Debug mode (see all transcriptions)
-```bash
-systemctl --user stop battle-buddy-voice.service
-python3 battle_buddy_voice.py --debug
-```
-
-### Tuning the wake word sensitivity
-The voice listener uses an RMS threshold (`SILENCE_RMS` in `battle_buddy_voice.py`) to decide when to run Whisper. If it's too low, Whisper runs constantly on ambient noise (TV, AC, background sound) causing very high CPU usage. If it's too high, quiet speech won't trigger the wake phrase.
-
-| Value | Effect |
-|-------|--------|
-| 0.003 | Very sensitive — catches quiet speech but runs on TV/ambient noise |
-| 0.008 | Default — good balance for normal speaking volume |
-| 0.012 | Less sensitive — requires clear, loud speech |
-
-To find the right value for your environment, run debug mode and watch the RMS values as you speak and stay silent:
-```bash
-python3 battle_buddy_voice.py --debug
-```
-Adjust `SILENCE_RMS` so it sits between your ambient noise level and your speaking level, then restart the service.
+| Failure | Fix |
+|---------|-----|
+| Pi reboot leaves stale process holding OP25 port 8080 | `ExecStartPre=-/bin/bash -c 'fuser -k 8080/tcp'` in op25-multi_rx.service |
+| systemd stops retrying after 5 rapid failures | `StartLimitIntervalSec=0` on all services |
+| User services don't start on Pi reboot | `loginctl enable-linger pi` (set permanently) |
+| VM starts before network is up | `After=network-online.target` on battlebuddy.service |
+| OP25 audio silence (soft bug) | 10-min watchdog auto-SSHes to Pi and restarts op25 + recorder |
+| VM RAM exhaustion under load | Swapped from openai-whisper small → faster-whisper base.en INT8 (8GB → 1GB RAM) |
+| No swap on production VM | 8GB swapfile added, `vm.swappiness=10` |
 
 ---
 
-## Log Format
+## Health Check
 
-Daily logs are written to `logs/radio_<stream>_<YYYYMMDD>.log`:
-```
-[2026-03-09 14:32:01] [TALKGROUP] TCSO ADAM-WEST
-[2026-03-09 14:32:15] [HEARD] Unit 7 requesting backup on Route 7 | TALKGROUP: TCSO ADAM-WEST
-[2026-03-09 14:33:01] [SYSTEM] Listener started. Model: small, Stream: law
-```
-
----
-
-## Incident Pipeline
+A full health check script is available on the VM:
 
 ```bash
-# Parse today's log for incidents (auto-runs via cron every 30 min)
-./run_parser.sh
-
-# Or run manually
-python3 radio_parser.py --log logs/radio_law_20260309.log
-
-# Generate heatmap
-python3 make_heatmap.py
-
-# Export incidents to GeoJSON
-python3 incident_to_geojson.py --log logs/incidents.log --out logs/incidents.geojson
+bash /opt/battlebuddy/healthcheck.sh
 ```
 
-Cron schedule:
-```bash
-# Parse logs and regenerate heatmap every 30 minutes
-*/30 * * * * nice -n 15 flock -n /tmp/battle_buddy_parser.lock /home/pi/battle_buddy/run_parser.sh
-
-# Generate 4h sitrep audio every 4 hours (skips if Ollama is busy)
-15 */4 * * * nice -n 19 flock -n /tmp/battle_buddy_sitrep.lock /home/pi/battle_buddy/run_sitrep.sh
-```
+Checks: system RAM/swap/disk/load, battlebuddy service + CPU/RAM, Pi intel vs broadcastify call freshness, **AI pipeline** (faster-whisper cached + Groq API live test), Pi service status + OP25 port, Nextcloud stack, nginx, SSL cert expiry.
 
 ---
 
-## Sitrep
+## API Endpoints
 
-Battle Buddy generates a spoken situational summary using Claude Sonnet + Piper TTS.
-
-```bash
-python3 battle_buddy_summary.py              # last 4h, display + speak
-python3 battle_buddy_summary.py --hours 8    # 8h window
-python3 battle_buddy_summary.py --hours 24   # full day
-python3 battle_buddy_summary.py --no-display # terminal only
-```
-
-The sitrep audio is saved to `logs/map/sitrep.wav` and served on the public map page.
-Desktop launcher icons are included for on-demand sitreps at 4h, 8h, 12h, and 24h windows.
-
----
-
-## Project Structure
-
-```
-battle_buddy/
-├── README.md                        # This file
-├── CHANGELOG.md                     # Version history
-├── requirements.txt                 # Python dependencies
-├── config.env.example               # Config template (copy to config.env)
-├── config.env                       # Local credentials — NOT committed
-├── battle_buddy_display.py          # Heads-up display application
-├── battle_buddy_listener.py         # Broadcastify stream listener
-├── battle_buddy_summary.py          # AI sitrep generator (Claude + Piper TTS)
-├── battle_buddy_voice.py            # Wake word listener ("Hey Battle Buddy")
-├── battle_buddy_db.py               # Incident database
-├── battle-buddy-law.service         # systemd service — Travis County Law
-├── run_parser.sh                    # Cron wrapper: parse logs + regenerate map
-├── run_sitrep.sh                    # Cron wrapper: generate 4h sitrep audio
-├── radio_parser.py                  # Log parser / incident extractor (Claude Haiku)
-├── make_heatmap.py                  # Public heatmap generator
-├── incident_to_geojson.py           # Incident → GeoJSON converter
-├── incident_watcher.py              # Incident log watcher
-├── chime.wav                        # Wake word acknowledgment chime
-└── logs/                            # Daily radio logs, DB, map — NOT committed
-    └── map/
-        ├── index.html               # Public heatmap (served by nginx)
-        ├── sitrep.wav               # Latest spoken sitrep audio
-        └── sitrep.txt               # Latest sitrep text + timestamp
-```
-
-User systemd services (in `~/.config/systemd/user/`):
-```
-battle-buddy-voice.service           # Wake word listener (auto-starts on login)
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/receive` | POST | Receive audio from Pi (WAV base64 + TGID metadata) |
+| `/api/calls` | GET | Last 200 calls |
+| `/api/incidents` | GET | All incidents |
+| `/api/incidents/active` | GET | Active incidents (updated within 30m) |
+| `/api/sitrep?minutes=60` | GET | AI situation report |
+| `/api/tgid_guesses` | GET | Unknown TGID identification guesses |
+| `/api/tgid_guesses/confirm` | POST | Confirm a TGID name, write to tags file |
+| `/test_call` | POST | Inject a synthetic call (bypass transcription) |
+| `/bot/talk` | POST | Nextcloud Talk bot webhook |
+| `/pi/commands` | GET | Command queue for Pi to poll |
 
 ---
 
-## Roadmap
+## Incident Types
 
-- [x] Heads-up display with HEARD / AGENT / SUMMARY / STATUS message types
-- [x] Named pipe message interface
-- [x] Windowed and fullscreen modes
-- [x] Broadcastify stream listener (ffmpeg + faster-whisper)
-- [x] ICY talkgroup metadata — live talkgroup display
-- [x] Daily log files with talkgroup context
-- [x] Incident parser and GeoJSON export
-- [x] Heatmap generator
-- [x] systemd service (auto-start, auto-restart)
-- [x] Claude AI incident extraction and sitrep generation
-- [x] Piper TTS spoken sitrep output
-- [x] Public heatmap with incident markers (served via nginx)
-- [x] Sitrep audio on public map, auto-refreshed every 4 hours
-- [x] Desktop launcher icons for on-demand sitreps
-- [x] Wake word trigger ("Hey Battle Buddy") — hands-free sitrep via local Whisper
-- [x] Voice command mode — "Sitrep", "Ask Claude", "Leave Claude" with display freeze
-- [ ] Fire / EMS systemd services
-- [ ] RTL-SDR direct SDR integration
-- [ ] Web dashboard (browser-based live view)
-- [ ] Home Assistant integration
-- [ ] Nextcloud Talk remote command interface
+`OFFICER DOWN` · `SHOOTING` · `STABBING` · `AIRCRAFT EMERGENCY` · `MASS CASUALTY` · `STRUCTURE FIRE` · `HAZMAT` · `HOSTAGE/BARRICADE` · `CRASH/COLLISION` · `FIRE DISPATCH` · `TRANSIT INCIDENT` · `AIRPORT EMERGENCY` · `MULTI-AGENCY RESPONSE` · `APD SURGE` · `AIR ASSET ACTIVE` · `DPS CAPITOL ACTIVATION`
 
 ---
 
-## Security Notes
+## Talk Bot Commands
 
-- `config.env` contains credentials — never commit this file (already in .gitignore)
-- Stream URLs contain Broadcastify credentials — do not share or log publicly
-- This system has broad audio and network access — treat it as privileged infrastructure
+| Command | Description |
+|---------|-------------|
+| `!sitrep [minutes]` | AI situation report (default 60m) |
+| `!incidents` | List active incidents |
+| `!status` | System status — call volume, hold state, transcription engine |
+| `!unknowns` | List unidentified talkgroups with Groq guesses |
+| `!addtag <tgid> <name>` | Confirm a talkgroup name and write to tags file |
+| `!subscribe [beat]` | Subscribe to 🔴 DM alerts (beats: all, apd, fire-ems, general) |
+| `!unsubscribe [beat]` | Stop DM alerts |
+
+---
+
+## Unknown TGID Auto-Identification
+
+When a call arrives on an unlabeled talkgroup, Battle Buddy sends the transcript to Groq with a specialized prompt asking which Austin/Travis County agency it belongs to. Guesses are stored with confidence levels (HIGH/MED/LOW). After 3 agreeing HIGH/MED guesses, the system auto-confirms and posts to the general Talk room. Users can confirm or override via `!addtag` or the REST API.
+
+---
+
+## Transcription
+
+Battle Buddy uses **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** (base.en, INT8 quantized) for local speech-to-text. Key properties:
+
+- **Offline-capable** — model is cached to disk, no internet required for transcription
+- **4–8× faster** than openai-whisper at equivalent quality
+- **~1GB RAM** vs ~8GB for openai-whisper small
+- VAD filter enabled — skips silent segments automatically
+- `cpu_threads=2` — limits CPU impact, leaves headroom for other services
+
+The model is pre-downloaded to `~/.cache/huggingface/hub/` and loads in under 2 seconds at startup.
+
+---
+
+## Development Notes
+
+- Pi scripts are maintained at `/home/pi/op25_data/` and synced with `scp` when updated.
+- The VM is on Contabo (147.93.134.105). Groq API (`api.groq.com`) is directly reachable — no Pi relay required. If ever moved back to a blocked datacenter, point `GROQ_API_BASE` to the Pi relay at `http://192.168.1.158:9002`.
+- `GROQ_API_KEY` and credentials are set inline in the Python config (not environment variables) — review before open-sourcing any sensitive deployment.
+- Always run `bash /opt/battlebuddy/healthcheck.sh` before and after making changes.
+
+---
+
+## Talkgroup Coverage
+
+GATRRS (Greater Austin-Travis County Trunked Radio System), System ID 2, licensed WPQY813. Control channel 851.3875 MHz. ~561 labeled talkgroups covering APD, AFD, TCEMS, TCFD, TCSO, UTPD, DPS, ABIA, Cap Metro, TXDOT, and surrounding counties.
+
+---
+
+## Cost Model
+
+| Item | Cost |
+|------|------|
+| Contabo VPS (8 cores, 24GB RAM) | ~$14/month |
+| Groq LLM inference | $0 (free tier) |
+| faster-whisper transcription | $0 (runs locally) |
+| Pi 5 + RTL-SDR | One-time ~$100 |
+| **Total ongoing** | **~$14/month** |
+
+---
+
+## Key Files
+
+| Path | What It Is |
+|------|-----------|
+| `/opt/battlebuddy/audio_receiver.py` | Main VM application |
+| `/opt/battlebuddy/healthcheck.sh` | Full system health check |
+| `/opt/battlebuddy/calls.db` | Call records + incident tracking (SQLite) |
+| `/home/pi/op25_data/call_recorder.py` | Pi audio capture + TGID tracker |
+| `/home/pi/op25_data/collector.py` | Pi talkgroup activity logger |
+| `/home/pi/op25_data/groq_relay.py` | Pi Groq API backup proxy |
+| `/home/pi/op25/op25/gr-op25_repeater/apps/cfg.json` | OP25 decoder config |
+| `/home/pi/op25_data/gatrrs-tags.tsv` | TGID → agency name lookup table |
+| `/home/pi/op25_data/activity.db` | Talkgroup activity log (SQLite) |
 
 ---
 
 ## License
-MIT
 
-## Author
-kevcloud
-
-## Contributing
-This is an early-stage project. Issues and pull requests welcome.
+MIT — open for community use and contribution.
