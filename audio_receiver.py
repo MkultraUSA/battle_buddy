@@ -47,7 +47,7 @@ PI1_OP25_URL  = "http://192.168.1.158:8080/"
 
 # Groq — LLM incident analysis (llama-3.3-70b), called directly from Contabo
 # Audio transcription is LOCAL (faster-whisper), works offline in the field
-GROQ_API_KEY        = "GROQ_API_KEY_REMOVED"
+GROQ_API_KEY        = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL          = "llama-3.3-70b-versatile"
 GROQ_ENABLED        = bool(GROQ_API_KEY)
 GROQ_API_BASE       = "https://api.groq.com/openai/v1"
@@ -55,12 +55,12 @@ GROQ_API_BASE       = "https://api.groq.com/openai/v1"
 # Nextcloud Talk — post each transcript to the BattleBuddy room
 TALK_BASE    = "https://kevcloud.ddns.net/ocs/v2.php/apps/spreed/api/v1"
 TALK_USER    = "battlebuddy"
-TALK_PASS    = "TALK_PASS_REMOVED"
+TALK_PASS    = os.environ.get("TALK_PASS", "")
 TALK_ENABLED = True
 
 # Mailgun email alerts
-MAILGUN_API_KEY  = "MAILGUN_API_KEY_REMOVED"
-MAILGUN_DOMAIN   = "MAILGUN_DOMAIN_REMOVED"
+MAILGUN_API_KEY  = os.environ.get("MAILGUN_API_KEY", "")
+MAILGUN_DOMAIN   = os.environ.get("MAILGUN_DOMAIN", "")
 MAILGUN_FROM     = f"Battle Buddy <mailgun@{MAILGUN_DOMAIN}>"
 ALERT_EMAIL      = "k.watkins@me.com"
 
@@ -121,7 +121,7 @@ def _room_for_call(call: dict, priority: str) -> list[str]:
     return list(rooms)
 
 # Talk bot shared secret — must match what is registered with occ talk:bot:install
-TALK_BOT_SECRET = "TALK_BOT_SECRET_REMOVED"
+TALK_BOT_SECRET = os.environ.get("TALK_BOT_SECRET", "")
 
 # Hold/skip commands to Pi 1 OP25 — OFF until behavior is verified.
 # Run with --enable-hold to turn on.
