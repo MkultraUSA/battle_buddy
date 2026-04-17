@@ -16,7 +16,6 @@ import uuid
 import base64
 import hashlib
 import hmac
-import io
 import json
 import os
 import re
@@ -29,7 +28,6 @@ import tempfile
 import threading
 import time
 import urllib.request
-import wave
 from datetime import datetime, timedelta
 
 # Bypass SSL cert verification for all urllib calls (Nextcloud snap cert not in system store)
@@ -38,7 +36,7 @@ urllib.request.install_opener(
     urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ssl_ctx))
 )
 
-from flask import Flask, jsonify, render_template_string, request, send_from_directory
+from flask import Flask, jsonify, render_template_string, request
 
 # ---------------------------------------------------------------------------
 # Config
@@ -7690,7 +7688,6 @@ def api_commute_polyline():
 @app.route("/api/commute/incidents", methods=["GET"])
 def api_commute_incidents():
     """Return active incidents near the user's commute route. Auth via session or share token."""
-    import math as _math
     token = request.args.get("token")
     if token:
         conn = sqlite3.connect(DB_PATH)
