@@ -220,3 +220,19 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Battle Buddy — secret/backup safety net (2026-04-17)
+.env.*
+!.env.example
+*.bak*
+
+# Certs & keys (never commit)
+*.p12
+*.key
+*.pem
+*.crt
+*.pfx
+certs/
+
+# ATAK cert bundles — distributed via authenticated endpoint, not repo
+static/atak/*.zip

@@ -120,12 +120,16 @@ FW_CACHE=$(find /root/.cache/huggingface/hub -name "*.bin" -o -name "model.bin" 
 
 # faster-whisper process check (model loaded in-process, not a separate binary)
 FW_RUNNING=$(ps aux | grep audio_receiver | grep -v grep | wc -l)
-[ "${FW_RUNNING:-0}" -gt 0 ] && ok "faster-whisper: loaded in battlebuddy process (base.en INT8)" \
-  || warn "faster-whisper: battlebuddy process not running"
+FW_MODEL=$(grep -oP '(?<=WhisperModel\()"[^"]+"' /opt/battlebuddy/audio_receiver.py 2>/dev/null | head -1 | tr -d '"')
+if [ "${FW_RUNNING:-0}" -gt 0 ]; then
+  ok "faster-whisper: loaded in battlebuddy process (${FW_MODEL:-unknown model})"
+else
+  warn "faster-whisper: battlebuddy process not running"
+fi
 
 # Groq API live connectivity test (LLM analysis — chat/completions endpoint)
 GROQ_RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
-  -H "Authorization: Bearer GROQ_API_KEY_REMOVED" \
+  -H "Authorization: Bearer $(grep '^GROQ_API_KEY=' /opt/battlebuddy/.env 2>/dev/null | cut -d= -f2)" \
   -H "Content-Type: application/json" \
   -H "User-Agent: Mozilla/5.0" \
   -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
@@ -147,10 +151,10 @@ if [ -n "$LAST_GROQ" ] && [ "$LAST_GROQ" -ge 0 ]; then
 fi
 
 # ── Pi 5 ─────────────────────────────────────────────────────────────────────
-hdr "PI 5 (192.168.1.158)"
+hdr "PI 5 (radiodesk.ddns.net)"
 
 PI_REACHABLE=false
-if ping -c 1 -W 3 192.168.1.158 &>/dev/null; then
+if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 -o BatchMode=yes pi@radiodesk.ddns.net "exit" &>/dev/null; then
   ok "Pi 5 reachable"
   PI_REACHABLE=true
 else
@@ -158,7 +162,7 @@ else
 fi
 
 if $PI_REACHABLE; then
-  PI_STATUS=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@192.168.1.158 \
+  PI_STATUS=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
     'echo op25=$(systemctl is-active op25-multi_rx) collector=$(systemctl --user is-active op25-collector) recorder=$(systemctl --user is-active call_recorder)' 2>/dev/null)
 
   for svc in op25 collector recorder; do
@@ -172,21 +176,21 @@ if $PI_REACHABLE; then
   done
 
   # OP25 HTTP port 8080 — confirms RTL-SDR lock and trunking active
-  OP25_PORT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@192.168.1.158 \
+  OP25_PORT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
     'ss -tlnp | grep -c ":8080"' 2>/dev/null)
   [ "${OP25_PORT:-0}" -gt 0 ] && ok "Pi: OP25 HTTP port 8080 listening (RTL-SDR active)" \
     || warn "Pi: OP25 port 8080 not listening — RTL-SDR may not have lock"
 
   # Groq relay — still running on Pi (not required for LLM anymore, kept as backup path)
-  RELAY_STATUS=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@192.168.1.158 \
+  RELAY_STATUS=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
     'systemctl --user is-active groq-relay' 2>/dev/null)
   [ "$RELAY_STATUS" = "active" ] && ok "Pi: groq-relay running (backup path)" \
     || warn "Pi: groq-relay inactive"
 
   # Pi CPU/RAM snapshot
-  PI_LOAD=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@192.168.1.158 \
+  PI_LOAD=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
     'uptime | awk -F"load average:" "{print \$2}" | awk "{print \$1}" | tr -d ","' 2>/dev/null)
-  PI_MEM=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@192.168.1.158 \
+  PI_MEM=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
     'free -m | awk "/^Mem:/{printf \"%d/%dMB\", \$3, \$2}"' 2>/dev/null)
   [ -n "$PI_LOAD" ] && echo -e "  Pi load: ${PI_LOAD}  |  RAM: ${PI_MEM}"
 fi
@@ -194,13 +198,13 @@ fi
 # ── Nextcloud ─────────────────────────────────────────────────────────────────
 hdr "NEXTCLOUD"
 
-NC_STATUS=$(systemctl is-active snap.nextcloud.apache 2>/dev/null)
-[ "$NC_STATUS" = "active" ] && ok "Nextcloud Apache running" || fail "Nextcloud Apache is $NC_STATUS"
+NC_STATUS=$(systemctl is-active nginx 2>/dev/null)
+[ "$NC_STATUS" = "active" ] && ok "nginx running (Nextcloud)" || fail "nginx is $NC_STATUS"
 
-MYSQL_STATUS=$(systemctl is-active snap.nextcloud.mysql 2>/dev/null)
+MYSQL_STATUS=$(systemctl is-active mysql 2>/dev/null)
 [ "$MYSQL_STATUS" = "active" ] && ok "Nextcloud MySQL running" || fail "Nextcloud MySQL is $MYSQL_STATUS"
 
-PHP_STATUS=$(systemctl is-active snap.nextcloud.php-fpm 2>/dev/null)
+PHP_STATUS=$(systemctl is-active php8.3-fpm 2>/dev/null)
 [ "$PHP_STATUS" = "active" ] && ok "Nextcloud PHP-FPM running" || fail "Nextcloud PHP-FPM is $PHP_STATUS"
 
 # HTTP response time
@@ -215,7 +219,7 @@ else
 fi
 
 # OCC status
-NC_MAINTENANCE=$(sudo snap run nextcloud.occ status 2>/dev/null | grep -i "maintenance.*true")
+NC_MAINTENANCE=$(php /var/www/nextcloud/occ status 2>/dev/null | grep -i "maintenance.*true")
 [ -n "$NC_MAINTENANCE" ] && warn "Nextcloud in maintenance mode" || ok "Nextcloud not in maintenance mode"
 
 # Nextcloud DB size

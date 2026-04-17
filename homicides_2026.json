@@ -1,0 +1,173 @@
+[
+  {
+    "n": 1,
+    "date": "2026-01-01",
+    "address": "7801 N Lamar Blvd, Austin, TX",
+    "victim": "Isaiah Atkinson, 18",
+    "summary": "Shot at party in event center",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-7801-n-lamar-blvd-b148",
+    "lat": 30.34501,
+    "lon": -97.71199
+  },
+  {
+    "n": 2,
+    "date": "2026-01-04",
+    "address": "9515 North Lamar Blvd, Austin, TX",
+    "victim": "Deputy Aaron Armstrong",
+    "summary": "Off-duty constable shot working security at Club Rodeo",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-9515-north-lamar-blvd-club-rodeo",
+    "lat": 30.36443,
+    "lon": -97.6946
+  },
+  {
+    "n": 3,
+    "date": "2026-01-05",
+    "address": "68 East Avenue, Austin, TX",
+    "victim": "Luke Bradburn, 19",
+    "summary": "Shot at Cambria Hotel",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-68-east-avenue-824",
+    "lat": 30.25837,
+    "lon": -97.73814
+  },
+  {
+    "n": 4,
+    "date": "2026-01-11",
+    "address": "9616 North Lamar Blvd, Austin, TX",
+    "victim": "Cam Ron Perkins, 23",
+    "summary": "Shot and killed, suspect fled in Dodge Charger",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-9616-north-lamar-boulevard",
+    "lat": 30.36636,
+    "lon": -97.69625
+  },
+  {
+    "n": 5,
+    "date": "2026-01-12",
+    "address": "9806 Middle Fiskville Road, Austin, TX",
+    "victim": "Seferino Hernandez-Perez, 40",
+    "summary": "Found unconscious after shots fired call",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1100-block-s-meadows-drive",
+    "lat": 30.36229,
+    "lon": -97.68394
+  },
+  {
+    "n": 6,
+    "date": "2026-01-26",
+    "address": "5900 Wagon Bend, Austin, TX",
+    "victim": "Denise Tijerina, 45",
+    "summary": "Shot in the head, suspect charged with first-degree murder",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-5900-block-wagon-bend",
+    "lat": 30.19547,
+    "lon": -97.75994
+  },
+  {
+    "n": 7,
+    "date": "2026-01-31",
+    "address": "1054 Springdale Road, Austin, TX",
+    "victim": "Robert Garcia, 66",
+    "summary": "Severe head trauma at homeless encampment",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1054-springdale-road",
+    "lat": 30.27186,
+    "lon": -97.69304
+  },
+  {
+    "n": 8,
+    "date": "2026-02-14",
+    "address": "6715 Windrift Way, Austin, TX",
+    "victim": "Megan Montgomery, 38",
+    "summary": "Murder-suicide, stabbed by partner",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-6715-windrift-way",
+    "lat": 30.20051,
+    "lon": -97.79727
+  },
+  {
+    "n": 9,
+    "date": "2026-02-15",
+    "address": "1201 E Rundberg Lane, Austin, TX",
+    "victim": "Jamal Elijah",
+    "summary": "Shot near Gus Garcia Recreation Center",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1201-e-rundberg-lane",
+    "lat": 30.3526,
+    "lon": -97.68204
+  },
+  {
+    "n": 10,
+    "date": "2026-02-21",
+    "address": "1400 E Rundberg Lane, Austin, TX",
+    "victim": "Unidentified male",
+    "summary": "Shot near dumpster at 3 AM",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1400-e-rundberg-lane",
+    "lat": 30.35228,
+    "lon": -97.67792
+  },
+  {
+    "n": 11,
+    "date": "2026-02-28",
+    "address": "914 E Braker Lane, Austin, TX",
+    "victim": "Benjamin Biesecker, 52",
+    "summary": "Multiple gunshot wounds at homeless encampment",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-914-e-braker-lane",
+    "lat": 30.37609,
+    "lon": -97.67364
+  },
+  {
+    "n": 12,
+    "date": "2026-03-01",
+    "address": "700 W 6th Street, Austin, TX",
+    "victim": "3 victims killed (FBI investigated as possible terrorism)",
+    "summary": "Gunman fired into crowd at Buford's Backyard, FBI investigated as possible terrorism",
+    "url": "https://www.austintexas.gov/police/news/apd-investigates-march-1-2026-officer-involved-shooting-700-block-west-6th-street",
+    "lat": 30.27034,
+    "lon": -97.74967,
+    "count": 3
+  },
+  {
+    "n": 15,
+    "date": "2026-03-11",
+    "address": "201 W 5th Street, Austin, TX",
+    "victim": "Unidentified male",
+    "summary": "Altercation at Plains Capital Bank, security guard ruled self-defense",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-201-west-5th-street",
+    "lat": 30.26734,
+    "lon": -97.745
+  },
+  {
+    "n": 16,
+    "date": "2026-03-22",
+    "address": "4700 Loyola Lane, Austin, TX",
+    "victim": "Nicholas Zarate, 47",
+    "summary": "Shot at approximately 5 PM, suspect fled on foot",
+    "url": "",
+    "lat": 30.30965,
+    "lon": -97.6663
+  },
+  {
+    "n": 17,
+    "date": "2026-04-02",
+    "address": "8201 Tuscany Way, Austin, TX",
+    "victim": "William Rogers, 35",
+    "summary": "Shot at Penske rental over moving deposit dispute",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-8201-tuscany-way",
+    "lat": 30.32715,
+    "lon": -97.65871
+  },
+  {
+    "n": 18,
+    "date": "2026-04-03",
+    "address": "10900 Brazoria Lane, Austin, TX",
+    "victim": "Unidentified male, 35",
+    "summary": "Found with gunshot wounds, callers reported hearing shots",
+    "url": "",
+    "lat": 30.48241,
+    "lon": -97.79142
+  },
+  {
+    "n": 19,
+    "date": "2026-04-08",
+    "address": "12435 Dessau Road (Nova North Apartments), Austin, TX",
+    "victim": "Unidentified male",
+    "summary": "Found with gunshot wounds at Nova North Apartments. Died at scene ~7:10 PM. APD Homicide investigating. Believed isolated incident, no suspect in custody.",
+    "url": "https://www.kxan.com/news/local/austin/homicide-investigation-underway-near-busy-northeast-austin-intersection/",
+    "lat": 30.390743,
+    "lon": -97.646871
+  }
+]
