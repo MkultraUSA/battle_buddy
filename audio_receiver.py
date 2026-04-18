@@ -2134,6 +2134,7 @@ APD_NEWS_URL      = (
     "&hl=en-US&gl=US&ceid=US:en"
 )
 APD_NEWS_INTERVAL = 300   # poll every 5 minutes
+_ARTICLE_MAX_AGE_SECS = 72 * 3600  # reject news articles older than 72h from radio-call matching
 
 # Broader Google News search for Austin traffic fatalities — used to link
 # crash articles to radio-detected incidents. No incident creation on no-match.
@@ -2501,7 +2502,15 @@ def apd_news_thread():
             else:
                 itype = "SHOOTING"
 
-            ts   = article.get("pub_ts") or time.time()
+            pub_ts = article.get("pub_ts")
+            if not pub_ts:
+                print(f"[news] SKIP apd_pr (no pub_ts): {article['title']}", flush=True)
+                continue
+            if time.time() - pub_ts > _ARTICLE_MAX_AGE_SECS:
+                age_h = (time.time() - pub_ts) / 3600
+                print(f"[news] SKIP apd_pr (stale {age_h:.1f}h): {article['title']}", flush=True)
+                continue
+            ts   = pub_ts
             desc = f"[APD Press Release] {article['title']}. {summary[:200]}"
 
             # Try to match article to an existing radio-detected incident
@@ -2613,7 +2622,14 @@ def apd_news_thread():
                     ta.get("source_url", ""), ta["title"], ta["link"])
                 art_itype = "FATAL CRASH" if any(
                     w in ttitle for w in ("fatal","killed","dead","deadly")) else "CRASH/COLLISION"
-                tts = ta.get("pub_ts") or time.time()
+                tts = ta.get("pub_ts")
+                if not tts:
+                    print(f"[news] SKIP traffic-news (no pub_ts): {ta['title']}", flush=True)
+                    continue
+                if time.time() - tts > _ARTICLE_MAX_AGE_SECS:
+                    age_h = (time.time() - tts) / 3600
+                    print(f"[news] SKIP traffic-news (stale {age_h:.1f}h): {ta['title']}", flush=True)
+                    continue
                 t_inc_id, t_score = _match_article_to_incident(ta["title"], art_itype, tts)
                 if t_inc_id:
                     _store_article_link(t_inc_id, tts, ta["title"], turl,
@@ -3268,6 +3284,266 @@ def traffic_open_data_thread():
 
 
 
+# ---------------------------------------------------------------------------
+# ATXFloods — Low-water-crossing closures poller (api.atxfloods.com)
+# ---------------------------------------------------------------------------
+
+ATXFLOODS_URL = "https://api.atxfloods.com/api/crossings"
+ATXFLOODS_POLL_INTERVAL = 300  # 5 minutes
+
+_atxfloods_state: dict[int, dict] = {}
+_atxfloods_lock = threading.Lock()
+
+
+def _atxfloods_post_to_talk(crossing: dict, new_status: str, old_status):
+    name    = crossing.get("name", "?")
+    jur     = crossing.get("jurisdiction", "?")
+    addr    = crossing.get("address", "")
+    lat     = crossing.get("lat")
+    lon     = crossing.get("lon")
+    coords  = f" ({lat}, {lon})" if lat and lon else ""
+    comment = (crossing.get("comment") or "").strip()
+    verb    = {"closed": "CLOSED", "caution": "CAUTION", "open": "REOPENED"}.get(
+        new_status, new_status.upper()
+    )
+    lines = [f"[FLOODING {verb}] {name} ({jur})", f"{addr}{coords}"]
+    if comment:
+        lines.append(f"Note: {comment}")
+    if old_status:
+        lines.append(f"State: {old_status} -> {new_status}")
+    msg = "\n".join(lines)
+
+    payload = json.dumps({"message": msg}).encode()
+    creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
+    headers = {"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
+               "Content-Type": "application/json"}
+    room_token = TALK_ROOMS["incidents"]
+    url  = f"{TALK_BASE}/chat/{room_token}"
+    req  = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        print(f"[atxfloods] posted: {verb} {name}", flush=True)
+    except Exception as e:
+        print(f"[atxfloods] Talk post failed: {e}", flush=True)
+
+
+def atxfloods_thread():
+    """Poll ATXFloods and alert on state transitions (first sighting silent)."""
+    print("[atxfloods] ATXFloods poller started", flush=True)
+    while True:
+        try:
+            req = urllib.request.Request(ATXFLOODS_URL,
+                                         headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                payload = json.loads(resp.read())
+        except Exception as e:
+            print(f"[atxfloods] fetch error: {e}", flush=True)
+            time.sleep(ATXFLOODS_POLL_INTERVAL)
+            continue
+
+        crossings = payload.get("attributes", []) if isinstance(payload, dict) else []
+        if not crossings:
+            print("[atxfloods] empty response", flush=True)
+            time.sleep(ATXFLOODS_POLL_INTERVAL)
+            continue
+
+        transitions = 0
+        with _atxfloods_lock:
+            for c in crossings:
+                try:
+                    cid = int(c["id"])
+                except (KeyError, ValueError, TypeError):
+                    continue
+                status = (c.get("status") or "").lower()
+                if status not in ("open", "closed", "caution"):
+                    continue
+
+                prev = _atxfloods_state.get(cid)
+                if prev is None:
+                    # First sighting — seed state silently, no alert, no marker
+                    _atxfloods_state[cid] = {"status": status, "marker_id": None}
+                    continue
+                if prev["status"] == status:
+                    continue
+
+                old_status = prev["status"]
+                prev["status"] = status
+                transitions += 1
+                _atxfloods_post_to_talk(c, status, old_status)
+
+                try:
+                    lat = float(c["lat"]); lon = float(c["lon"])
+                except (KeyError, ValueError, TypeError):
+                    lat = lon = None
+
+                if status == "open" and prev.get("marker_id") is not None:
+                    threading.Thread(target=_atak_clear_marker,
+                                     args=(prev["marker_id"],), daemon=True).start()
+                    prev["marker_id"] = None
+                elif status in ("closed", "caution") and lat is not None and lon is not None:
+                    marker_id = -(abs(cid) % 100000) - 200001
+                    prev["marker_id"] = marker_id
+                    label = f"{c.get('name','')} {c.get('address','')}".strip()
+                    threading.Thread(
+                        target=_atak_post_marker,
+                        args=(marker_id, lat, lon, "FLOODING", label),
+                        daemon=True,
+                    ).start()
+
+        if transitions:
+            print(f"[atxfloods] {transitions} state transition(s) this cycle", flush=True)
+        time.sleep(ATXFLOODS_POLL_INTERVAL)
+
+
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Austin major events — weekly "this week in Austin" digest
+# ---------------------------------------------------------------------------
+# Reads /opt/battlebuddy/austin_major_events.json and posts a summary to the
+# incidents Talk room when events are within 7 days. File is re-read every
+# poll cycle — edits take effect without a service restart.
+# ---------------------------------------------------------------------------
+
+AUSTIN_EVENTS_JSON   = "/opt/battlebuddy/austin_major_events.json"
+AUSTIN_EVENTS_STATE  = "/opt/battlebuddy/austin_events_state.json"
+AUSTIN_EVENTS_POLL   = 6 * 3600   # 6 hours
+AUSTIN_EVENTS_WINDOW = 7          # days
+
+
+def _austin_events_load():
+    try:
+        with open(AUSTIN_EVENTS_JSON) as fh:
+            return json.load(fh)
+    except Exception as e:
+        print(f"[events] load failed: {e}", flush=True)
+        return {"events": []}
+
+
+def _austin_events_upcoming(doc, today):
+    from datetime import date as _date
+    horizon = today + timedelta(days=AUSTIN_EVENTS_WINDOW)
+    out = []
+    for ev in doc.get("events", []):
+        try:
+            s_ = _date.fromisoformat(ev["start"])
+            e_ = _date.fromisoformat(ev.get("end") or ev["start"])
+        except Exception:
+            continue
+        if s_ <= horizon and e_ >= today:
+            out.append(ev)
+    out.sort(key=lambda x: x.get("start", ""))
+    return out
+
+
+def _austin_events_state_load():
+    try:
+        with open(AUSTIN_EVENTS_STATE) as fh:
+            return json.load(fh)
+    except Exception:
+        return {"last_post_date": None, "last_event_ids": []}
+
+
+def _austin_events_state_save(state):
+    try:
+        with open(AUSTIN_EVENTS_STATE, "w") as fh:
+            json.dump(state, fh)
+    except Exception as e:
+        print(f"[events] state save failed: {e}", flush=True)
+
+
+def _austin_events_format(events, today):
+    if not events:
+        return None
+    lines = [f"📅 This week in Austin (window: {today.isoformat()} + {AUSTIN_EVENTS_WINDOW} days):"]
+    for ev in events:
+        start = ev.get("start", "?")
+        end   = ev.get("end") or start
+        rng   = start if end == start else f"{start} → {end}"
+        extras = []
+        tier = ev.get("tier")
+        if tier == "major":
+            extras.append("MAJOR regional impact")
+        elif tier == "large":
+            extras.append("large impact")
+        if ev.get("blast_radius_mi"):
+            extras.append(f"{ev['blast_radius_mi']}mi radius")
+        if ev.get("venue"):
+            extras.append(ev["venue"])
+        tail = f"  ({', '.join(extras)})" if extras else ""
+        lines.append(f"  • {rng}  {ev.get('name','?')}{tail}")
+    return "\n".join(lines)
+
+
+def _austin_events_post_to_talk(msg):
+    payload = json.dumps({"message": msg}).encode()
+    creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
+    headers = {"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
+               "Content-Type": "application/json"}
+    url = f"{TALK_BASE}/chat/{TALK_ROOMS['incidents']}"
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        print("[events] weekly summary posted", flush=True)
+    except Exception as e:
+        print(f"[events] Talk post failed: {e}", flush=True)
+
+
+def austin_events_thread():
+    """Post a 'this week in Austin' digest when the 7-day window changes
+    or when >=7 days have passed since the last post."""
+    print("[events] Austin major events poller started", flush=True)
+    try:
+        import zoneinfo
+        austin_tz = zoneinfo.ZoneInfo("America/Chicago")
+    except Exception:
+        austin_tz = None
+    from datetime import datetime as _dt, date as _date
+    while True:
+        try:
+            now_austin = _dt.now(austin_tz) if austin_tz else _dt.now()
+            today = now_austin.date()
+            doc = _austin_events_load()
+            events = _austin_events_upcoming(doc, today)
+            state = _austin_events_state_load()
+            current_ids = [e.get("id") for e in events]
+            last_date_s = state.get("last_post_date")
+            last_ids    = state.get("last_event_ids", [])
+            days_since = None
+            if last_date_s:
+                try:
+                    days_since = (today - _date.fromisoformat(last_date_s)).days
+                except Exception:
+                    days_since = None
+
+            should_post = False
+            reason = None
+            if events and current_ids != last_ids:
+                should_post = True
+                reason = "event list changed"
+            elif events and (days_since is None or days_since >= 7):
+                should_post = True
+                reason = "weekly cadence"
+
+            if should_post:
+                msg = _austin_events_format(events, today)
+                if msg:
+                    _austin_events_post_to_talk(msg)
+                    _austin_events_state_save({
+                        "last_post_date": today.isoformat(),
+                        "last_event_ids": current_ids,
+                    })
+                    print(f"[events] posted ({reason}): {len(events)} events", flush=True)
+            else:
+                print(f"[events] quiet: {len(events)} events in window, "
+                      f"last posted {last_date_s} ({days_since}d ago)", flush=True)
+        except Exception as e:
+            print(f"[events] cycle error: {e}", flush=True)
+        time.sleep(AUSTIN_EVENTS_POLL)
+
+
+# ---------------------------------------------------------------------------
 # Austin PD CAD — Retrospective enrichment poller
 # ---------------------------------------------------------------------------
 # Polls the APD Computer Aided Dispatch open data feed (~2 week lag) and
@@ -3438,6 +3714,15 @@ def _cad_match_and_harvest():
         LIMIT 2000
     """, (cutoff,)).fetchall()
 
+    # Pre-load scanner incidents already claimed by a prior CAD match
+    # so we enforce one CAD row per scanner incident.
+    claimed_ids = {
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT matched_incident_id FROM apd_cad "
+            "WHERE matched_incident_id IS NOT NULL"
+        ).fetchall()
+    }
+
     matched = 0
     harvested_hints = 0
 
@@ -3463,6 +3748,8 @@ def _cad_match_and_harvest():
         best_confidence = None
 
         for inc in candidates:
+            if inc["id"] in claimed_ids:
+                continue
             inc_itype = inc["itype"] or ""
             # High confidence: type matches
             if bb_itype and inc_itype == bb_itype:
@@ -3483,17 +3770,19 @@ def _cad_match_and_harvest():
 
         if best_match_id:
             matched += 1
-            # Enrich the scanner incident with CAD data
-            conn.execute("""
-                UPDATE incidents SET
-                    description = description || ' [CAD: ' || ? || ', ' || ? || ', sector ' || ? || ']'
-                WHERE id = ? AND description NOT LIKE '%[CAD:%'
-            """, (
-                cad["final_description"] or cad["initial_description"] or "",
-                cad["disposition"] or "",
-                sector or "?",
-                best_match_id,
-            ))
+            claimed_ids.add(best_match_id)
+            # Enrich the scanner incident only on high-confidence matches
+            if best_confidence == "high":
+                conn.execute("""
+                    UPDATE incidents SET
+                        description = description || ' [CAD: ' || ? || ', ' || ? || ', sector ' || ? || ']'
+                    WHERE id = ? AND description NOT LIKE '%[CAD:%'
+                """, (
+                    cad["final_description"] or cad["initial_description"] or "",
+                    cad["disposition"] or "",
+                    sector or "?",
+                    best_match_id,
+                ))
 
         # Harvest TGID hints regardless of incident match, for worthwhile categories
         if sector and init_cat in _CAD_HARVEST_CATEGORIES:
@@ -3511,6 +3800,9 @@ def _cad_match_and_harvest():
 
             for tr in tgid_rows:
                 tgid = tr["tgid"]
+                # Skip already-tagged/ignored TGIDs — harvest is for unknown discovery
+                if tgid in TGID_META or tgid in IGNORE_TGIDS:
+                    continue
                 conn.execute("""
                     INSERT INTO tgid_sector_hints (tgid, sector, hit_count, last_seen)
                     VALUES (?, ?, 1, ?)
@@ -4040,6 +4332,84 @@ def test_call():
 @app.route("/api/calls")
 def api_calls():
     return jsonify(recent_calls(200))
+
+
+# --- Prometheus metrics endpoint (added 2026-04-18 / bak39) ---
+try:
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry
+    from prometheus_client.core import CounterMetricFamily
+
+    _BB_METRICS_REGISTRY = CollectorRegistry()
+
+    class _BBMetricsCollector:
+        def collect(self):
+            try:
+                c = sqlite3.connect(DB_PATH, timeout=5.0)
+                cur = c.cursor()
+
+                cur.execute(
+                    "SELECT COALESCE(itype,'unknown'), COUNT(*) "
+                    "FROM incidents WHERE (is_test IS NULL OR is_test=0) "
+                    "GROUP BY itype"
+                )
+                m = CounterMetricFamily(
+                    "battlebuddy_incidents",
+                    "Total non-test incidents detected by Battle Buddy, by itype",
+                    labels=["itype"],
+                )
+                for itype, count in cur.fetchall():
+                    m.add_metric([str(itype)], float(count))
+                yield m
+
+                cur.execute("SELECT COUNT(*) FROM calls")
+                (call_count,) = cur.fetchone()
+                m2 = CounterMetricFamily(
+                    "battlebuddy_calls",
+                    "Total transcribed radio calls across all talkgroups",
+                )
+                m2.add_metric([], float(call_count))
+                yield m2
+
+                cur.execute(
+                    "SELECT "
+                    "  CASE "
+                    "    WHEN tag LIKE 'APD%' THEN 'APD' "
+                    "    WHEN tag LIKE 'AFD%' THEN 'AFD' "
+                    "    WHEN tag LIKE 'TCEMS%' THEN 'TCEMS' "
+                    "    WHEN tag LIKE 'TCSO%' THEN 'TCSO' "
+                    "    WHEN tag LIKE 'LE %' OR tag LIKE 'LE/%' OR tag LIKE 'Lago%' THEN 'LE_other' "
+                    "    WHEN tag LIKE '%Scanner%' THEN 'scanner_gateway' "
+                    "    ELSE 'other' "
+                    "  END AS agency, "
+                    "  COUNT(*) "
+                    "FROM calls GROUP BY agency"
+                )
+                m3 = CounterMetricFamily(
+                    "battlebuddy_calls_by_agency",
+                    "Total transcribed radio calls grouped by agency prefix",
+                    labels=["agency"],
+                )
+                for agency, count in cur.fetchall():
+                    m3.add_metric([str(agency)], float(count))
+                yield m3
+
+                c.close()
+            except Exception as _e:
+                print(f"[metrics] collector error: {_e}", flush=True)
+
+    _BB_METRICS_REGISTRY.register(_BBMetricsCollector())
+
+    @app.route("/metrics")
+    def prometheus_metrics():
+        return (
+            generate_latest(_BB_METRICS_REGISTRY),
+            200,
+            {"Content-Type": CONTENT_TYPE_LATEST},
+        )
+except Exception as _metrics_init_err:
+    print(f"[metrics] disabled \u2014 init failed: {_metrics_init_err}", flush=True)
+# --- end Prometheus metrics ---
+
 
 
 @app.route("/api/sitrep")
@@ -9362,6 +9732,17 @@ function updateUI(){
   const bname=billing.charAt(0).toUpperCase()+billing.slice(1);
   document.getElementById('sub-btn').textContent='Start Free Trial — '+tname+' '+bname+' →';
 }
+// Pre-select tier + billing from ?plan= URL param (used by libertas.mobi deep links)
+(function(){
+  var params = new URLSearchParams(window.location.search);
+  var p = params.get('plan');
+  var valid = ['basic_monthly','basic_annual','premium_monthly','premium_annual'];
+  if (p && valid.indexOf(p) !== -1) {
+    var parts = p.split('_');
+    selectPlan(parts[0]);
+    setBilling(parts[1]);
+  }
+})();
 function showLogin(){document.getElementById('login-box').style.display='block';}
 async function subscribe() {
   const username = document.getElementById('username').value.trim().toLowerCase();
@@ -9443,6 +9824,8 @@ if __name__ == "__main__":
     threading.Thread(target=pi_watchdog_thread,       daemon=True).start()
     threading.Thread(target=afd_open_data_thread,     daemon=True).start()
     threading.Thread(target=traffic_open_data_thread, daemon=True).start()
+    threading.Thread(target=atxfloods_thread,         daemon=True).start()
+    threading.Thread(target=austin_events_thread,    daemon=True).start()
     threading.Thread(target=apd_cad_thread,          daemon=True).start()
     threading.Thread(target=apd_news_thread,          daemon=True).start()
     threading.Thread(target=reddit_intel_thread,      daemon=True).start()
