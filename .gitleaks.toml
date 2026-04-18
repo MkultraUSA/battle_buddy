@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Historical credentials in pre-cleanup commits, already burned and rotated"
+commits = [
+  "ae5fcef813c55489454f5779cbc6a82e104318ce",
+  "bdb0fb49d251a5d1318891bdc1cfd5a2f3da625d"
+]
