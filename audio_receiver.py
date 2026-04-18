@@ -8425,6 +8425,7 @@ def api_intel_query():
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=400,
+                temperature=0.2,
                 system="You are an intelligence analyst monitoring Austin, TX public safety radio traffic. You summarize publicly broadcast scanner data for journalists, researchers, and public safety professionals.",
                 messages=[{"role": "user", "content": prompt}],
             )
