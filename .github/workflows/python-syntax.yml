@@ -1,0 +1,24 @@
+name: python-syntax
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  compile:
+    name: py_compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Byte-compile all .py files
+        run: |
+          python -m compileall -q -f .
+        shell: bash
