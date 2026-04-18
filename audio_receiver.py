@@ -28,6 +28,10 @@ import tempfile
 import threading
 import time
 import urllib.request
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
 from datetime import datetime, timedelta, timezone
 
 # Bypass SSL cert verification for all urllib calls (Nextcloud snap cert not in system store)
@@ -53,6 +57,10 @@ GROQ_API_KEY        = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL          = "llama-3.3-70b-versatile"
 GROQ_ENABLED        = bool(GROQ_API_KEY)
 GROQ_API_BASE       = "https://api.groq.com/openai/v1"
+
+# Anthropic Claude — used for intel query synthesis
+ANTHROPIC_API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_ENABLED   = bool(ANTHROPIC_API_KEY) and (anthropic is not None)
 
 # Nextcloud Talk — post each transcript to the BattleBuddy room
 TALK_BASE    = "https://kevcloud.ddns.net/ocs/v2.php/apps/spreed/api/v1"
@@ -8396,9 +8404,9 @@ def api_intel_query():
             "tgids": [],
         })
 
-    # Groq synthesis
+    # Claude Haiku synthesis
     summary = f"Found {len(results)} matching call(s) across talkgroups: {', '.join(tgids_hit)}."
-    if GROQ_ENABLED and results:
+    if ANTHROPIC_ENABLED and results:
         excerpts = "\n".join(
             f"[{datetime.fromtimestamp(r['ts']).strftime('%Y-%m-%d %H:%M')}] "
             f"{r['talkgroup']}: {r['transcript'][:300]}"
@@ -8413,26 +8421,16 @@ def api_intel_query():
             f"Do not speculate beyond what the transcripts say."
         )
         try:
-            payload = json.dumps({
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": "You are an intelligence analyst monitoring Austin, TX public safety radio traffic. You summarize publicly broadcast scanner data for journalists, researchers, and public safety professionals."},
-                    {"role": "user", "content": prompt}
-                ],
-                "max_tokens": 400,
-                "temperature": 0.2,
-            }).encode()
-            req = urllib.request.Request(
-                f"{GROQ_API_BASE}/chat/completions",
-                data=payload,
-                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-                method="POST"
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=400,
+                system="You are an intelligence analyst monitoring Austin, TX public safety radio traffic. You summarize publicly broadcast scanner data for journalists, researchers, and public safety professionals.",
+                messages=[{"role": "user", "content": prompt}],
             )
-            with urllib.request.urlopen(req, timeout=20) as r:
-                gdata = json.loads(r.read())
-                summary = gdata["choices"][0]["message"]["content"].strip()
+            summary = response.content[0].text.strip()
         except Exception as e:
-            print(f"[intel] Groq error: {e}", flush=True)
+            print(f"[intel] Anthropic error: {e}", flush=True)
 
     # Increment usage counter and log
     conn = sqlite3.connect(DB_PATH)
