@@ -8383,7 +8383,7 @@ def api_intel_query():
         params = [f"%{k}%" for k in keywords]
         rows = conn.execute(
             f"SELECT ts, tgid, tag, transcript "
-            f"FROM calls WHERE ({like_clauses}) ORDER BY ts DESC LIMIT 50",
+            f"FROM calls WHERE tgid != 0 AND ({like_clauses}) ORDER BY ts DESC LIMIT 50",
             params
         ).fetchall()
         for ts, tgid, tgname, transcript in rows:
