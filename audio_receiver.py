@@ -2785,6 +2785,13 @@ def reddit_intel_thread():
                 title   = _html.unescape((entry.findtext("atom:title", default="", namespaces=ns) or "").strip())
                 link_el = entry.find("atom:link[@rel='alternate']", ns)
                 url     = link_el.attrib.get("href", "") if link_el is not None else ""
+                if not url:
+                    # Fallback: some Reddit Atom entries omit rel=alternate or use a bare <link href=...>.
+                    any_link = entry.find("atom:link", ns)
+                    if any_link is not None:
+                        url = any_link.attrib.get("href", "") or ""
+                if not url and post_id:
+                    url = f"https://www.reddit.com/r/{subreddit}/comments/{post_id}/"
                 author_el = entry.find("atom:author/atom:name", ns)
                 author  = author_el.text.strip() if author_el is not None else ""
                 content_el = entry.find("atom:content", ns)
