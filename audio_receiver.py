@@ -28,7 +28,7 @@ import tempfile
 import threading
 import time
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Bypass SSL cert verification for all urllib calls (Nextcloud snap cert not in system store)
 _ssl_ctx = ssl._create_unverified_context()
@@ -1561,7 +1561,7 @@ def _fts_connect():
         raw = _sock_mod.create_connection((FTS_HOST, FTS_COT_PORT), timeout=10)
         _fts_socket = _fts_build_ctx().wrap_socket(raw)
         # Send our SA announcement so FTS registers us as a proper client
-        now_dt  = datetime.utcnow()
+        now_dt  = datetime.now(timezone.utc)
         stale_dt = now_dt + __import__('datetime').timedelta(minutes=10)
         fmt = "%Y-%m-%dT%H:%M:%S.0Z"
         sa = _BB_SA_XML.format(uid=_BB_SA_UID,
@@ -1598,7 +1598,7 @@ def _fts_keepalive_thread():
     while True:
         time.sleep(30)
         try:
-            now_dt   = datetime.utcnow()
+            now_dt   = datetime.now(timezone.utc)
             stale_dt = now_dt + __import__('datetime').timedelta(minutes=2)
             fmt = "%Y-%m-%dT%H:%M:%S.0Z"
             sa = _BB_SA_XML.format(uid=_BB_SA_UID,
@@ -1691,7 +1691,7 @@ def _atak_post_marker(incident_id: int, lat: float, lon: float, itype: str,
     uid      = f"BB-INC-{incident_id}"
     callsign = (f"{itype} @ {location}" if location else itype)[:60]
     remarks  = (description or callsign)[:200]
-    now_dt   = datetime.utcnow()
+    now_dt   = datetime.now(timezone.utc)
     stale_dt = now_dt + timedelta(minutes=stale_min)
     fmt      = "%Y-%m-%dT%H:%M:%S.0Z"
     now      = now_dt.strftime(fmt)
@@ -1725,7 +1725,7 @@ def _atak_clear_marker(incident_id: int):
     uid = _atak_markers.pop(incident_id, None)
     if not uid or not FTS_ENABLED:
         return
-    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.0Z")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.0Z")
     xml = (
         f"<?xml version='1.0' encoding='UTF-8'?>"
         f"<event version='2.0' uid='{uid}' type='t-x-d-d' "
@@ -3634,7 +3634,7 @@ def _cad_init_db():
 
 def _cad_fetch_and_store():
     """Fetch CAD records from the last 14 days and upsert into apd_cad."""
-    lookback_dt = (datetime.utcnow() - timedelta(days=APD_CAD_LOOKBACK_DAYS))
+    lookback_dt = (datetime.now(timezone.utc) - timedelta(days=APD_CAD_LOOKBACK_DAYS))
     lookback_str = lookback_dt.strftime("'%Y-%m-%dT%H:%M:%S'")
     url = APD_CAD_URL.format(lookback=lookback_str)
 
@@ -6725,7 +6725,7 @@ def _export_incident_snapshot(inc_id: int):
 
     lines += [
         "---",
-        f"*Exported by Battle Buddy — {_dt.utcnow().strftime('%Y-%m-%d %H:%M UTC')}*",
+        f"*Exported by Battle Buddy — {_dt.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*",
     ]
 
     slug     = start_str[:10].replace("-", "") + f"_{inc['itype'].replace(' ','_').replace('/','_')}_{inc_id}"
