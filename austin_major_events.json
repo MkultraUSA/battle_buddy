@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "updated": "2026-04-18",
+  "notes": "Edit this file freely \u2014 the events thread re-reads it on every poll cycle (6h). Add events with verified dates; events will appear in Talk summary when within 7 days of start.",
+  "events": [
+    {
+      "id": "f1-usgp-2026",
+      "name": "Formula 1 United States Grand Prix",
+      "start": "2026-10-23",
+      "end": "2026-10-25",
+      "venue": "Circuit of the Americas",
+      "lat": 30.1328,
+      "lon": -97.6411,
+      "tier": "major",
+      "blast_radius_mi": 25,
+      "impact": [
+        "SH-130",
+        "US-183",
+        "FM-812",
+        "SE Travis County"
+      ],
+      "source": "https://www.formula1.com/en/racing/2026",
+      "date_confidence": "verified"
+    },
+    {
+      "id": "acl-2026-w1",
+      "name": "Austin City Limits Music Festival \u2014 Weekend 1",
+      "start": "2026-10-02",
+      "end": "2026-10-04",
+      "venue": "Zilker Park",
+      "lat": 30.2669,
+      "lon": -97.7729,
+      "tier": "major",
+      "blast_radius_mi": 10,
+      "impact": [
+        "Zilker",
+        "MoPac",
+        "Barton Springs Rd",
+        "Lamar Blvd"
+      ],
+      "source": "https://www.aclfestival.com/",
+      "date_confidence": "verified"
+    },
+    {
+      "id": "acl-2026-w2",
+      "name": "Austin City Limits Music Festival \u2014 Weekend 2",
+      "start": "2026-10-09",
+      "end": "2026-10-11",
+      "venue": "Zilker Park",
+      "lat": 30.2669,
+      "lon": -97.7729,
+      "tier": "major",
+      "blast_radius_mi": 10,
+      "impact": [
+        "Zilker",
+        "MoPac",
+        "Barton Springs Rd",
+        "Lamar Blvd"
+      ],
+      "source": "https://www.aclfestival.com/",
+      "date_confidence": "verified"
+    },
+    {
+      "id": "austin-pride-parade-2026",
+      "name": "Austin Pride Parade",
+      "start": "2026-08-22",
+      "end": "2026-08-22",
+      "venue": "Downtown Austin",
+      "lat": 30.2711,
+      "lon": -97.7437,
+      "tier": "large",
+      "blast_radius_mi": 3,
+      "impact": [
+        "Congress Ave",
+        "6th St",
+        "downtown"
+      ],
+      "source": "https://austinpride.org/",
+      "date_confidence": "verified"
+    },
+    {
+      "id": "austin-film-fest-2026",
+      "name": "Austin Film Festival",
+      "start": "2026-10-29",
+      "end": "2026-11-05",
+      "venue": "Multiple downtown venues",
+      "lat": 30.2672,
+      "lon": -97.7431,
+      "tier": "medium",
+      "blast_radius_mi": 2,
+      "impact": [
+        "downtown theaters"
+      ],
+      "source": "https://austinfilmfestival.com/",
+      "date_confidence": "verified"
+    }
+  ],
+  "events_to_add_manually": [
+    "UT Longhorns home football games (Aug\u2013Dec 2026) \u2014 texassports.com schedule",
+    "MotoGP Red Bull Grand Prix of the Americas (likely Apr 2027) \u2014 motogp.com",
+    "Trail of Lights (Dec 2026) \u2014 austintrailoflights.org",
+    "Austin Marathon 2027 (Feb 2027) \u2014 youraustinmarathon.com",
+    "Rodeo Austin 2027 (Mar 2027) \u2014 rodeoaustin.com",
+    "SXSW 2027 (Mar 2027) \u2014 sxsw.com",
+    "Trail of Lights 2026 (Dec 2026)",
+    "4th of July Symphony / Fireworks (Jul 4, 2026)",
+    "Texas Relays 2027 (Mar 2027)"
+  ]
+}
