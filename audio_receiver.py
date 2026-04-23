@@ -1244,6 +1244,11 @@ TGID_TIER: dict[int, int] = {
     1371: 1, 1377: 1, 1378: 1,                  # AFD zonal (East/North/South)
     1471: 1, 1472: 2, 1473: 2,                  # ABIA Ops / Security / Fire
     1474: 2, 1480: 3, 1481: 3,                  # ABIA Police / Emerg / Alert
+    989: 2,                                      # APD Air/K9
+    **{tgid: 2 for tgid in range(1020, 1027)},  # APD Narc 1-7
+    1274: 2,                                     # TCEMS SWAT
+    2409: 3, 2410: 3,                            # TCSO SWAT 1-2
+    5291: 2, 5292: 2,                            # Austin/Travis Interop 1-2
 }
 
 # Minimum tier required for each escalation stage.
