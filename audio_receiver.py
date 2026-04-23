@@ -2943,8 +2943,6 @@ def _adsb_check_orbit(icao24: str, now: float) -> bool:
     min_h = min(headings)
     max_h = max(headings)
     span = max_h - min_h
-    if span > 180:
-        span = 360 - span
     return span >= 180
 
 
