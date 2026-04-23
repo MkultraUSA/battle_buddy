@@ -1676,6 +1676,7 @@ def _atak_resync_thread():
 _FEMA_FIRE_ICON      = "f8f7f666-8b28-4b57-9fbb-e48e61d33b79/Iron Sites/Fire Incident.png"
 _GEOOPS_FIRE_ICON    = "83198b4872a8c34eb9c549da8a4de5a28f07821185b39a2277948f66c24ac17a/WildFire/Fire Location.png"
 _RESPONDER_EMS_ICON  = "de450cbf-2ffc-47fb-bd2b-ba2db89b035e/Incident/EMS--Plain.png"
+_HELO_EMS_ICON       = "de450cbf-2ffc-47fb-bd2b-ba2db89b035e/Incident/EMS--Plain.png"
 
 _COT_PROFILE = {
     # itype                 cot_type         argb_color    stale_min  iconsetpath (None = default shape)
@@ -1695,6 +1696,8 @@ _COT_PROFILE = {
     "EMS DISPATCH":        ("a-n-G",          -16711936,    45,  _RESPONDER_EMS_ICON),  # green, EMS
     "HAZMAT":             ("b-m-p-s-m",      -16711681,    60,  None),   # green, hazmat
     "AIR ASSET ACTIVE":   ("a-f-A-M-H-R",    -16776961,    30,  None),   # blue, rotary wing
+    "AIR ASSET EMS":      ("a-f-A-C-H-R",    -16711936,    30,  _HELO_EMS_ICON),  # green civilian rotary
+    "AIR ASSET ORBIT":    ("a-h-A-M-H-R",    -65536,       45,  None),            # red hostile rotary
     "DPS CAPITOL ACTIVATION": ("a-h-G",      -65536,       60,  None),   # red
     "MULTI-AGENCY RESPONSE":  ("a-h-G",      -65536,       60,  None),   # red
     # Traffic incident types
@@ -2695,17 +2698,16 @@ ADSB_MAX_ALT_FT  = 5000  # only track aircraft below 5,000 ft AGL
 ADSB_TRAIL_SECS  = 1800  # 30 minutes of trail history
 ADSB_REFRACTORY  = 1800  # 30 min before re-alerting same aircraft
 
-# Known Austin-area LEO / EMS air assets (icao24 hex → label)
+# Known Austin-area LEO / EMS air assets (icao24 hex → (label, is_leo))
 KNOWN_AIR_ASSETS = {
-    # APD Air Support Unit
-    "a820f8": "APD Air1 (N6227)",          # Eurocopter AS350B3
-    "a064fb": "APD Air Support (N1240W)",   # Eurocopter EC120B
-    # Travis County STAR Flight EMS
-    "a33eb6": "STAR Flight 2 (N308TC)",     # Leonardo AW169
-    "a3426d": "STAR Flight 3 (N309TC)",     # Leonardo AW169
+    "a820f8": ("APD Air1 (N6227)",         True),   # Eurocopter AS350B3 — LEO
+    "a064fb": ("APD Air Support (N1240W)", True),   # Eurocopter EC120B — LEO
+    "a33eb6": ("STAR Flight 2 (N308TC)",   False),  # Leonardo AW169 — EMS
+    "a3426d": ("STAR Flight 3 (N309TC)",   False),  # Leonardo AW169 — EMS
 }
 
 _adsb_seen       : dict[str, float] = {}   # icao24 → last alert timestamp
+_adsb_orbit_seen : dict[str, float] = {}   # icao24 → last orbit-alert timestamp
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Reddit citizen intel poller
@@ -2896,6 +2898,51 @@ def reddit_intel_thread():
 _adsb_lock       = threading.Lock()
 
 
+def _adsb_check_orbit(icao24: str, now: float) -> bool:
+    """Return True if icao24 has been orbiting (circling/hovering) in the last 5 minutes."""
+    import math
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        rows = conn.execute(
+            "SELECT lat, lon, heading FROM aircraft_positions "
+            "WHERE icao24=? AND ts >= ? ORDER BY ts",
+            (icao24, now - 300)
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return False
+
+    if len(rows) < 6:
+        return False
+
+    lats = [r[0] for r in rows]
+    lons = [r[1] for r in rows]
+    headings = [r[2] for r in rows if r[2] is not None]
+
+    clat = sum(lats) / len(lats)
+    clon = sum(lons) / len(lons)
+
+    def _km(la, lo, lb, lb2):
+        R = 6371.0
+        dlat = math.radians(lb - la)
+        dlon = math.radians(lb2 - lo)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(la)) * math.cos(math.radians(lb)) * math.sin(dlon/2)**2
+        return R * 2 * math.asin(math.sqrt(a))
+
+    max_dist = max(_km(clat, clon, la, lo) for la, lo in zip(lats, lons))
+    if max_dist > 1.2:
+        return False
+
+    if len(headings) < 5:
+        return False
+    min_h = min(headings)
+    max_h = max(headings)
+    span = max_h - min_h
+    if span > 180:
+        span = 360 - span
+    return span >= 180
+
+
 def adsb_air_asset_thread():
     """Poll adsb.lol every 30s for low-altitude helicopters over Austin.
 
@@ -2973,8 +3020,7 @@ def adsb_air_asset_thread():
             category = (ac.get("category") or "").upper()
             is_helo  = category.startswith("A7") or category.startswith("B")
 
-            label  = KNOWN_AIR_ASSETS.get(icao24)
-            is_leo = label is not None
+            label, is_leo = KNOWN_AIR_ASSETS.get(icao24, (None, False))
 
             # Only track unknown aircraft if it's a helicopter
             if label is None and not is_helo:
@@ -3004,14 +3050,28 @@ def adsb_air_asset_thread():
                 _adsb_seen[icao24] = now
 
             cs_str  = f" ({callsign})" if callsign else ""
-            lbl_str = label or f"Unknown Helicopter"
-            desc    = (
+            lbl_str = label or "Unknown Helicopter"
+
+            if not is_leo:
+                desc = (
+                    f"[ADS-B] {lbl_str}{cs_str} airborne over Austin — "
+                    f"{int(alt_ft)}ft AGL, ICAO {icao24}"
+                )
+                print(f"[adsb] NON-LEO HELO (map only): {desc}", flush=True)
+                synthetic_id = -int(now * 1000) % 2147483647
+                threading.Thread(
+                    target=_atak_post_marker,
+                    args=(synthetic_id, lat, lon, "AIR ASSET EMS", lbl_str + cs_str, desc),
+                    daemon=True
+                ).start()
+                continue
+
+            desc = (
                 f"[ADS-B] {lbl_str}{cs_str} detected over Austin — "
                 f"{int(alt_ft)}ft AGL, ICAO {icao24}"
             )
-            print(f"[adsb] AIR ASSET: {desc}", flush=True)
+            print(f"[adsb] LEO AIR ASSET: {desc}", flush=True)
 
-            # Insert incident
             conn = sqlite3.connect(DB_PATH)
             cur  = conn.execute(
                 "INSERT INTO incidents (ts_start, ts_updated, itype, description, agencies, "
@@ -3024,34 +3084,113 @@ def adsb_air_asset_thread():
             conn.close()
 
             msg = (
-                f"\U0001f681 AIR ASSET DETECTED: {lbl_str}{cs_str}\n"
+                f"\U0001f681 LEO AIR ASSET: {lbl_str}{cs_str}\n"
                 f"Altitude: {int(alt_ft)}ft | ICAO: {icao24}\n"
-                f"Position: {lat:.4f}, {lon:.4f}\n"
-                f"Low-altitude activity over Austin — likely responding to an incident."
+                f"Position: {lat:.4f}, {lon:.4f}"
             )
             payload = json.dumps({"message": msg}).encode()
             creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
             headers = {"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
                        "Content-Type": "application/json"}
+            req2 = urllib.request.Request(
+                f"{TALK_BASE}/chat/{TALK_ROOMS['apd']}",
+                data=payload, headers=headers, method="POST"
+            )
+            try:
+                urllib.request.urlopen(req2, timeout=10)
+            except Exception as e:
+                print(f"[adsb] Talk post failed: {e}", flush=True)
+
+            threading.Thread(
+                target=_atak_post_marker,
+                args=(inc_id, lat, lon, "AIR ASSET ACTIVE", "Austin airspace", desc),
+                daemon=True
+            ).start()
+
+        # ── Orbit detection pass ──────────────────────────────────────────────
+        orbit_now = time.time()
+        try:
+            orb_conn = sqlite3.connect(DB_PATH)
+            leo_icaos = orb_conn.execute(
+                "SELECT DISTINCT icao24 FROM aircraft_positions WHERE is_leo=1 AND ts >= ?",
+                (orbit_now - 300,)
+            ).fetchall()
+            orb_conn.close()
+        except Exception:
+            leo_icaos = []
+
+        for (oicao,) in leo_icaos:
+            with _adsb_lock:
+                if orbit_now - _adsb_orbit_seen.get(oicao, 0) < ADSB_REFRACTORY:
+                    continue
+
+            if not _adsb_check_orbit(oicao, orbit_now):
+                continue
+
+            with _adsb_lock:
+                _adsb_orbit_seen[oicao] = orbit_now
+
+            try:
+                _oc = sqlite3.connect(DB_PATH)
+                orow = _oc.execute(
+                    "SELECT lat, lon, alt_ft, label, callsign FROM aircraft_positions "
+                    "WHERE icao24=? ORDER BY ts DESC LIMIT 1", (oicao,)
+                ).fetchone()
+                _oc.close()
+            except Exception:
+                continue
+            if not orow:
+                continue
+
+            olat, olon, oalt, olabel, ocallsign = orow
+            olbl = olabel or f"ICAO {oicao}"
+            ocs  = f" ({ocallsign})" if ocallsign else ""
+            odesc = (
+                f"[ADS-B ORBIT] {olbl}{ocs} circling over Austin — "
+                f"possible ground surveillance. {int(oalt or 0)}ft AGL, ICAO {oicao}"
+            )
+            print(f"[adsb] ORBIT DETECTED: {odesc}", flush=True)
+
+            orbit_conn = sqlite3.connect(DB_PATH)
+            ocur = orbit_conn.execute(
+                "INSERT INTO incidents (ts_start, ts_updated, itype, description, agencies, "
+                "tgids, location, lat, lon, status) VALUES (?,?,?,?,?,?,?,?,?,'active')",
+                (orbit_now, orbit_now, "AIR ASSET ORBIT", odesc,
+                 '["APD"]', '[]', "Austin airspace", olat, olon)
+            )
+            orbit_inc_id = ocur.lastrowid
+            orbit_conn.commit()
+            orbit_conn.close()
+
+            omsg = (
+                f"\U0001f6a8 LEO HELICOPTER ORBITING: {olbl}{ocs}\n"
+                f"Altitude: {int(oalt or 0)}ft | ICAO: {oicao}\n"
+                f"Position: {olat:.4f}, {olon:.4f}\n"
+                f"Aircraft circling — likely observing ground target."
+            )
+            opayload = json.dumps({"message": omsg}).encode()
+            ocreds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
+            oheaders = {"Authorization": f"Basic {ocreds}", "OCS-APIRequest": "true",
+                        "Content-Type": "application/json"}
             for room in [TALK_ROOMS["apd"], TALK_ROOMS["incidents"]]:
-                req2 = urllib.request.Request(
+                oreq = urllib.request.Request(
                     f"{TALK_BASE}/chat/{room}",
-                    data=payload, headers=headers, method="POST"
+                    data=opayload, headers=oheaders, method="POST"
                 )
                 try:
-                    urllib.request.urlopen(req2, timeout=10)
+                    urllib.request.urlopen(oreq, timeout=10)
                 except Exception as e:
-                    print(f"[adsb] Talk post failed: {e}", flush=True)
+                    print(f"[adsb] orbit Talk post failed: {e}", flush=True)
 
             threading.Thread(
                 target=send_dm_alert,
-                args=("AIR ASSET ACTIVE", desc, "Austin airspace", "APD", "APD"),
+                args=("AIR ASSET ORBIT", odesc, "Austin airspace", "APD", "APD"),
                 daemon=True
             ).start()
 
             threading.Thread(
                 target=_atak_post_marker,
-                args=(inc_id, lat, lon, "AIR ASSET ACTIVE", "Austin airspace", desc),
+                args=(orbit_inc_id, olat, olon, "AIR ASSET ORBIT", "Austin airspace", odesc),
                 daemon=True
             ).start()
 
