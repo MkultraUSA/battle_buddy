@@ -7113,7 +7113,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <nav class="nav">
     <a href="/public">Live Map</a>
     <a href="/public/aircraft" class="active">Aircraft</a>
-    <a href="/public/aircraft">Aircraft</a>
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about">About</a>
