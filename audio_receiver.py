@@ -33,6 +33,8 @@ try:
 except ImportError:
     anthropic = None
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+_CDT = ZoneInfo("America/Chicago")
 
 # Bypass SSL cert verification for all urllib calls (Nextcloud snap cert not in system store)
 _ssl_ctx = ssl._create_unverified_context()
@@ -546,6 +548,23 @@ def init_db():
             match_score REAL DEFAULT 0
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS aircraft_positions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts          REAL    NOT NULL,
+            icao24      TEXT    NOT NULL,
+            callsign    TEXT,
+            lat         REAL    NOT NULL,
+            lon         REAL    NOT NULL,
+            alt_ft      INTEGER,
+            heading     REAL,
+            speed_kts   REAL,
+            is_leo      INTEGER DEFAULT 0,
+            label       TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_ts ON aircraft_positions(ts)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_icao ON aircraft_positions(icao24, ts)")
     conn.commit()
     conn.close()
 
@@ -580,12 +599,12 @@ def remove_subscription(username: str, beat: str = "all"):
     conn.close()
 
 
-def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location) -> int:
+def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx=0) -> int:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.execute(
-        "INSERT INTO calls (ts,tgid,tag,category,node,duration,transcript,lat,lon,location) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (ts, tgid, tag, category, node, duration, transcript, lat, lon, location)
+        "INSERT INTO calls (ts,tgid,tag,category,node,duration,transcript,lat,lon,location,coords_approx) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx)
     )
     row_id = cur.lastrowid
     conn.commit()
@@ -783,8 +802,8 @@ def _get_fw_model() -> _FasterWhisperModel:
     global _fw_model
     if _fw_model is None:
         print("[whisper] loading faster-whisper large-v3-turbo int8...", flush=True)
-        _fw_model = _FasterWhisperModel("large-v3-turbo", device="cpu", compute_type="int8",
-                                        cpu_threads=6, num_workers=1)
+        _fw_model = _FasterWhisperModel("distil-large-v3", device="cpu", compute_type="int8",
+                                        cpu_threads=2, num_workers=1)
         print("[whisper] model ready", flush=True)
     return _fw_model
 
@@ -1388,7 +1407,9 @@ def analyze_for_incident(call: dict):
     # --- Rule 3: Keyword in transcript ---
     # Skip ABIA operational channels — airport security/ops uses words like
     # "barricade", "hostage", "weapons" in routine daily context.
-    if tgid not in ABIA_OPS_TGIDS:
+    # Skip Unknown agency — APD radio is P25 encrypted; Whisper hallucinates
+    # words like "shooting", "assault", "shots fired" from carrier noise.
+    if tgid not in ABIA_OPS_TGIDS and cat != "Unknown":
         for kw, itype in INCIDENT_KEYWORDS:
             if kw in text:
                 flags.append((20, itype,
@@ -2640,27 +2661,41 @@ def apd_news_thread():
                     continue
                 t_inc_id, t_score = _match_article_to_incident(ta["title"], art_itype, tts)
                 if t_inc_id:
+                    t_detail  = _apd_fetch_article(turl)
+                    t_snippet = t_detail.get("summary", "")
+                    t_address = t_detail.get("address")
+                    if t_address:
+                        t_coords = _geocode_address(t_address)
+                        if t_coords:
+                            conn_ta = sqlite3.connect(DB_PATH)
+                            conn_ta.execute(
+                                "UPDATE incidents SET location=?, lat=?, lon=? "
+                                "WHERE id=? AND (location IS NULL OR location='')",
+                                (t_address, t_coords[0], t_coords[1], t_inc_id)
+                            )
+                            conn_ta.commit()
+                            conn_ta.close()
                     _store_article_link(t_inc_id, tts, ta["title"], turl,
-                                        "traffic-news", "", t_score)
+                                        "traffic-news", t_snippet, t_score)
                     print(f"[traffic-news] LINKED: '{ta['title']}' → "
-                          f"incident {t_inc_id} (score={t_score:.1f})", flush=True)
+                          f"incident {t_inc_id} (score={t_score:.1f})"
+                          f"{f' addr={t_address}' if t_address else ''}", flush=True)
 
 
 # ---------------------------------------------------------------------------
-# ADS-B air asset tracker — OpenSky Network
+# ADS-B air asset tracker — adsb.lol (no rate limit, 30s poll)
 # Detects helicopters and law enforcement aircraft over Austin
+# Stores 30-min position trails in aircraft_positions table
 # ---------------------------------------------------------------------------
 
-ADSB_URL         = (
-    "https://opensky-network.org/api/states/all"
-    "?lamin=29.9&lomin=-98.2&lamax=30.7&lomax=-97.1&extended=1"
-)
-ADSB_INTERVAL    = 600   # poll every 10 minutes — 144 req/day, within OpenSky anonymous limit
-ADSB_MAX_ALT_M   = 1500  # only flag aircraft below 1500m (~5000ft) AGL
+# adsb.lol /v2/lat/{lat}/lon/{lon}/dist/{nm} — aircraft within dist nautical miles
+_ADSB_LOL_URL    = "https://api.adsb.lol/v2/lat/30.2672/lon/-97.7431/dist/52"
+ADSB_INTERVAL    = 30    # poll every 30 seconds
+ADSB_MAX_ALT_FT  = 5000  # only track aircraft below 5,000 ft AGL
+ADSB_TRAIL_SECS  = 1800  # 30 minutes of trail history
 ADSB_REFRACTORY  = 1800  # 30 min before re-alerting same aircraft
 
-# Known Austin-area air assets (icao24 hex → label)
-# Add more as you identify them via tail number lookup
+# Known Austin-area LEO / EMS air assets (icao24 hex → label)
 KNOWN_AIR_ASSETS = {
     # APD Air Support Unit
     "a820f8": "APD Air1 (N6227)",          # Eurocopter AS350B3
@@ -2668,7 +2703,6 @@ KNOWN_AIR_ASSETS = {
     # Travis County STAR Flight EMS
     "a33eb6": "STAR Flight 2 (N308TC)",     # Leonardo AW169
     "a3426d": "STAR Flight 3 (N309TC)",     # Leonardo AW169
-    # N307TC (STAR Flight 1) ICAO unknown -- will show as Unknown Helicopter
 }
 
 _adsb_seen       : dict[str, float] = {}   # icao24 → last alert timestamp
@@ -2861,99 +2895,125 @@ def reddit_intel_thread():
 
 _adsb_lock       = threading.Lock()
 
-# Aircraft category codes from ADS-B (extended=1)
-# 7 = Rotorcraft, 10-17 = various heavy/high perf, etc.
-_HELO_CATEGORIES = {7}     # rotorcraft
-_WATCH_CATEGORIES = {7, 3, 4}  # also light/small fixed-wing (news, DPS)
-
 
 def adsb_air_asset_thread():
-    """Poll OpenSky Network for low-altitude aircraft over Austin — alert on helicopters."""
-    print("[adsb] ADS-B air asset tracker started", flush=True)
+    """Poll adsb.lol every 30s for low-altitude helicopters over Austin.
+
+    Stores every position in aircraft_positions (30-min trail).
+    Alerts on first detection of each aircraft (refractory 30 min).
+    """
+    print("[adsb] ADS-B air asset tracker started (adsb.lol)", flush=True)
+
+    # Ensure table exists at thread start in case init_db ran before schema update
+    _c = sqlite3.connect(DB_PATH)
+    _c.execute("""CREATE TABLE IF NOT EXISTS aircraft_positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL NOT NULL,
+        icao24 TEXT NOT NULL,
+        callsign TEXT,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        alt_ft INTEGER,
+        heading REAL,
+        speed_kts REAL,
+        is_leo INTEGER DEFAULT 0,
+        label TEXT
+    )""")
+    _c.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_ts ON aircraft_positions(ts)")
+    _c.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_icao ON aircraft_positions(icao24, ts)")
+    _c.commit()
+    _c.close()
+
     while True:
         time.sleep(ADSB_INTERVAL)
         try:
             req  = urllib.request.Request(
-                ADSB_URL,
+                _ADSB_LOL_URL,
                 headers={"User-Agent": "BattleBuddy/2.0", "Accept": "application/json"}
             )
             data = json.loads(urllib.request.urlopen(req, timeout=20).read())
         except Exception as e:
             print(f"[adsb] fetch error: {e}", flush=True)
-            if "429" in str(e):
-                print("[adsb] rate limited by OpenSky — sleeping 3600s", flush=True)
-                time.sleep(3600)
             continue
 
-        states = data.get("states") or []
-        now    = time.time()
+        aircraft = data.get("ac") or []
+        now = time.time()
 
-        for s in states:
-            # OpenSky state vector fields:
-            # 0:icao24 1:callsign 2:origin 3:time_pos 4:last_contact
-            # 5:lon 6:lat 7:baro_alt 8:on_ground 9:velocity
-            # 10:heading 11:vert_rate 12:sensors 13:geo_alt 14:squawk
-            # 15:spi 16:category (extended)
-            if len(s) < 17:
+        # Prune positions older than trail window
+        try:
+            _pc = sqlite3.connect(DB_PATH)
+            _pc.execute("DELETE FROM aircraft_positions WHERE ts < ?", (now - ADSB_TRAIL_SECS,))
+            _pc.commit()
+            _pc.close()
+        except Exception:
+            pass
+
+        for ac in aircraft:
+            icao24   = (ac.get("hex") or "").strip().lower()
+            callsign = (ac.get("flight") or ac.get("r") or "").strip()
+            lat      = ac.get("lat")
+            lon      = ac.get("lon")
+            alt_ft   = ac.get("alt_baro")   # feet in adsb.lol
+            heading  = ac.get("track")
+            speed_kts = ac.get("gs")        # ground speed knots
+            on_ground = ac.get("alt_baro") == "ground" or ac.get("on_ground") == 1
+
+            if not icao24 or lat is None or lon is None:
                 continue
-            icao24   = (s[0] or "").strip().lower()
-            callsign = (s[1] or "").strip()
-            lon      = s[5]
-            lat      = s[6]
-            baro_alt = s[7]   # meters
-            on_ground = s[8]
-            category  = s[16] if len(s) > 16 else 0
-
             if on_ground:
                 continue
-            if baro_alt is None or baro_alt > ADSB_MAX_ALT_M:
+
+            # alt_baro can be "ground" string or a number
+            if isinstance(alt_ft, str):
                 continue
-            if category not in _WATCH_CATEGORIES:
-                continue
-            if lat is None or lon is None:
+            if alt_ft is None or alt_ft > ADSB_MAX_ALT_FT:
                 continue
 
-            label = KNOWN_AIR_ASSETS.get(icao24)
-            is_helo = (category in _HELO_CATEGORIES)
+            # adsb.lol category field: "A7"=helicopter, "A1"-"A3"=fixed-wing light/medium
+            category = (ac.get("category") or "").upper()
+            is_helo  = category.startswith("A7") or category.startswith("B")
 
-            # Only alert on unknown aircraft if it's a helicopter
+            label  = KNOWN_AIR_ASSETS.get(icao24)
+            is_leo = label is not None
+
+            # Only track unknown aircraft if it's a helicopter
             if label is None and not is_helo:
                 continue
 
+            # Store position for trail
+            try:
+                _tc = sqlite3.connect(DB_PATH)
+                _tc.execute(
+                    "INSERT INTO aircraft_positions (ts,icao24,callsign,lat,lon,alt_ft,heading,speed_kts,is_leo,label) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (now, icao24, callsign or None, lat, lon,
+                     int(alt_ft) if alt_ft else None,
+                     heading, speed_kts, 1 if is_leo else 0,
+                     label or (callsign or f"ICAO {icao24}"))
+                )
+                _tc.commit()
+                _tc.close()
+            except Exception as e:
+                print(f"[adsb] db write error: {e}", flush=True)
+
+            # Alert on first detection (refractory)
             with _adsb_lock:
                 last_alert = _adsb_seen.get(icao24, 0)
                 if now - last_alert < ADSB_REFRACTORY:
                     continue
                 _adsb_seen[icao24] = now
 
-            # Auto-lookup unknown aircraft from OpenSky metadata
-            reg_info = ""
-            if label is None:
-                try:
-                    meta_url = f"https://opensky-network.org/api/metadata/aircraft/icao/{icao24}"
-                    meta_req = urllib.request.Request(meta_url, headers={"User-Agent": "BattleBuddy/2.0"})
-                    meta = json.loads(urllib.request.urlopen(meta_req, timeout=8).read())
-                    reg   = meta.get("registration", "")
-                    owner = meta.get("owner") or meta.get("operator", "")
-                    model = meta.get("model", "")
-                    if reg or owner:
-                        label = f"{owner or 'Unknown'} ({reg})" if reg else owner
-                        reg_info = f" | {model}" if model else ""
-                except Exception:
-                    pass
-
-            alt_ft  = int(baro_alt * 3.28084) if baro_alt else 0
             cs_str  = f" ({callsign})" if callsign else ""
-            lbl_str = label or ("Unknown Helicopter" if is_helo else "Unknown Aircraft")
+            lbl_str = label or f"Unknown Helicopter"
             desc    = (
                 f"[ADS-B] {lbl_str}{cs_str} detected over Austin — "
-                f"{alt_ft}ft AGL, ICAO {icao24}{reg_info}"
+                f"{int(alt_ft)}ft AGL, ICAO {icao24}"
             )
             print(f"[adsb] AIR ASSET: {desc}", flush=True)
 
             # Insert incident
-            conn   = sqlite3.connect(DB_PATH)
-            cur    = conn.execute(
+            conn = sqlite3.connect(DB_PATH)
+            cur  = conn.execute(
                 "INSERT INTO incidents (ts_start, ts_updated, itype, description, agencies, "
                 "tgids, location, lat, lon, status) VALUES (?,?,?,?,?,?,?,?,?,'active')",
                 (now, now, "AIR ASSET ACTIVE", desc, '["APD"]', '[]',
@@ -2965,7 +3025,7 @@ def adsb_air_asset_thread():
 
             msg = (
                 f"\U0001f681 AIR ASSET DETECTED: {lbl_str}{cs_str}\n"
-                f"Altitude: {alt_ft}ft | ICAO: {icao24}\n"
+                f"Altitude: {int(alt_ft)}ft | ICAO: {icao24}\n"
                 f"Position: {lat:.4f}, {lon:.4f}\n"
                 f"Low-altitude activity over Austin — likely responding to an incident."
             )
@@ -3777,15 +3837,29 @@ def _cad_match_and_harvest():
                 best_confidence = "time_only"
 
         # Update CAD record with match result
-        conn.execute("""
-            UPDATE apd_cad
-            SET matched_incident_id = ?, match_confidence = ?
-            WHERE incident_number = ?
-        """, (best_match_id, best_confidence, cad["incident_number"]))
-
+        # Unique index on matched_incident_id prevents two CAD rows claiming the same incident.
+        # Catch constraint violation and treat as no-match for this CAD record.
         if best_match_id:
-            matched += 1
-            claimed_ids.add(best_match_id)
+            try:
+                conn.execute("""
+                    UPDATE apd_cad
+                    SET matched_incident_id = ?, match_confidence = ?
+                    WHERE incident_number = ?
+                """, (best_match_id, best_confidence, cad["incident_number"]))
+                matched += 1
+                claimed_ids.add(best_match_id)
+            except sqlite3.IntegrityError:
+                best_match_id = None
+                conn.execute("""
+                    UPDATE apd_cad SET matched_incident_id = NULL, match_confidence = NULL
+                    WHERE incident_number = ?
+                """, (cad["incident_number"],))
+        else:
+            conn.execute("""
+                UPDATE apd_cad
+                SET matched_incident_id = NULL, match_confidence = NULL
+                WHERE incident_number = ?
+            """, (cad["incident_number"],))
             # Enrich the scanner incident only on high-confidence matches
             if best_confidence == "high":
                 conn.execute("""
@@ -3853,7 +3927,7 @@ def build_sitrep(minutes=60) -> str:
     incidents = [i for i in active_incidents() if not i.get("is_test")]
 
     lines = [
-        f"SITUATION REPORT — last {minutes} min — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"SITUATION REPORT — last {minutes} min — {datetime.now(_CDT).strftime('%Y-%m-%d %H:%M %Z')}",
         f"Total calls: {len(calls)}",
     ]
 
@@ -4280,8 +4354,11 @@ def receive():
             if lat is None:
                 lat, lon = def_lat, def_lon
                 location = None
+                coords_approx = 1
+            else:
+                coords_approx = 0
             print(f"[recv] {tag}: {transcript[:80]}", flush=True)
-            call_id = insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location)
+            call_id = insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx)
             call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag, category=category,
                         transcript=transcript, lat=lat, lon=lon, location=location)
             recent = calls_since(ts - 15 * 60)
@@ -4352,7 +4429,7 @@ def api_calls():
 # --- Prometheus metrics endpoint (added 2026-04-18 / bak39) ---
 try:
     from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry
-    from prometheus_client.core import CounterMetricFamily
+    from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
     _BB_METRICS_REGISTRY = CollectorRegistry()
 
@@ -4408,6 +4485,123 @@ try:
                     m3.add_metric([str(agency)], float(count))
                 yield m3
 
+                # --- homicide YTD gauge — sourced from curated homicides_2026.json ---
+                try:
+                    import json as _json, os as _os
+                    _hf = _os.path.join(_os.path.dirname(__file__), "homicides_2026.json")
+                    _hdata = _json.load(open(_hf))
+                    _homicide_victims = sum(h.get("count", 1) for h in _hdata)
+                    _homicide_incidents = len(_hdata)
+                except Exception:
+                    _homicide_victims = 0
+                    _homicide_incidents = 0
+                g_hom_v = GaugeMetricFamily(
+                    "battlebuddy_homicides_ytd_victims",
+                    "Austin homicide victims tracked by Battle Buddy, year-to-date 2026",
+                )
+                g_hom_v.add_metric([], float(_homicide_victims))
+                yield g_hom_v
+                g_hom_i = GaugeMetricFamily(
+                    "battlebuddy_homicides_ytd",
+                    "Austin homicide incidents tracked by Battle Buddy, year-to-date 2026",
+                )
+                g_hom_i.add_metric([], float(_homicide_incidents))
+                yield g_hom_i
+
+                # --- shooting intelligence tiers (30-day window) ---
+                import time as _time
+                _now = _time.time()
+                _30d = _now - (30 * 86400)
+                CORROBORATING_AGENCIES = {"AFD", "TCEMS", "TCSO", "TCFD"}
+
+                cur.execute(
+                    "SELECT agencies FROM incidents "
+                    "WHERE itype='SHOOTING' AND ts_start >= ? "
+                    "AND (is_test IS NULL OR is_test=0) "
+                    "AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%')",
+                    (_30d,),
+                )
+                import json as _json2
+                _s_confirmed = 0
+                _s_signal = 0
+                for (_ag,) in cur.fetchall():
+                    try:
+                        _ags = set(_json2.loads(_ag or "[]"))
+                    except Exception:
+                        _ags = set()
+                    if _ags & CORROBORATING_AGENCIES:
+                        _s_confirmed += 1
+                    elif _ags - {"Unknown", "scanner_gateway", None, ""}:
+                        _s_signal += 1
+
+                cur.execute(
+                    "SELECT COUNT(*) FROM incidents "
+                    "WHERE itype='SHOOTING' AND ts_start >= ? "
+                    "AND (is_test IS NULL OR is_test=0) "
+                    "AND description LIKE '%[APD Press Release]%'",
+                    (_30d,),
+                )
+                (_s_press,) = cur.fetchone()
+
+                for _name, _help, _val in [
+                    ("battlebuddy_shootings_confirmed_30d",
+                     "Shooting incidents corroborated by AFD/TCEMS/TCSO radio in last 30 days",
+                     _s_confirmed),
+                    ("battlebuddy_shootings_signal_30d",
+                     "Shooting incidents on known agency talkgroup, unverified, last 30 days",
+                     _s_signal),
+                    ("battlebuddy_shootings_press_release_30d",
+                     "Shooting incidents from APD press releases in last 30 days",
+                     _s_press),
+                ]:
+                    _g = GaugeMetricFamily(_name, _help)
+                    _g.add_metric([], float(_val))
+                    yield _g
+
+                # --- live gauges ---
+                _window = _now - 86400
+
+                cur.execute(
+                    "SELECT COUNT(*) FROM incidents "
+                    "WHERE status='active' AND (is_test IS NULL OR is_test=0) "
+                    "AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%')"
+                )
+                (active_count,) = cur.fetchone()
+                g_active = GaugeMetricFamily(
+                    "battlebuddy_active_incidents",
+                    "Currently active (non-cleared) Battle Buddy incidents",
+                )
+                g_active.add_metric([], float(active_count))
+                yield g_active
+
+                cur.execute(
+                    "SELECT COALESCE(itype,'unknown'), COUNT(*) FROM incidents "
+                    "WHERE ts_start >= ? AND (is_test IS NULL OR is_test=0) "
+                    "AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%') "
+                    "GROUP BY itype",
+                    (_window,),
+                )
+                g24 = GaugeMetricFamily(
+                    "battlebuddy_incidents_24h",
+                    "Incidents detected in the last 24 hours by itype",
+                    labels=["itype"],
+                )
+                for itype, count in cur.fetchall():
+                    g24.add_metric([str(itype)], float(count))
+                yield g24
+
+                cur.execute(
+                    "SELECT COUNT(*) FROM calls WHERE ts >= ?",
+                    (_window,),
+                )
+                (calls_24h,) = cur.fetchone()
+                g_calls = GaugeMetricFamily(
+                    "battlebuddy_calls_24h",
+                    "Radio calls received in the last 24 hours",
+                )
+                g_calls.add_metric([], float(calls_24h))
+                yield g_calls
+
                 c.close()
             except Exception as _e:
                 print(f"[metrics] collector error: {_e}", flush=True)
@@ -4440,7 +4634,7 @@ def api_voice_sitrep():
     calls     = calls_for_sitrep(minutes)
     incidents = [i for i in active_incidents() if not i.get("is_test")]
 
-    now = datetime.now().strftime("%-I:%M %p")
+    now = datetime.now(_CDT).strftime("%-I:%M %p %Z")
     parts = [f"Battle Buddy. Austin Metro situation report as of {now}."]
 
     if incidents:
@@ -4496,10 +4690,13 @@ def api_stats():
         "SELECT COUNT(*) FROM calls WHERE ts > ?", (since,)
     ).fetchone()[0]
     inc_24h = conn.execute(
-        "SELECT COUNT(*) FROM incidents WHERE ts_start > ? AND is_test=0", (since,)
+        "SELECT COUNT(*) FROM incidents WHERE ts_start > ? AND is_test=0"
+        " AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%')", (since,)
     ).fetchone()[0]
     no_loc = conn.execute(
-        "SELECT COUNT(*) FROM incidents WHERE ts_start > ? AND is_test=0 AND (location IS NULL OR location='')",
+        "SELECT COUNT(*) FROM incidents WHERE ts_start > ? AND is_test=0"
+        " AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%')"
+        " AND (location IS NULL OR location='')",
         (since,)
     ).fetchone()[0]
     agencies_24h = conn.execute(
@@ -4508,6 +4705,170 @@ def api_stats():
     ).fetchone()[0]
     conn.close()
     return jsonify({"calls_24h": calls_24h, "incidents_24h": inc_24h, "no_location": no_loc, "agencies_24h": agencies_24h})
+
+
+@app.route("/api/shooting_intel")
+def api_shooting_intel():
+    """
+    Public endpoint: shooting incidents with transcript evidence, last 30 days.
+    Returns only incidents corroborated by known (non-encrypted) agencies.
+    Excludes APD press releases (those are in the verified homicide/press tracker).
+    """
+    import json as _json
+    since = time.time() - (30 * 86400)
+    CORROBORATING = {"AFD", "TCEMS", "TCSO", "TCFD"}
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    rows = conn.execute(
+        "SELECT i.id, i.itype, i.agencies, i.description, i.location, i.lat, i.lon, "
+        "       i.ts_start, i.status "
+        "FROM incidents i "
+        "WHERE i.itype IN ('SHOOTING','STABBING') "
+        "AND i.ts_start >= ? "
+        "AND (i.is_test IS NULL OR i.is_test=0) "
+        "AND (i.description IS NULL OR i.description NOT LIKE '%[APD Press Release]%') "
+        "ORDER BY i.ts_start DESC",
+        (since,)
+    ).fetchall()
+
+    results = []
+    for row in rows:
+        try:
+            agencies = set(_json.loads(row["agencies"] or "[]"))
+        except Exception:
+            agencies = set()
+
+        # Only include incidents from known, non-encrypted agencies
+        known = agencies - {"Unknown", "scanner_gateway", None, ""}
+        if not known:
+            continue
+
+        if agencies & CORROBORATING:
+            tier = "confirmed"
+            tier_label = "Corroborated — EMS/Fire radio"
+        else:
+            tier = "radio_signal"
+            tier_label = "Radio signal — known agency, under investigation"
+
+        # Pull corroborating transcripts
+        transcripts = conn.execute(
+            "SELECT c.tag, c.category, c.transcript, datetime(c.ts,'unixepoch','localtime') as ts "
+            "FROM calls c JOIN incident_calls ic ON ic.call_id = c.id "
+            "WHERE ic.incident_id = ? "
+            "AND c.category NOT IN ('Unknown') "
+            "AND length(c.transcript) > 10 "
+            "ORDER BY c.ts ASC LIMIT 5",
+            (row["id"],)
+        ).fetchall()
+
+        results.append({
+            "incident_id": row["id"],
+            "itype": row["itype"],
+            "ts": row["ts_start"],
+            "ts_local": __import__("datetime").datetime.fromtimestamp(
+                row["ts_start"],
+                tz=__import__("zoneinfo").ZoneInfo("America/Chicago")
+            ).strftime("%Y-%m-%d %H:%M CDT"),
+            "location": row["location"],
+            "lat": row["lat"],
+            "lon": row["lon"],
+            "agencies": list(agencies),
+            "confidence_tier": tier,
+            "confidence_label": tier_label,
+            "evidence": [
+                {
+                    "agency": t["category"],
+                    "talkgroup": t["tag"],
+                    "time": t["ts"],
+                    "transcript": t["transcript"][:300],
+                }
+                for t in transcripts
+            ],
+        })
+
+    conn.close()
+    return jsonify({
+        "window": "last_30_days",
+        "methodology": (
+            "Only incidents detected on known, non-encrypted agency talkgroups are included. "
+            "'Confirmed' = corroborated by AFD, TCEMS, TCSO, or TCFD radio traffic. "
+            "'Radio signal' = detected on a known agency talkgroup but not yet corroborated by a second agency. "
+            "APD radio is P25 encrypted — APD transcripts are not available. "
+            "All evidence is verbatim radio transcript text."
+        ),
+        "count": len(results),
+        "confirmed": sum(1 for r in results if r["confidence_tier"] == "confirmed"),
+        "radio_signal": sum(1 for r in results if r["confidence_tier"] == "radio_signal"),
+        "incidents": results,
+    })
+
+
+@app.route("/api/daily_summary")
+def api_daily_summary():
+    """
+    Public daily summary of incidents bucketed by confidence tier.
+
+    Confidence tiers:
+      confirmed     — corroborated by AFD, TCEMS, TCSO, or TCFD radio traffic
+      radio_signal  — detected on known (non-Unknown) agency talkgroup, single source
+      press_release — APD press release (verified, but lagging and APD-selected)
+      unconfirmed   — Unknown agency / scanner gateway only (low confidence)
+    """
+    import json as _json
+    since = time.time() - 86400
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    rows = conn.execute(
+        "SELECT itype, description, agencies FROM incidents "
+        "WHERE ts_start > ? AND (is_test IS NULL OR is_test=0) "
+        "ORDER BY ts_start DESC",
+        (since,)
+    ).fetchall()
+    conn.close()
+
+    CORROBORATING = {"AFD", "TCEMS", "TCSO", "TCFD"}
+
+    confirmed = []
+    radio_signal = []
+    press_release = []
+    unconfirmed = []
+
+    for row in rows:
+        desc = row["description"] or ""
+        itype = row["itype"] or "UNKNOWN"
+        try:
+            agencies = set(_json.loads(row["agencies"] or "[]"))
+        except Exception:
+            agencies = set()
+
+        if desc.startswith("[APD Press Release]"):
+            press_release.append(itype)
+        elif agencies & CORROBORATING:
+            confirmed.append(itype)
+        elif agencies - {"Unknown", "scanner_gateway", None, ""}:
+            radio_signal.append(itype)
+        else:
+            unconfirmed.append(itype)
+
+    def summarize(lst):
+        from collections import Counter
+        return dict(Counter(lst))
+
+    return jsonify({
+        "window": "last_24h",
+        "note": (
+            "Confirmed = corroborated by AFD/TCEMS/TCSO/TCFD radio. "
+            "Radio signal = single known agency, unverified. "
+            "Press release = APD-published, verified but lagging. "
+            "Unconfirmed = encrypted scanner noise, treat as rumor only."
+        ),
+        "confirmed":     {"count": len(confirmed),     "by_type": summarize(confirmed)},
+        "radio_signal":  {"count": len(radio_signal),  "by_type": summarize(radio_signal)},
+        "press_release": {"count": len(press_release), "by_type": summarize(press_release)},
+        "unconfirmed":   {"count": len(unconfirmed),   "by_type": summarize(unconfirmed)},
+    })
 
 
 @app.route("/api/tgid_guesses")
@@ -4614,6 +4975,48 @@ def api_drone_sightings():
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/adsb")
+def api_adsb():
+    """Return current aircraft positions + 30-min trails grouped by icao24."""
+    cutoff = time.time() - ADSB_TRAIL_SECS
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM aircraft_positions WHERE ts > ? ORDER BY icao24, ts",
+        (cutoff,)
+    ).fetchall()
+    conn.close()
+
+    aircraft: dict = {}
+    for r in rows:
+        icao = r["icao24"]
+        if icao not in aircraft:
+            aircraft[icao] = {
+                "icao24":   icao,
+                "label":    r["label"],
+                "callsign": r["callsign"],
+                "is_leo":   bool(r["is_leo"]),
+                "lat":      r["lat"],
+                "lon":      r["lon"],
+                "alt_ft":   r["alt_ft"],
+                "heading":  r["heading"],
+                "ts":       r["ts"],
+                "trail":    [],
+            }
+        else:
+            # Keep latest position as current
+            aircraft[icao].update({
+                "lat":     r["lat"],
+                "lon":     r["lon"],
+                "alt_ft":  r["alt_ft"],
+                "heading": r["heading"],
+                "ts":      r["ts"],
+            })
+        aircraft[icao]["trail"].append([r["lat"], r["lon"], r["ts"]])
+
+    return jsonify(list(aircraft.values()))
 
 
 @app.route("/")
@@ -5093,6 +5496,74 @@ pollIncidentMarkers();
 setInterval(poll, 5000);
 setInterval(pollIncidents, 15000);
 setInterval(pollIncidentMarkers, 30000);
+
+// ── ADS-B helicopter layer ──────────────────────────────────────────────────
+const adsbMarkers = {};
+const adsbTrails  = {};
+
+function makeHeloIcon(isLeo) {
+  const color = isLeo ? '#f59e0b' : '#a855f7';  // amber=LEO, purple=unknown
+  return L.divIcon({
+    html: `<div style="font-size:20px;line-height:1;filter:drop-shadow(0 0 4px ${color});color:${color}">🚁</div>`,
+    iconSize: [24,24], iconAnchor: [12,12], className: ''
+  });
+}
+
+function adsbPopup(ac) {
+  const ago = Math.round((Date.now()/1000 - ac.ts) / 60);
+  const leo = ac.is_leo ? '<br><b style="color:#f59e0b">🔴 LEO</b>' : '';
+  return `<b>${ac.label || ac.icao24}</b>${leo}
+    <br>${ac.callsign ? 'Flight: ' + ac.callsign + '<br>' : ''}
+    Alt: ${ac.alt_ft ? ac.alt_ft + ' ft' : '?'}
+    | ICAO: ${ac.icao24}
+    <br><small>${ago}m ago</small>`;
+}
+
+async function pollAdsb() {
+  try {
+    const resp = await fetch('/api/adsb');
+    const aircraft = await resp.json();
+    const seen = new Set();
+
+    for (const ac of aircraft) {
+      const key = ac.icao24;
+      seen.add(key);
+
+      // Draw / update trail
+      const trailPts = ac.trail.map(p => [p[0], p[1]]);
+      const trailColor = ac.is_leo ? '#f59e0b' : '#a855f7';
+      if (adsbTrails[key]) {
+        adsbTrails[key].setLatLngs(trailPts);
+      } else {
+        adsbTrails[key] = L.polyline(trailPts, {
+          color: trailColor, weight: 1.5, opacity: 0.6, dashArray: '4 4'
+        }).addTo(map);
+      }
+
+      // Draw / update marker
+      if (adsbMarkers[key]) {
+        adsbMarkers[key].setLatLng([ac.lat, ac.lon]);
+        adsbMarkers[key].setPopupContent(adsbPopup(ac));
+      } else {
+        adsbMarkers[key] = L.marker([ac.lat, ac.lon], {icon: makeHeloIcon(ac.is_leo)})
+          .bindPopup(adsbPopup(ac))
+          .addTo(map);
+      }
+    }
+
+    // Remove stale aircraft that dropped off
+    for (const key of Object.keys(adsbMarkers)) {
+      if (!seen.has(key)) {
+        adsbMarkers[key].remove();
+        delete adsbMarkers[key];
+        if (adsbTrails[key]) { adsbTrails[key].remove(); delete adsbTrails[key]; }
+      }
+    }
+  } catch(e) {}
+}
+
+pollAdsb();
+setInterval(pollAdsb, 30000);
 </script>
 </body>
 </html>
@@ -5365,9 +5836,11 @@ footer {
 <footer>
   &copy; 2026 Battle Buddy &nbsp;·&nbsp; Austin Metro Public Safety Intelligence &nbsp;·&nbsp;
   <a href="/public" style="color:#3b82f6;text-decoration:none">Live Map</a> &nbsp;·&nbsp;
+  <a href="/public/aircraft" style="color:#f59e0b;text-decoration:none">Aircraft</a> &nbsp;&middot;&nbsp;
   <a href="/public/homicides" style="color:#ef4444;text-decoration:none">Homicide Map</a> &nbsp;&middot;&nbsp;
   <a href="/public/feed" style="color:#3b82f6;text-decoration:none">Feed</a> &nbsp;·&nbsp;
-  <a href="/public/about" style="color:#3b82f6;text-decoration:none">About</a>
+  <a href="/public/about" style="color:#3b82f6;text-decoration:none">About</a> &nbsp;·&nbsp;
+  <a href="https://kevinwatkins.grafana.net/public-dashboards/40592df4da7946c7861619906c8de92c" target="_blank" style="color:#10b981;text-decoration:none">📊 Stats</a>
 </footer>
 
 <script>
@@ -5450,9 +5923,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <span class="tagline">Austin Metro — Real-Time Public Safety Intelligence</span>
   <nav class="nav">
     <a href="/public" class="active">Live Map</a>
+    <a href="/public/aircraft">Aircraft</a>
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about">About</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/40592df4da7946c7861619906c8de92c" target="_blank">📊 Stats</a>
     <a href="/tip">Submit Tip</a>
   </nav>
   <button id="sitrep-btn" onclick="speakSitrep()" title="Read situation report aloud">&#128266; SITREP</button>
@@ -5529,12 +6004,11 @@ async function flagIncident(id, btn) {
 async function loadHeatmap() {
   const resp = await fetch('/api/calls');
   const calls = await resp.json();
-  const pts = calls.filter(c => c.lat && c.lon && AUSTIN_BOUNDS.contains([c.lat, c.lon])).map(c => [c.lat, c.lon, 0.6]);
+  const pts = calls.filter(c => c.lat && c.lon && !c.coords_approx && AUSTIN_BOUNDS.contains([c.lat, c.lon])).map(c => [c.lat, c.lon, 0.6]);
   if (heatLayer) map.removeLayer(heatLayer);
   heatLayer = L.heatLayer(pts, {radius:22, blur:18, maxZoom:13,
     gradient:{0.2:'#1e3a5f', 0.5:'#3b82f6', 0.8:'#f97316', 1.0:'#ef4444'}
   }).addTo(map);
-  document.getElementById('s-calls').textContent = calls.length;
   const t = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   document.getElementById('s-time').textContent = t;
   // ticker
@@ -5551,7 +6025,6 @@ async function loadIncidents() {
   const all    = await allResp.json();
   const realAll    = all.filter(i => !i.is_test);
   const realActive = active.filter(i => !i.is_test);
-  document.getElementById('s-incidents').textContent = realAll.length;
   document.getElementById('s-active').textContent    = realActive.length;
 
   // Voice: seed on first load, check for new ones on subsequent polls
@@ -5573,8 +6046,11 @@ async function loadIncidents() {
 
   // Only plot incidents we have a real address for, and only crime/fire types
   const MAP_ITYPES = new Set([
-    "SHOOTING","OFFICER DOWN","PURSUIT","WEAPONS","STRUCTURE FIRE","FIRE DISPATCH","FIRE ALARM","FIRE/EMS DISPATCH","CRASH/COLLISION","MULTI-AGENCY RESPONSE",
-    "MASS CASUALTY","EMS DISPATCH","HAZMAT","AIR ASSET ACTIVE","DPS CAPITOL ACTIVATION"
+    "SHOOTING","STABBING","OFFICER DOWN","PURSUIT","WEAPONS",
+    "STRUCTURE FIRE","FIRE DISPATCH","FIRE ALARM","FIRE/EMS DISPATCH","GRASS FIRE",
+    "CRASH/COLLISION","FATAL CRASH","MULTI-AGENCY RESPONSE","MASS CASUALTY",
+    "EMS DISPATCH","HAZMAT","AIR ASSET ACTIVE","DPS CAPITOL ACTIVATION",
+    "FLOODING","ROAD HAZARD","PEDESTRIAN INCIDENT","VEHICLE FIRE"
   ]);
   // Add incident markers
   all.filter(i => i.location && i.lat && i.lon && MAP_ITYPES.has(i.itype) && AUSTIN_BOUNDS.contains([i.lat, i.lon])).forEach(inc => {
@@ -5700,10 +6176,21 @@ window.addEventListener('load', () => {
 
 // ---------------------------------------------------------------------------
 
+async function loadMapStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    document.getElementById('s-calls').textContent = d.calls_24h.toLocaleString();
+    document.getElementById('s-incidents').textContent = d.incidents_24h.toLocaleString();
+  } catch(e) {}
+}
+
 loadHeatmap();
 loadIncidents();
+loadMapStats();
 setInterval(loadHeatmap, 15000);
 setInterval(loadIncidents, 10000);
+setInterval(loadMapStats, 60000);
 </script>
 </body>
 </html>
@@ -5751,9 +6238,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <span class="tagline">Austin Metro — Real-Time Public Safety Intelligence</span>
   <nav class="nav">
     <a href="/public">Live Map</a>
+    <a href="/public/aircraft">Aircraft</a>
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed" class="active">Live Feed</a>
     <a href="/public/about">About</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/40592df4da7946c7861619906c8de92c" target="_blank">📊 Stats</a>
     <a href="/tip">Submit Tip</a>
   </nav>
 </div>
@@ -5906,9 +6395,11 @@ footer a{color:#3b82f6;text-decoration:none}
   <span class="tagline">Austin Metro — Real-Time Public Safety Intelligence</span>
   <nav class="nav">
     <a href="/public">Live Map</a>
+    <a href="/public/aircraft">Aircraft</a>
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about" class="active">About</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/40592df4da7946c7861619906c8de92c" target="_blank">📊 Stats</a>
   </nav>
 </div>
 
@@ -6571,6 +7062,183 @@ def public_about():
     return PUBLIC_ABOUT_HTML
 
 
+PUBLIC_AIRCRAFT_HTML = r"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Battle Buddy — Austin Aircraft Tracker</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Live low-altitude aircraft tracking over Austin, TX. Helicopters, police air assets, and EMS flight tracking.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0f1e; color: #e2e8f0; display: flex; flex-direction: column; height: 100vh; }
+#topbar { background: #0f1729; border-bottom: 1px solid #1e3a5f; padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+#topbar .logo { font-size: 1.1rem; font-weight: 700; color: #3b82f6; letter-spacing: 3px; }
+#topbar .tagline { font-size: 0.75rem; color: #64748b; }
+#topbar .nav { margin-left: auto; display: flex; gap: 16px; flex-wrap: wrap; }
+#topbar .nav a { color: #94a3b8; text-decoration: none; font-size: 0.8rem; }
+#topbar .nav a:hover { color: #3b82f6; }
+#topbar .nav a.active { color: #3b82f6; }
+#map { flex: 1; }
+#legend {
+  position: absolute; bottom: 30px; left: 10px; z-index: 1000;
+  background: rgba(10,15,30,0.92); border: 1px solid #1e3a5f;
+  border-radius: 8px; padding: 12px 16px; font-size: 0.72rem;
+}
+#legend h4 { color: #94a3b8; margin-bottom: 8px; font-size: 0.7rem; letter-spacing: 1px; text-transform: uppercase; }
+.leg-item { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+#status-bar {
+  position: absolute; bottom: 30px; right: 10px; z-index: 1000;
+  background: rgba(10,15,30,0.92); border: 1px solid #1e3a5f;
+  border-radius: 8px; padding: 12px 16px; font-size: 0.72rem; min-width: 180px;
+}
+#status-bar h4 { color: #94a3b8; margin-bottom: 8px; font-size: 0.7rem; letter-spacing: 1px; text-transform: uppercase; }
+.stat-row { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 3px; color: #cbd5e1; }
+.stat-val { color: #3b82f6; font-weight: 600; }
+#no-aircraft {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 1000; background: rgba(10,15,30,0.92); border: 1px solid #1e3a5f;
+  border-radius: 8px; padding: 24px 32px; text-align: center; display: none;
+}
+#no-aircraft h3 { color: #64748b; margin-bottom: 8px; }
+#no-aircraft p { color: #475569; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <span class="logo">&#9652; BATTLE BUDDY</span>
+  <span class="tagline">Austin Metro — Live Aircraft Tracker</span>
+  <nav class="nav">
+    <a href="/public">Live Map</a>
+    <a href="/public/aircraft" class="active">Aircraft</a>
+    <a href="/public/homicides">Homicide Map</a>
+    <a href="/public/feed">Live Feed</a>
+    <a href="/public/about">About</a>
+  </nav>
+</div>
+<div id="map"></div>
+<div id="legend">
+  <h4>Aircraft</h4>
+  <div class="leg-item"><span style="font-size:18px;line-height:1;color:#f59e0b">🚁</span><span style="color:#f59e0b">LEO / EMS (APD, STAR Flight)</span></div>
+  <div class="leg-item"><span style="font-size:18px;line-height:1;color:#a855f7">🚁</span><span style="color:#a855f7">Unknown helicopter &lt;5,000ft</span></div>
+  <div class="leg-item">
+    <svg width="32" height="6" style="flex-shrink:0">
+      <line x1="0" y1="3" x2="32" y2="3" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 4"/>
+    </svg>
+    <span>30-min flight trail</span>
+  </div>
+</div>
+<div id="status-bar">
+  <h4>Status</h4>
+  <div class="stat-row"><span>Aircraft tracked</span><span class="stat-val" id="s-count">—</span></div>
+  <div class="stat-row"><span>LEO airborne</span><span class="stat-val" id="s-leo">—</span></div>
+  <div class="stat-row"><span>Last update</span><span class="stat-val" id="s-time">—</span></div>
+</div>
+<div id="no-aircraft">
+  <h3>No aircraft in range</h3>
+  <p>No helicopters below 5,000ft detected within 60 miles of Austin.<br>Checking every 30 seconds.</p>
+</div>
+<script>
+const map = L.map('map').setView([30.2672, -97.7431], 10);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &amp; CartoDB', maxZoom: 18
+}).addTo(map);
+
+const acMarkers = {};
+const acTrails  = {};
+
+function makeHeloIcon(isLeo) {
+  const color = isLeo ? '#f59e0b' : '#a855f7';
+  return L.divIcon({
+    html: `<div style="font-size:22px;line-height:1;filter:drop-shadow(0 0 5px ${color});color:${color}">🚁</div>`,
+    iconSize: [26,26], iconAnchor: [13,13], className: ''
+  });
+}
+
+function popupHtml(ac) {
+  const ago  = Math.round((Date.now()/1000 - ac.ts) / 60);
+  const leo  = ac.is_leo ? '<div style="color:#f59e0b;font-weight:700;margin:4px 0">🔴 LAW ENFORCEMENT / EMS</div>' : '';
+  const cs   = ac.callsign ? `<div>Flight: <b>${ac.callsign}</b></div>` : '';
+  const hdg  = ac.heading  ? `${Math.round(ac.heading)}&deg;` : '?';
+  const spd  = ac.speed_kts ? `${Math.round(ac.speed_kts)} kts` : '?';
+  return `
+    <div style="font-family:-apple-system,sans-serif;min-width:180px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">${ac.label || ac.icao24}</div>
+      ${leo}${cs}
+      <div style="color:#64748b;font-size:12px">
+        ICAO: ${ac.icao24}<br>
+        Alt: <b>${ac.alt_ft ? ac.alt_ft.toLocaleString() + ' ft' : '?'}</b> &nbsp;
+        Hdg: ${hdg} &nbsp; Spd: ${spd}<br>
+        Updated ${ago}m ago
+      </div>
+    </div>`;
+}
+
+async function poll() {
+  try {
+    const resp = await fetch('/api/adsb');
+    const aircraft = await resp.json();
+    const seen = new Set();
+
+    for (const ac of aircraft) {
+      const key = ac.icao24;
+      seen.add(key);
+
+      const trailPts   = ac.trail.map(p => [p[0], p[1]]);
+      const trailColor = ac.is_leo ? '#f59e0b' : '#a855f7';
+
+      if (acTrails[key]) {
+        acTrails[key].setLatLngs(trailPts);
+      } else {
+        acTrails[key] = L.polyline(trailPts, {
+          color: trailColor, weight: 2, opacity: 0.55, dashArray: '5 5'
+        }).addTo(map);
+      }
+
+      if (acMarkers[key]) {
+        acMarkers[key].setLatLng([ac.lat, ac.lon]);
+        acMarkers[key].setPopupContent(popupHtml(ac));
+      } else {
+        acMarkers[key] = L.marker([ac.lat, ac.lon], {icon: makeHeloIcon(ac.is_leo)})
+          .bindPopup(popupHtml(ac))
+          .addTo(map);
+      }
+    }
+
+    // Remove aircraft that are gone
+    for (const key of Object.keys(acMarkers)) {
+      if (!seen.has(key)) {
+        acMarkers[key].remove(); delete acMarkers[key];
+        if (acTrails[key]) { acTrails[key].remove(); delete acTrails[key]; }
+      }
+    }
+
+    const total = aircraft.length;
+    const leo   = aircraft.filter(a => a.is_leo).length;
+    document.getElementById('s-count').textContent = total;
+    document.getElementById('s-leo').textContent   = leo;
+    document.getElementById('s-time').textContent  = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    document.getElementById('no-aircraft').style.display = total === 0 ? 'block' : 'none';
+  } catch(e) {
+    document.getElementById('s-time').textContent = 'error';
+  }
+}
+
+poll();
+setInterval(poll, 30000);
+</script>
+</body>
+</html>
+"""
+
+
+@app.route("/public/aircraft")
+def public_aircraft():
+    return PUBLIC_AIRCRAFT_HTML
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -6887,6 +7555,7 @@ button[type=submit]:hover { background: #2563eb; }
   <span class="tagline">Austin Metro — Real-Time Public Safety Intelligence</span>
   <nav class="nav">
     <a href="/public">Live Map</a>
+    <a href="/public/aircraft">Aircraft</a>
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about">About</a>
@@ -9796,6 +10465,35 @@ async function login() {
 </body></html>"""
     return subscribe
 
+
+
+# ---------------------------------------------------------------------------
+# OpenClaw Control UI — Nextcloud admin auth gate (used by nginx auth_request)
+# ---------------------------------------------------------------------------
+
+@app.route("/auth/nc_admin")
+def auth_nc_admin():
+    """nginx auth_request endpoint. Returns 200 if caller is a Nextcloud admin, 401 otherwise."""
+    from flask import make_response
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("basic "):
+        resp = make_response("", 401)
+        resp.headers["WWW-Authenticate"] = "Basic realm=\"OpenClaw\""
+        return resp
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8", errors="replace")
+        username, _, password = decoded.partition(":")
+    except Exception:
+        return make_response("", 401)
+    if not username or not password:
+        return make_response("", 401)
+    if not _nc_validate_user(username, password):
+        resp = make_response("", 401)
+        resp.headers["WWW-Authenticate"] = "Basic realm=\"OpenClaw\""
+        return resp
+    if not _is_admin(username):
+        return make_response("", 403)
+    return make_response("", 200)
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
