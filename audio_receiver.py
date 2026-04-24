@@ -741,32 +741,69 @@ _ADDR_RE = re.compile(
 )
 
 
+_nominatim_sem = threading.Semaphore(1)  # enforce 1 concurrent Nominatim call
+
+def _geocode_load_db() -> None:
+    """Warm in-memory cache from persistent DB at startup."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        for row in conn.execute("SELECT address_key, lat, lon FROM geocode_cache"):
+            _geocode_cache[row[0]] = (row[1], row[2]) if row[1] is not None else None
+        conn.close()
+        print(f"[geocode] loaded {len(_geocode_cache)} cached entries from DB", flush=True)
+    except Exception as exc:
+        print(f"[geocode] DB warm-up failed: {exc}", flush=True)
+
+def _geocode_save_db(key: str, lat: float | None, lon: float | None) -> None:
+    """Persist a geocode result (or None miss) to calls.db."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT OR REPLACE INTO geocode_cache (address_key, lat, lon, ts_cached) "
+            "VALUES (?, ?, ?, ?)",
+            (key, lat, lon, time.time())
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        print(f"[geocode] DB save failed for '{key}': {exc}", flush=True)
+
 def _geocode_address(address: str) -> tuple[float, float] | None:
-    """Geocode an address string in Austin/Travis County, TX. Cached. Returns (lat, lon) or None."""
+    """Geocode an address in Austin/Travis County TX. DB+memory cached. Returns (lat, lon) or None."""
     key = address.lower().strip()
     with _geocode_lock:
         if key in _geocode_cache:
             return _geocode_cache[key]
-    try:
-        from geopy.geocoders import Nominatim
-        geo = Nominatim(user_agent="battlebuddy/1.0")
-        min_lat, min_lon, max_lat, max_lon = _GEO_BOUNDS
-        # Try progressively broader context until we get a match inside Travis County bounds
-        for context in (f"{address}, Austin, TX", f"{address}, Travis County, TX", f"{address}, TX"):
-            result = geo.geocode(context, timeout=4)
-            if result:
-                lat, lon = result.latitude, result.longitude
-                if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
-                    with _geocode_lock:
-                        _geocode_cache[key] = (lat, lon)
-                    print(f"[geocode] '{address}' → {lat:.4f},{lon:.4f} (via '{context}')", flush=True)
-                    return lat, lon
+    
+    # Nominatim: enforce 1 concurrent call + 1s minimum gap between requests
+    with _nominatim_sem:
+        # Double-check after acquiring semaphore — another thread may have just resolved it
         with _geocode_lock:
-            _geocode_cache[key] = None
-    except Exception as exc:
-        print(f"[geocode] error for '{address}': {exc}", flush=True)
-        with _geocode_lock:
-            _geocode_cache[key] = None
+            if key in _geocode_cache:
+                return _geocode_cache[key]
+        try:
+            geo = Nominatim(user_agent="battlebuddy/1.0")
+            min_lat, min_lon, max_lat, max_lon = _GEO_BOUNDS
+            for context in (f"{address}, Austin, TX", f"{address}, Travis County, TX", f"{address}, TX"):
+                result = geo.geocode(context, timeout=4)
+                if result:
+                    lat, lon = result.latitude, result.longitude
+                    if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                        with _geocode_lock:
+                            _geocode_cache[key] = (lat, lon)
+                        _geocode_save_db(key, lat, lon)
+                        print(f"[geocode] '{address}' -> {lat:.4f},{lon:.4f} (via '{context}')", flush=True)
+                        return lat, lon
+            # Cache the miss so we don't re-query on restart
+            with _geocode_lock:
+                _geocode_cache[key] = None
+            _geocode_save_db(key, None, None)
+        except Exception as exc:
+            print(f"[geocode] error for '{address}': {exc}", flush=True)
+            with _geocode_lock:
+                _geocode_cache[key] = None
+            # Do NOT persist errors — transient network failures should be retried next restart
+        time.sleep(1.0)  # Nominatim 1 req/s policy
     return None
 
 
@@ -10682,6 +10719,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     load_talkgroups()
     init_db()
+    _geocode_load_db()
     _load_active_incidents_from_db()
     _atak_resync_on_startup()
 
