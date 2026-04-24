@@ -504,6 +504,10 @@ def init_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_geocode_key ON geocode_cache(address_key)"
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tgid_guesses (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            tgid        INTEGER NOT NULL,
             ts          REAL    NOT NULL,
             guess       TEXT    NOT NULL,
             category    TEXT,
