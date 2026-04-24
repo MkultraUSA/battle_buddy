@@ -816,11 +816,17 @@ def transcribe(wav_bytes: bytes) -> str:
         f.write(wav_bytes)
         tmp = f.name
     try:
-        with _fw_model_lock:
+        acquired = _fw_model_lock.acquire(timeout=90)
+        if not acquired:
+            print("[whisper] TIMEOUT waiting for model lock — dropping call", flush=True)
+            return ""
+        try:
             model = _get_fw_model()
             segments, _ = model.transcribe(tmp, language="en", beam_size=1,
                                            vad_filter=True)
             return " ".join(s.text for s in segments).strip()
+        finally:
+            _fw_model_lock.release()
     except Exception as e:
         print(f"[whisper] error: {e}", flush=True)
         return ""
