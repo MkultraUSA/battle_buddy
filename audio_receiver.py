@@ -494,9 +494,16 @@ def init_db():
         )
     """)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS tgid_guesses (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            tgid        INTEGER NOT NULL,
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            address_key  TEXT PRIMARY KEY,
+            lat          REAL,
+            lon          REAL,
+            ts_cached    REAL NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_geocode_key ON geocode_cache(address_key)"
+    )
             ts          REAL    NOT NULL,
             guess       TEXT    NOT NULL,
             category    TEXT,
