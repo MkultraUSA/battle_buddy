@@ -796,7 +796,9 @@ from faster_whisper import WhisperModel as _FasterWhisperModel
 _fw_model      = None
 _fw_model_lock          = threading.Lock()  # serialises Whisper inference
 _MAX_PROCESS_THREADS    = 20                # hard cap on concurrent process() threads
+_BROADCASTIFY_MAX       = 15                # broadcastify can hold at most this many slots (reserves 5 for pi5)
 _process_sem            = threading.Semaphore(_MAX_PROCESS_THREADS)
+_broadcastify_sem       = threading.Semaphore(_BROADCASTIFY_MAX)
 
 def _get_fw_model() -> _FasterWhisperModel:
     global _fw_model
@@ -4481,8 +4483,16 @@ def receive():
     if duration < 0.5:
         return jsonify({"status": "too_short"}), 202
 
-    # Bounded backlog: prevent unbounded thread accumulation under Whisper load
+    # Bounded backlog with pi5 priority: broadcastify capped at _BROADCASTIFY_MAX
+    # so at least (_MAX_PROCESS_THREADS - _BROADCASTIFY_MAX) slots are always
+    # available for OP25 audio from the Pi.
+    is_broadcastify = node != "pi5"
+    if is_broadcastify and not _broadcastify_sem.acquire(blocking=False):
+        print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — broadcastify cap ({_BROADCASTIFY_MAX}) reached", flush=True)
+        return jsonify({"status": "backlog_full"}), 202
     if not _process_sem.acquire(blocking=False):
+        if is_broadcastify:
+            _broadcastify_sem.release()
         src_label = "pi5" if node == "pi5" else "broadcastify"
         print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_MAX_PROCESS_THREADS} active)", flush=True)
         return jsonify({"status": "backlog_full"}), 202
@@ -4513,6 +4523,8 @@ def receive():
             post_to_talk(call)
         finally:
             _process_sem.release()
+            if is_broadcastify:
+                _broadcastify_sem.release()
 
     threading.Thread(target=process, daemon=True).start()
     return jsonify({"status": "queued"}), 202
