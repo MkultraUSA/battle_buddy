@@ -1,7 +1,6 @@
 import os
-# Extracting core config from audio_receiver.py
+# Core configuration
 DB_PATH = "/opt/battlebuddy/calls.db"
-# Constants needed for incident detection
 LOCUTION_TGIDS = [1121, 1122, 1155, 1162, 1371, 1377, 1378]
 TRANSIT_TGIDS = [1485, 1486]
 ABIA_ALERT_TGIDS = [1480, 1481]

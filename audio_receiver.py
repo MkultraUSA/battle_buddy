@@ -48,7 +48,7 @@ from flask import Flask, jsonify, render_template_string, request
 # Config
 # ---------------------------------------------------------------------------
 
-DB_PATH       = "/opt/battlebuddy/calls.db"
+from modules.config import DB_PATH
 TIPS_UPLOAD_DIR = "/opt/battlebuddy/static/tips"
 TGID_TSV      = "/opt/battlebuddy/gatrrs-tags.tsv"
 PI1_OP25_URL  = "http://radiodesk.ddns.net:8080/"
