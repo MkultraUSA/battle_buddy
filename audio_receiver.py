@@ -44,6 +44,7 @@ urllib.request.install_opener(
 
 from flask import Flask, jsonify, render_template_string, request
 from modules.queue_manager import queue_manager
+from modules.hold import HoldEngine
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +157,9 @@ def _room_for_call(call: dict, priority: str) -> list[str]:
 # Talk bot shared secret — must match what is registered with occ talk:bot:install
 TALK_BOT_SECRET = os.environ.get("TALK_BOT_SECRET", "")
 
-# Hold/skip commands to Pi 1 OP25 — OFF until behavior is verified.
-# Run with --enable-hold to turn on.
-HOLD_ENABLED = False
+# Hold engine
+hold_engine = HoldEngine(PI1_OP25_URL, hold_enabled=HOLD_ENABLED, hold_release_minutes=HOLD_RELEASE_MINUTES)
+hold_lock = hold_engine.hold_lock # Access for modules, refactor later
 
 # Release hold after this many minutes of silence on the held channel.
 HOLD_RELEASE_MINUTES = 5
@@ -1522,8 +1523,9 @@ def analyze_for_incident(call: dict):
 
     if not flags:
         if HOLD_ENABLED and loc_match:
-            _consider_hold(tgid, _active_incidents[loc_match]["itype"],
-                           escalation_stage=stage or _active_incidents[loc_match].get("escalation_stage"))
+            hold_engine.consider_hold(tgid, _active_incidents[loc_match]["itype"],
+                                      escalation_stage=stage or _active_incidents[loc_match].get("escalation_stage"),
+                                      escalation_min_tier=ESCALATION_MIN_TIER, tgid_tier=TGID_TIER)
         return
 
     # Use lowest priority number (highest urgency)
@@ -1559,7 +1561,8 @@ def analyze_for_incident(call: dict):
         conn.close()
 
     if HOLD_ENABLED:
-        _consider_hold(tgid, itype, escalation_stage=stage or groq.get("escalation_stage"))
+        hold_engine.consider_hold(tgid, itype, escalation_stage=stage or groq.get("escalation_stage"),
+                                  escalation_min_tier=ESCALATION_MIN_TIER, tgid_tier=TGID_TIER)
 
 
 # ---------------------------------------------------------------------------
@@ -1886,85 +1889,18 @@ def incident_cleanup_thread():
 
 _current_hold_tgid: int | None = None
 _last_hold_activity: float = 0.0
-_hold_lock = threading.Lock()
+_hold_lock = hold_engine.hold_lock # Access for modules, refactor later
 
 
-def _consider_hold(tgid: int, itype: str, escalation_stage: str | None = None):
-    """Decide whether to hold or switch hold to tgid, using tier-based escalation logic.
 
-    Tier rules:
-    - No current hold → hold tgid immediately.
-    - Same tgid already held → refresh activity timestamp only.
-    - Different tgid → switch only if new tgid's tier is >= the escalation minimum
-      AND strictly higher than the current hold's tier (follow the incident up the
-      chain: dispatch → metro → tactical).
-    - Broadcastify clips (tgid == 0) never drive a hold switch.
-    """
-    global _current_hold_tgid, _last_hold_activity
-    if tgid == 0:
-        return  # Broadcastify mixed stream — no TGID data, skip
-    with _hold_lock:
-        if _current_hold_tgid is None:
-            _send_hold(tgid)
-            return
-        if _current_hold_tgid == tgid:
-            _last_hold_activity = time.time()
-            return
-        if escalation_stage:
-            min_tier = ESCALATION_MIN_TIER.get(escalation_stage, 1)
-            new_tier = TGID_TIER.get(tgid, 0)
-            cur_tier = TGID_TIER.get(_current_hold_tgid, 0)
-            if new_tier >= min_tier and new_tier > cur_tier:
-                print(f"[hold] ESCALATION {escalation_stage}: tier {cur_tier} TGID {_current_hold_tgid}"
-                      f" → tier {new_tier} TGID {tgid}", flush=True)
-                _send_hold(tgid)
-                return
-        # No upgrade warranted — keep current hold but refresh activity
-        _last_hold_activity = time.time()
-
-
-def _send_hold(tgid: int):
-    global _current_hold_tgid, _last_hold_activity
-    payload = json.dumps([{"command": "hold", "arg1": tgid, "arg2": 0}]).encode()
-    try:
-        req = urllib.request.Request(
-            PI1_OP25_URL, data=payload,
-            headers={"Content-Type": "application/json"}
-        )
-        urllib.request.urlopen(req, timeout=5)
-        _current_hold_tgid = tgid
-        _last_hold_activity = time.time()
-        print(f"[hold] HOLD  TGID {tgid}", flush=True)
-    except Exception as e:
-        print(f"[hold] FAILED to hold TGID {tgid}: {e}", flush=True)
-
-
-def _send_skip():
-    global _current_hold_tgid
-    payload = json.dumps([{"command": "skip", "arg1": 0, "arg2": 0}]).encode()
-    try:
-        req = urllib.request.Request(
-            PI1_OP25_URL, data=payload,
-            headers={"Content-Type": "application/json"}
-        )
-        urllib.request.urlopen(req, timeout=5)
-        prev = _current_hold_tgid
-        _current_hold_tgid = None
-        print(f"[hold] SKIP  (released TGID {prev})", flush=True)
-    except Exception as e:
-        print(f"[hold] FAILED to release: {e}", flush=True)
+# The following code is moved to modules/hold.py
+# ---
+# 
+# 
 
 
 def hold_watchdog_thread():
-    """Release hold automatically when the held channel goes quiet."""
-    while True:
-        time.sleep(30)
-        with _hold_lock:
-            if (_current_hold_tgid is not None and
-                    time.time() - _last_hold_activity > HOLD_RELEASE_MINUTES * 60):
-                print(f"[hold] watchdog: releasing TGID {_current_hold_tgid} (timeout)", flush=True)
-                if HOLD_ENABLED:
-                    _send_skip()
+    hold_engine.hold_watchdog_thread()
 
 
 # ---------------------------------------------------------------------------
