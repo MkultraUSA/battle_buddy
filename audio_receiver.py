@@ -43,6 +43,8 @@ urllib.request.install_opener(
 )
 
 from flask import Flask, jsonify, render_template_string, request
+from modules.queue_manager import queue_manager
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -4503,36 +4505,41 @@ def receive():
         print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_MAX_PROCESS_THREADS} active)", flush=True)
         return jsonify({"status": "backlog_full"}), 202
 
-    def process():
-        try:
-            global _last_call_ts
-            _last_call_ts = time.time()
-            transcript = transcribe(wav_bytes)
-            lat, lon, location = extract_location(transcript)
-            if lat is None:
-                lat, lon = def_lat, def_lon
-                location = None
-                coords_approx = 1
-            else:
-                coords_approx = 0
-            print(f"[recv] {tag}: {transcript[:80]}", flush=True)
-            call_id = insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx)
-            call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag, category=category,
-                        transcript=transcript, lat=lat, lon=lon, location=location)
-            recent = calls_since(ts - 15 * 60)
-            call["groq"] = groq_analyze(call, recent)
-            # If this is an unknown talkgroup, ask Groq to identify it
-            if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
-                threading.Thread(target=groq_identify_tgid, args=(tgid, transcript),
-                                 daemon=True).start()
-            analyze_for_incident(call)
-            post_to_talk(call)
-        finally:
-            _process_sem.release()
-            if is_broadcastify:
-                _broadcastify_sem.release()
+def process_call(call_data):
+    global _last_call_ts
+    _last_call_ts = time.time()
+    transcript = transcribe(call_data['wav_bytes'])
+    lat, lon, location = extract_location(transcript)
+    if lat is None:
+        lat, lon = call_data['def_lat'], call_data['def_lon']
+        location = None
+        coords_approx = 1
+    else:
+        coords_approx = 0
+    print(f"[recv] {call_data['tag']}: {transcript[:80]}", flush=True)
+    call_id = insert_call(call_data['ts'], call_data['tgid'], call_data['tag'], call_data['category'], 
+                          call_data['node'], call_data['duration'], transcript, lat, lon, location, coords_approx)
+    
+    call = dict(id=call_id, ts=call_data['ts'], tgid=call_data['tgid'], tag=call_data['tag'], 
+                category=call_data['category'], transcript=transcript, 
+                lat=lat, lon=lon, location=location)
+    
+    recent = calls_since(call_data['ts'] - 15 * 60)
+    call["groq"] = groq_analyze(call, recent)
+    if call_data['tag'].startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
+        threading.Thread(target=groq_identify_tgid, args=(call_data['tgid'], transcript), daemon=True).start()
+    analyze_for_incident(call)
+    post_to_talk(call)
+    
+    _process_sem.release()
+    if call_data['is_broadcastify']:
+        _broadcastify_sem.release()
 
-    threading.Thread(target=process, daemon=True).start()
+    queue_manager.enqueue_call({
+        'wav_bytes': wav_bytes, 'tgid': tgid, 'tag': tag, 'node': node, 'ts': ts,
+        'category': category, 'def_lat': def_lat, 'def_lon': def_lon,
+        'duration': duration, 'is_broadcastify': is_broadcastify
+    })
     return jsonify({"status": "queued"}), 202
 
 
@@ -10667,6 +10674,9 @@ if __name__ == "__main__":
         print("[hold] OP25 hold/skip ENABLED — will send commands to Pi 1", flush=True)
     else:
         print("[hold] OP25 hold/skip DISABLED (run with --enable-hold to activate)", flush=True)
+
+    # Queue Manager Integration
+    queue_manager.start_queue(process_call)
 
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     load_talkgroups()
