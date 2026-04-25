@@ -494,17 +494,6 @@ def init_db():
         )
     """)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS geocode_cache (
-            address_key  TEXT PRIMARY KEY,
-            lat          REAL,
-            lon          REAL,
-            ts_cached    REAL NOT NULL
-        )
-    """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_geocode_key ON geocode_cache(address_key)"
-    )
-    conn.execute("""
         CREATE TABLE IF NOT EXISTS tgid_guesses (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             tgid        INTEGER NOT NULL,
@@ -741,69 +730,32 @@ _ADDR_RE = re.compile(
 )
 
 
-_nominatim_sem = threading.Semaphore(1)  # enforce 1 concurrent Nominatim call
-
-def _geocode_load_db() -> None:
-    """Warm in-memory cache from persistent DB at startup."""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        for row in conn.execute("SELECT address_key, lat, lon FROM geocode_cache"):
-            _geocode_cache[row[0]] = (row[1], row[2]) if row[1] is not None else None
-        conn.close()
-        print(f"[geocode] loaded {len(_geocode_cache)} cached entries from DB", flush=True)
-    except Exception as exc:
-        print(f"[geocode] DB warm-up failed: {exc}", flush=True)
-
-def _geocode_save_db(key: str, lat: float | None, lon: float | None) -> None:
-    """Persist a geocode result (or None miss) to calls.db."""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute(
-            "INSERT OR REPLACE INTO geocode_cache (address_key, lat, lon, ts_cached) "
-            "VALUES (?, ?, ?, ?)",
-            (key, lat, lon, time.time())
-        )
-        conn.commit()
-        conn.close()
-    except Exception as exc:
-        print(f"[geocode] DB save failed for '{key}': {exc}", flush=True)
-
 def _geocode_address(address: str) -> tuple[float, float] | None:
-    """Geocode an address in Austin/Travis County TX. DB+memory cached. Returns (lat, lon) or None."""
+    """Geocode an address string in Austin/Travis County, TX. Cached. Returns (lat, lon) or None."""
     key = address.lower().strip()
     with _geocode_lock:
         if key in _geocode_cache:
             return _geocode_cache[key]
-    
-    # Nominatim: enforce 1 concurrent call + 1s minimum gap between requests
-    with _nominatim_sem:
-        # Double-check after acquiring semaphore — another thread may have just resolved it
+    try:
+        from geopy.geocoders import Nominatim
+        geo = Nominatim(user_agent="battlebuddy/1.0")
+        min_lat, min_lon, max_lat, max_lon = _GEO_BOUNDS
+        # Try progressively broader context until we get a match inside Travis County bounds
+        for context in (f"{address}, Austin, TX", f"{address}, Travis County, TX", f"{address}, TX"):
+            result = geo.geocode(context, timeout=4)
+            if result:
+                lat, lon = result.latitude, result.longitude
+                if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                    with _geocode_lock:
+                        _geocode_cache[key] = (lat, lon)
+                    print(f"[geocode] '{address}' → {lat:.4f},{lon:.4f} (via '{context}')", flush=True)
+                    return lat, lon
         with _geocode_lock:
-            if key in _geocode_cache:
-                return _geocode_cache[key]
-        try:
-            geo = Nominatim(user_agent="battlebuddy/1.0")
-            min_lat, min_lon, max_lat, max_lon = _GEO_BOUNDS
-            for context in (f"{address}, Austin, TX", f"{address}, Travis County, TX", f"{address}, TX"):
-                result = geo.geocode(context, timeout=4)
-                if result:
-                    lat, lon = result.latitude, result.longitude
-                    if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
-                        with _geocode_lock:
-                            _geocode_cache[key] = (lat, lon)
-                        _geocode_save_db(key, lat, lon)
-                        print(f"[geocode] '{address}' -> {lat:.4f},{lon:.4f} (via '{context}')", flush=True)
-                        return lat, lon
-            # Cache the miss so we don't re-query on restart
-            with _geocode_lock:
-                _geocode_cache[key] = None
-            _geocode_save_db(key, None, None)
-        except Exception as exc:
-            print(f"[geocode] error for '{address}': {exc}", flush=True)
-            with _geocode_lock:
-                _geocode_cache[key] = None
-            # Do NOT persist errors — transient network failures should be retried next restart
-        time.sleep(1.0)  # Nominatim 1 req/s policy
+            _geocode_cache[key] = None
+    except Exception as exc:
+        print(f"[geocode] error for '{address}': {exc}", flush=True)
+        with _geocode_lock:
+            _geocode_cache[key] = None
     return None
 
 
@@ -844,22 +796,7 @@ from faster_whisper import WhisperModel as _FasterWhisperModel
 _fw_model      = None
 _fw_model_lock          = threading.Lock()  # serialises Whisper inference
 _MAX_PROCESS_THREADS    = 20                # hard cap on concurrent process() threads
-_BROADCASTIFY_MAX       = 15                # broadcastify can hold at most this many slots (reserves 5 for pi5)
 _process_sem            = threading.Semaphore(_MAX_PROCESS_THREADS)
-_broadcastify_sem       = threading.Semaphore(_BROADCASTIFY_MAX)
-
-# ---------------------------------------------------------------------------
-# /receive deduplication cache
-# Keyed by SHA-256 of the raw WAV bytes.  Each entry stores the Unix timestamp
-# at which the hash expires (default TTL: 60 s).  A second identical payload
-# arriving within that window is silently dropped with status "duplicate".
-# The cache is bounded to _DEDUP_MAX_ENTRIES entries; when full, stale entries
-# are evicted before inserting a new one.  Protected by a threading.Lock.
-# ---------------------------------------------------------------------------
-_DEDUP_TTL_SECONDS   = 60          # seconds a hash is remembered
-_DEDUP_MAX_ENTRIES   = 2048        # upper bound; prevents unbounded growth
-_recv_seen_hashes: dict[str, float] = {}   # {sha256_hex: expiry_ts}
-_recv_dedup_lock     = threading.Lock()
 
 def _get_fw_model() -> _FasterWhisperModel:
     global _fw_model
@@ -877,17 +814,11 @@ def transcribe(wav_bytes: bytes) -> str:
         f.write(wav_bytes)
         tmp = f.name
     try:
-        acquired = _fw_model_lock.acquire(timeout=90)
-        if not acquired:
-            print("[whisper] TIMEOUT waiting for model lock — dropping call", flush=True)
-            return ""
-        try:
+        with _fw_model_lock:
             model = _get_fw_model()
             segments, _ = model.transcribe(tmp, language="en", beam_size=1,
                                            vad_filter=True)
             return " ".join(s.text for s in segments).strip()
-        finally:
-            _fw_model_lock.release()
     except Exception as e:
         print(f"[whisper] error: {e}", flush=True)
         return ""
@@ -1446,8 +1377,146 @@ _atak_markers: dict[int, str] = {}  # incident_id → FTS uid, for deletion on c
 _incident_lock = threading.Lock()
 
 
-from modules.incident_engine import analyze_for_incident
+def analyze_for_incident(call: dict):
+    """Run after each call is stored. Detect and record incidents."""
+    tgid  = call.get("tgid", 0)
+    cat   = call.get("category", "Unknown")
+    _raw = (call.get("transcript") or "")
+    if tgid in LOCUTION_TGIDS:
+        _raw = _apply_locution_corrections(_raw)
+    text  = _raw.lower()
+    ts    = call.get("ts", time.time())
 
+    flags = []   # list of (priority, itype, description)
+
+    # --- Groq LLM result (primary signal — overrides keyword rules if present) ---
+    groq = call.get("groq") or {}
+    groq_itype = groq.get("incident_type")
+    groq_pri   = groq.get("priority", "NONE")
+    if groq_itype and groq_itype not in (None, "ROUTINE"):
+        pri_score = {"HIGH": 5, "MED": 15, "NONE": 30}.get(groq_pri, 20)
+        flags.append((pri_score, groq_itype,
+                      groq.get("description") or f"{groq_itype} detected by LLM"))
+
+    # --- Rule 1: Transit channels active (APD Metro 1-10) ---
+    if tgid in TRANSIT_TGIDS:
+        flags.append((10, "TRANSIT INCIDENT",
+                      f"APD transit channel active: {call.get('tag', tgid)} — "
+                      f"Cap Metro bus/rail event likely"))
+
+    # --- Rule 2: Airport alert ---
+    if tgid in ABIA_ALERT_TGIDS:
+        flags.append((5, "AIRPORT EMERGENCY",
+                      "ABIA Alert channel activated"))
+
+    # --- Rule 3: Keyword in transcript ---
+    # Skip ABIA operational channels — airport security/ops uses words like
+    # "barricade", "hostage", "weapons" in routine daily context.
+    # Skip Unknown agency — APD radio is P25 encrypted; Whisper hallucinates
+    # words like "shooting", "assault", "shots fired" from carrier noise.
+    if tgid not in ABIA_OPS_TGIDS and cat != "Unknown":
+        for kw, itype in INCIDENT_KEYWORDS:
+            if kw in text:
+                flags.append((20, itype,
+                              f"'{kw}' detected on {call.get('tag', tgid)}"))
+                break
+
+    # --- Rule 4: Locution dispatch ---
+    # Skip pure EMS calls — cardiac arrests, medical assists, seizures, etc.
+    # are routine EMS responses, not newsworthy fire incidents.
+    EMS_ONLY_KEYWORDS = (
+        "cardiac arrest", "medical assist", "seizure", "sick person",
+        "respiratory", "difficulty breathing", "chest pain", "diabetic",
+        "unconscious", "fall victim", "overdose", "stroke",
+    )
+    FIRE_KEYWORDS = (
+        "fire", "smoke", "explosion", "hazmat", "brush", "structure",
+        "vehicle fire", "trash fire", "alarm", "rescue",
+    )
+    if tgid in LOCUTION_TGIDS and len(text) > 8:
+        tl = text.lower()
+        is_ems_only = (
+            any(kw in tl for kw in EMS_ONLY_KEYWORDS)
+            and not any(kw in tl for kw in FIRE_KEYWORDS)
+        )
+        if not is_ems_only:
+            flags.append((15, "FIRE DISPATCH",
+                          f"Locution active ({call.get('tag', tgid)}): {text[:80]}"))
+
+    # --- Rule 5: Multi-agency convergence ---
+    # Only fires when another rule has already detected something real.
+    # ABIA is excluded because it runs 24/7 and is rarely co-responding with
+    # ground units on the same incident — including it caused constant false positives.
+    # Requires 3+ ground agencies to filter out normal paired APD+AFD dispatches.
+    if flags:
+        window = calls_since(ts - MULTIAGENCY_WINDOW_MIN * 60)
+        active_cats = {c["category"] for c in window
+                       if c["category"] not in (None, "Unknown", "TXDOT", "Interop", "ABIA")}
+        ps_cats = active_cats & {"APD", "AFD", "TCEMS", "TCSO", "TCFD"}
+        if len(ps_cats) >= 3:
+            flags.append((30, "MULTI-AGENCY RESPONSE",
+                          f"Agencies active in last {MULTIAGENCY_WINDOW_MIN}m: "
+                          f"{', '.join(sorted(ps_cats))}"))
+
+    # --- Rule 6a: Air asset active ---
+    # A police/fire helicopter in the air is one of the strongest early
+    # indicators of a newsworthy event — pursuit, active shooter perimeter,
+    # search, crowd overwatch, or dignitary movement. Flag it immediately.
+    air_context = detect_air_asset(tgid, call.get("transcript") or "", cat)
+    if air_context:
+        flags.append((8, "AIR ASSET ACTIVE",
+                      f"{cat} air asset aloft — likely: {air_context} "
+                      f"({call.get('tag', tgid)})"))
+
+    # --- Rule 6b: DPS Capitol activation ---
+    # DPS protects the Capitol complex with assets most agencies don't have.
+    # Any DPS talkgroup activity OR cross-agency DPS mention near downtown
+    # signals a potential dignitary, protest, or Capitol security event.
+    if cat == "DPS" or mentions_dps(text):
+        assets = detect_dps_assets(call.get("transcript") or "")
+        asset_note = f" — assets: {', '.join(assets)}" if assets else ""
+        capitol = is_capitol_area(call.get("transcript") or "", call.get("location"))
+        if capitol or assets:
+            flags.append((25, "DPS CAPITOL ACTIVATION",
+                          f"DPS activity detected{asset_note}"
+                          + (" near Capitol complex" if capitol else "")))
+
+    # --- Rule 7: APD surge (APD-only events like the bus stabbing) ---
+    apd_calls = [c for c in calls_since(ts - APD_SURGE_WINDOW_MIN * 60)
+                 if c["category"] == "APD"]
+    if len(apd_calls) >= APD_SURGE_THRESHOLD:
+        # Exclude pure dispatch/metro-only surges from noise
+        ops_calls = [c for c in apd_calls
+                     if c["tgid"] not in (967,)]  # 967 = APD Dispatch (high volume normal)
+        if len(ops_calls) >= APD_SURGE_THRESHOLD:
+            flags.append((35, "APD SURGE",
+                          f"{len(ops_calls)} APD operational calls in "
+                          f"{APD_SURGE_WINDOW_MIN} min — possible major incident"))
+
+    # --- Escalation check on ALL calls (even routine ones) ---
+    # A welfare check that turns into a SWAT standoff must be linked.
+    call_id = call.get("id")
+    stage = _detect_escalation_stage(call.get("transcript") or "") or groq.get("escalation_stage")
+    loc_match = _find_incident_by_location(call.get("lat"), call.get("lon"), ts)
+    if loc_match is not None:
+        # Link this call to the nearby incident
+        if call_id:
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute("INSERT OR IGNORE INTO incident_calls (incident_id, call_id) VALUES (?,?)",
+                         (loc_match, call_id))
+            conn.commit()
+            conn.close()
+        if stage:
+            _record_escalation(loc_match, stage,
+                               f"{call.get('tag','?')}: {(call.get('transcript') or '')[:80]}", ts)
+
+    if not flags:
+        if HOLD_ENABLED and loc_match:
+            _consider_hold(tgid, _active_incidents[loc_match]["itype"],
+                           escalation_stage=stage or _active_incidents[loc_match].get("escalation_stage"))
+        return
+
+    # Use lowest priority number (highest urgency)
     flags.sort(key=lambda x: x[0])
     _, itype, desc = flags[0]
 
@@ -4412,38 +4481,8 @@ def receive():
     if duration < 0.5:
         return jsonify({"status": "too_short"}), 202
 
-    # ------------------------------------------------------------------
-    # Deduplication: reject identical audio payloads received within
-    # _DEDUP_TTL_SECONDS of each other (e.g. Pi retransmit on network
-    # hiccup, double-post from the broadcastify bridge, etc.).
-    # We hash the raw decoded WAV bytes; same call == same bytes.
-    # ------------------------------------------------------------------
-    audio_hash = hashlib.sha256(wav_bytes).hexdigest()
-    now = time.time()
-    with _recv_dedup_lock:
-        # Evict expired entries first to keep the dict bounded
-        if len(_recv_seen_hashes) >= _DEDUP_MAX_ENTRIES:
-            expired_keys = [k for k, exp in _recv_seen_hashes.items() if exp <= now]
-            for k in expired_keys:
-                del _recv_seen_hashes[k]
-
-        if audio_hash in _recv_seen_hashes and _recv_seen_hashes[audio_hash] > now:
-            print(f"[recv] DEDUP {tag} ({duration:.1f}s) — identical payload seen within {_DEDUP_TTL_SECONDS}s window", flush=True)
-            return jsonify({"status": "duplicate"}), 202
-
-        # Register hash; will expire after TTL
-        _recv_seen_hashes[audio_hash] = now + _DEDUP_TTL_SECONDS
-
-    # Bounded backlog with pi5 priority: broadcastify capped at _BROADCASTIFY_MAX
-    # so at least (_MAX_PROCESS_THREADS - _BROADCASTIFY_MAX) slots are always
-    # available for OP25 audio from the Pi.
-    is_broadcastify = node != "pi5"
-    if is_broadcastify and not _broadcastify_sem.acquire(blocking=False):
-        print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — broadcastify cap ({_BROADCASTIFY_MAX}) reached", flush=True)
-        return jsonify({"status": "backlog_full"}), 202
+    # Bounded backlog: prevent unbounded thread accumulation under Whisper load
     if not _process_sem.acquire(blocking=False):
-        if is_broadcastify:
-            _broadcastify_sem.release()
         src_label = "pi5" if node == "pi5" else "broadcastify"
         print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_MAX_PROCESS_THREADS} active)", flush=True)
         return jsonify({"status": "backlog_full"}), 202
@@ -4466,17 +4505,17 @@ def receive():
                         transcript=transcript, lat=lat, lon=lon, location=location)
             recent = calls_since(ts - 15 * 60)
             call["groq"] = groq_analyze(call, recent)
-    from modules.queue_manager import enqueue_call
-    task_data = {"wav_bytes": wav_bytes, "tag": tag, "tgid": tgid, "ts": ts, 
-                 "category": category, "node": node, "duration": duration, 
-                 "is_broadcastify": is_broadcastify, "def_lat": def_lat, 
-                 "def_lon": def_lon}
+            # If this is an unknown talkgroup, ask Groq to identify it
+            if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
+                threading.Thread(target=groq_identify_tgid, args=(tgid, transcript),
+                                 daemon=True).start()
+            analyze_for_incident(call)
+            post_to_talk(call)
+        finally:
+            _process_sem.release()
 
-    if enqueue_call(task_data):
-        return jsonify({"status": "queued"}), 202
-    else:
-        print(f"[recv] DROP {tag} — queue full", flush=True)
-        return jsonify({"status": "backlog_full"}), 202
+    threading.Thread(target=process, daemon=True).start()
+    return jsonify({"status": "queued"}), 202
 
 
 @app.route("/watchdog_event", methods=["POST"])
@@ -10614,7 +10653,6 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     load_talkgroups()
     init_db()
-    _geocode_load_db()
     _load_active_incidents_from_db()
     _atak_resync_on_startup()
 
@@ -10634,6 +10672,7 @@ if __name__ == "__main__":
     threading.Thread(target=traffic_open_data_thread, daemon=True).start()
     threading.Thread(target=atxfloods_thread,         daemon=True).start()
     threading.Thread(target=austin_events_thread,    daemon=True).start()
+    threading.Thread(target=apd_cad_thread,          daemon=True).start()
     threading.Thread(target=apd_news_thread,          daemon=True).start()
     threading.Thread(target=reddit_intel_thread,      daemon=True).start()
     threading.Thread(target=adsb_air_asset_thread,    daemon=True).start()
