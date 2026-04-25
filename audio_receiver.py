@@ -49,6 +49,14 @@ from flask import Flask, jsonify, render_template_string, request
 # ---------------------------------------------------------------------------
 
 from modules.config import DB_PATH
+from modules.incident_engine import (
+    analyze_for_incident,
+    incident_cleanup_thread,
+    load_active_incidents,
+    register_callbacks,
+    _active_incidents,
+    _incident_lock,
+)
 TIPS_UPLOAD_DIR = "/opt/battlebuddy/static/tips"
 TGID_TSV      = "/opt/battlebuddy/gatrrs-tags.tsv"
 PI1_OP25_URL  = "http://radiodesk.ddns.net:8080/"
@@ -1440,185 +1448,16 @@ def _post_escalation_to_talk(itype: str, location: str, chain: str, latest: str,
             print(f"[escalation] post failed → {room}: {e}", flush=True)
 
 
-# In-memory active incident state: {db_id: {itype, ts_updated, agencies, tgids, lat, lon, escalation_stage}}
-_active_incidents: dict[int, dict] = {}
-_atak_markers: dict[int, str] = {}  # incident_id → FTS uid, for deletion on clear
-_incident_lock = threading.Lock()
+# ---------------------------------------------------------------------------
+# In-memory active incident state and lock are now owned by modules/incident_engine.py
+# and imported at the top of this file.  _atak_markers remains here because
+# it is used only by the ATAK CoT functions below.
+# ---------------------------------------------------------------------------
+_atak_markers: dict[int, str] = {}  # incident_id -> FTS uid, for deletion on clear
 
-
-def analyze_for_incident(call: dict):
-    """Run after each call is stored. Detect and record incidents."""
-    tgid  = call.get("tgid", 0)
-    cat   = call.get("category", "Unknown")
-    _raw = (call.get("transcript") or "")
-    if tgid in LOCUTION_TGIDS:
-        _raw = _apply_locution_corrections(_raw)
-    text  = _raw.lower()
-    ts    = call.get("ts", time.time())
-
-    flags = []   # list of (priority, itype, description)
-
-    # --- Groq LLM result (primary signal — overrides keyword rules if present) ---
-    groq = call.get("groq") or {}
-    groq_itype = groq.get("incident_type")
-    groq_pri   = groq.get("priority", "NONE")
-    if groq_itype and groq_itype not in (None, "ROUTINE"):
-        pri_score = {"HIGH": 5, "MED": 15, "NONE": 30}.get(groq_pri, 20)
-        flags.append((pri_score, groq_itype,
-                      groq.get("description") or f"{groq_itype} detected by LLM"))
-
-    # --- Rule 1: Transit channels active (APD Metro 1-10) ---
-    if tgid in TRANSIT_TGIDS:
-        flags.append((10, "TRANSIT INCIDENT",
-                      f"APD transit channel active: {call.get('tag', tgid)} — "
-                      f"Cap Metro bus/rail event likely"))
-
-    # --- Rule 2: Airport alert ---
-    if tgid in ABIA_ALERT_TGIDS:
-        flags.append((5, "AIRPORT EMERGENCY",
-                      "ABIA Alert channel activated"))
-
-    # --- Rule 3: Keyword in transcript ---
-    # Skip ABIA operational channels — airport security/ops uses words like
-    # "barricade", "hostage", "weapons" in routine daily context.
-    # Skip Unknown agency — APD radio is P25 encrypted; Whisper hallucinates
-    # words like "shooting", "assault", "shots fired" from carrier noise.
-    if tgid not in ABIA_OPS_TGIDS and cat != "Unknown":
-        for kw, itype in INCIDENT_KEYWORDS:
-            if kw in text:
-                flags.append((20, itype,
-                              f"'{kw}' detected on {call.get('tag', tgid)}"))
-                break
-
-    # --- Rule 4: Locution dispatch ---
-    # Skip pure EMS calls — cardiac arrests, medical assists, seizures, etc.
-    # are routine EMS responses, not newsworthy fire incidents.
-    EMS_ONLY_KEYWORDS = (
-        "cardiac arrest", "medical assist", "seizure", "sick person",
-        "respiratory", "difficulty breathing", "chest pain", "diabetic",
-        "unconscious", "fall victim", "overdose", "stroke",
-    )
-    FIRE_KEYWORDS = (
-        "fire", "smoke", "explosion", "hazmat", "brush", "structure",
-        "vehicle fire", "trash fire", "alarm", "rescue",
-    )
-    if tgid in LOCUTION_TGIDS and len(text) > 8:
-        tl = text.lower()
-        is_ems_only = (
-            any(kw in tl for kw in EMS_ONLY_KEYWORDS)
-            and not any(kw in tl for kw in FIRE_KEYWORDS)
-        )
-        if not is_ems_only:
-            flags.append((15, "FIRE DISPATCH",
-                          f"Locution active ({call.get('tag', tgid)}): {text[:80]}"))
-
-    # --- Rule 5: Multi-agency convergence ---
-    # Only fires when another rule has already detected something real.
-    # ABIA is excluded because it runs 24/7 and is rarely co-responding with
-    # ground units on the same incident — including it caused constant false positives.
-    # Requires 3+ ground agencies to filter out normal paired APD+AFD dispatches.
-    if flags:
-        window = calls_since(ts - MULTIAGENCY_WINDOW_MIN * 60)
-        active_cats = {c["category"] for c in window
-                       if c["category"] not in (None, "Unknown", "TXDOT", "Interop", "ABIA")}
-        ps_cats = active_cats & {"APD", "AFD", "TCEMS", "TCSO", "TCFD"}
-        if len(ps_cats) >= 3:
-            flags.append((30, "MULTI-AGENCY RESPONSE",
-                          f"Agencies active in last {MULTIAGENCY_WINDOW_MIN}m: "
-                          f"{', '.join(sorted(ps_cats))}"))
-
-    # --- Rule 6a: Air asset active ---
-    # A police/fire helicopter in the air is one of the strongest early
-    # indicators of a newsworthy event — pursuit, active shooter perimeter,
-    # search, crowd overwatch, or dignitary movement. Flag it immediately.
-    air_context = detect_air_asset(tgid, call.get("transcript") or "", cat)
-    if air_context:
-        flags.append((8, "AIR ASSET ACTIVE",
-                      f"{cat} air asset aloft — likely: {air_context} "
-                      f"({call.get('tag', tgid)})"))
-
-    # --- Rule 6b: DPS Capitol activation ---
-    # DPS protects the Capitol complex with assets most agencies don't have.
-    # Any DPS talkgroup activity OR cross-agency DPS mention near downtown
-    # signals a potential dignitary, protest, or Capitol security event.
-    if cat == "DPS" or mentions_dps(text):
-        assets = detect_dps_assets(call.get("transcript") or "")
-        asset_note = f" — assets: {', '.join(assets)}" if assets else ""
-        capitol = is_capitol_area(call.get("transcript") or "", call.get("location"))
-        if capitol or assets:
-            flags.append((25, "DPS CAPITOL ACTIVATION",
-                          f"DPS activity detected{asset_note}"
-                          + (" near Capitol complex" if capitol else "")))
-
-    # --- Rule 7: APD surge (APD-only events like the bus stabbing) ---
-    apd_calls = [c for c in calls_since(ts - APD_SURGE_WINDOW_MIN * 60)
-                 if c["category"] == "APD"]
-    if len(apd_calls) >= APD_SURGE_THRESHOLD:
-        # Exclude pure dispatch/metro-only surges from noise
-        ops_calls = [c for c in apd_calls
-                     if c["tgid"] not in (967,)]  # 967 = APD Dispatch (high volume normal)
-        if len(ops_calls) >= APD_SURGE_THRESHOLD:
-            flags.append((35, "APD SURGE",
-                          f"{len(ops_calls)} APD operational calls in "
-                          f"{APD_SURGE_WINDOW_MIN} min — possible major incident"))
-
-    # --- Escalation check on ALL calls (even routine ones) ---
-    # A welfare check that turns into a SWAT standoff must be linked.
-    call_id = call.get("id")
-    stage = _detect_escalation_stage(call.get("transcript") or "") or groq.get("escalation_stage")
-    loc_match = _find_incident_by_location(call.get("lat"), call.get("lon"), ts)
-    if loc_match is not None:
-        # Link this call to the nearby incident
-        if call_id:
-            conn = sqlite3.connect(DB_PATH)
-            conn.execute("INSERT OR IGNORE INTO incident_calls (incident_id, call_id) VALUES (?,?)",
-                         (loc_match, call_id))
-            conn.commit()
-            conn.close()
-        if stage:
-            _record_escalation(loc_match, stage,
-                               f"{call.get('tag','?')}: {(call.get('transcript') or '')[:80]}", ts)
-
-    if not flags:
-        if HOLD_ENABLED and loc_match:
-            _consider_hold(tgid, _active_incidents[loc_match]["itype"],
-                           escalation_stage=stage or _active_incidents[loc_match].get("escalation_stage"))
-        return
-
-    # Use lowest priority number (highest urgency)
-    flags.sort(key=lambda x: x[0])
-    _, itype, desc = flags[0]
-
-    with _incident_lock:
-        # Match by location first, then fall back to same itype within window
-        matched_id = loc_match
-        if matched_id is None:
-            for inc_id, inc in _active_incidents.items():
-                if (ts - inc["ts_updated"]) >= MULTIAGENCY_WINDOW_MIN * 60:
-                    continue
-                cur = inc["itype"]
-                if cur == itype or itype in ITYPE_MERGE_COMPAT.get(cur, set()):
-                    matched_id = inc_id
-                    break
-
-        if matched_id is not None:
-            _update_incident(matched_id, call, ts, desc, new_itype=itype)
-        else:
-            _create_incident(itype, desc, call, ts)
-            matched_id = max(_active_incidents.keys())  # just created
-
-    if stage:
-        _record_escalation(matched_id, stage,
-                           f"{call.get('tag','?')}: {(call.get('transcript') or '')[:80]}", ts)
-    if call_id:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("INSERT OR IGNORE INTO incident_calls (incident_id, call_id) VALUES (?,?)",
-                     (matched_id, call_id))
-        conn.commit()
-        conn.close()
-
-    if HOLD_ENABLED:
-        _consider_hold(tgid, itype, escalation_stage=stage or groq.get("escalation_stage"))
+# analyze_for_incident is imported from modules.incident_engine at the top of
+# this file.  The implementation has been fully ported there.
+# See: modules/incident_engine.py :: analyze_for_incident()
 
 
 # ---------------------------------------------------------------------------
