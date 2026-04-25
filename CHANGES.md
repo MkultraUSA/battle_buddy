@@ -24,3 +24,5 @@
 If the changes introduced by PR #25 need to be reverted:
 
 git revert HEAD && systemctl restart battlebuddy && journalctl -u battlebuddy -n 30 --no-pager
+PR 5: https://github.com/MkultraUSA/battle_buddy/pull/new/hermes/pr5-extract-transcription
+Summary: Extracted whisper transcription logic into modules/transcription.py.
