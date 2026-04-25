@@ -28,6 +28,7 @@ import tempfile
 import threading
 import time
 import urllib.request
+from modules.llm import groq_analyze, groq_identify_tgid
 try:
     import anthropic
 except ImportError:
@@ -955,138 +956,7 @@ def groq_analyze(call: dict, recent_calls: list) -> dict | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# TGID auto-identification — guesses agency name for unknown talkgroups
-# ---------------------------------------------------------------------------
-
-_TGID_ID_SYSTEM = """You are a P25 radio talkgroup analyst for the GATRRS trunked system covering Austin, TX and Travis County.
-
-You will receive a radio transcript from an UNKNOWN talkgroup and your job is to guess which Austin/Travis County public safety agency this talkgroup belongs to, and suggest a short name for it.
-
-Known agencies on GATRRS:
-- APD: Austin Police Department (patrol, ops, dispatch, detective, SWAT)
-- AFD: Austin Fire Department (fire suppression, EMS first response, Locution dispatch)
-- TCEMS: Travis County EMS (paramedic units, ambulances)
-- TCFD: Travis County Fire/EMS (suburban fire districts)
-- TCSO: Travis County Sheriff's Office (patrol, jail, civil)
-- UTPD: UT Austin Police
-- DPS: Texas Dept of Public Safety (troopers, Capitol Police)
-- ABIA: Austin-Bergstrom International Airport operations
-- Cap Metro: Capital Metro transit police/operations
-- Williamson/Hays: neighboring county agencies
-- City utilities: Austin Water, Austin Energy (not public safety)
-
-Respond ONLY with a JSON object:
-{
-  "guess": <short name for this talkgroup, e.g. "APD South Patrol" or "TCEMS Medic Ops">,
-  "agency": <top-level agency abbreviation, e.g. "APD">,
-  "confidence": <"HIGH" | "MED" | "LOW">,
-  "reasoning": <one sentence explaining your guess based on the radio chatter>
-}
-
-If the transcript is too short or garbled to make any guess, set confidence to "LOW" and guess to null."""
-
-# Minimum transcript length to attempt TGID identification
-_TGID_ID_MIN_LEN = 15
-
-# How many agreeing guesses before auto-confirming
-_TGID_ID_CONFIRM_THRESHOLD = 3
-
-
-def groq_identify_tgid(tgid: int, transcript: str) -> dict | None:
-    """Ask Groq to guess what agency/role this unknown talkgroup belongs to.
-    Stores the guess in tgid_guesses. Auto-confirms after threshold agreeing guesses."""
-    if not GROQ_ENABLED or not transcript or len(transcript) < _TGID_ID_MIN_LEN:
-        return None
-
-    prompt = (
-        f"Unknown talkgroup TGID {tgid} on GATRRS Austin/Travis County.\n"
-        f"Radio transcript: {transcript}\n\n"
-        f"What agency and role does this talkgroup belong to?"
-    )
-
-    try:
-        user_msg = (
-            f"TGID {tgid} on GATRRS Austin/Travis County P25 system.\n"
-            f"Radio transcript: {transcript}\n\n"
-            f"What Austin/Travis County public safety agency and role does this talkgroup belong to?"
-        )
-        raw = _call_groq_llm(_TGID_ID_SYSTEM, user_msg)
-
-        guess     = raw.get("guess")
-        agency    = raw.get("agency")
-        reasoning = raw.get("reasoning", "")
-        # Normalize confidence — Groq may return a float (0.0-1.0) or string
-        raw_conf = raw.get("confidence", "LOW")
-        if isinstance(raw_conf, (int, float)):
-            conf = "HIGH" if raw_conf >= 0.75 else ("MED" if raw_conf >= 0.5 else "LOW")
-        else:
-            conf = str(raw_conf).upper() if str(raw_conf).upper() in ("HIGH", "MED", "LOW") else "LOW"
-
-        if not guess:
-            return None
-
-        ts = time.time()
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute(
-            "INSERT INTO tgid_guesses (tgid, ts, guess, category, confidence, reasoning, transcript) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (tgid, ts, guess, agency, conf, reasoning, transcript[:200])
-        )
-        conn.commit()
-
-        # Check how many HIGH/MED-confidence agreeing guesses we have
-        if conf in ("HIGH", "MED"):
-            rows = conn.execute(
-                "SELECT guess FROM tgid_guesses WHERE tgid=? AND confirmed=0 AND confidence IN ('HIGH','MED')",
-                (tgid,)
-            ).fetchall()
-            guesses = [r[0] for r in rows]
-
-            # Find the most common guess
-            if len(guesses) >= _TGID_ID_CONFIRM_THRESHOLD:
-                from collections import Counter
-                top_guess, top_count = Counter(guesses).most_common(1)[0]
-                if top_count >= _TGID_ID_CONFIRM_THRESHOLD:
-                    # Auto-confirm — mark all guesses for this tgid as confirmed
-                    conn.execute(
-                        "UPDATE tgid_guesses SET confirmed=1 WHERE tgid=?", (tgid,)
-                    )
-                    conn.commit()
-                    print(f"[tgid-id] AUTO-CONFIRMED tgid={tgid} → {top_guess!r} "
-                          f"({top_count} agreeing guesses)", flush=True)
-                    _notify_tgid_confirmed(tgid, top_guess, agency, top_count)
-
-        conn.close()
-        print(f"[tgid-id] tgid={tgid} guess={guess!r} conf={conf}", flush=True)
-        return raw
-
-    except Exception as exc:
-        print(f"[tgid-id] error for tgid={tgid}: {exc}", flush=True)
-        return None
-
-
-def _notify_tgid_confirmed(tgid: int, name: str, agency: str, count: int):
-    """Post a Talk message when a TGID gets auto-confirmed."""
-    msg = (
-        f"🔍 **Unknown talkgroup identified!**\n"
-        f"TGID {tgid} → **{name}** (agency: {agency or 'unknown'})\n"
-        f"Auto-confirmed from {count} agreeing Groq guesses.\n"
-        f"Review at /api/tgid_guesses — run `/addtag {tgid} {name}` to write to tags file."
-    )
-    creds = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-    payload = urllib.parse.urlencode({"message": msg}).encode()
-    req = urllib.request.Request(
-        f"{TALK_BASE}/chat/{TALK_ROOMS['general']}",
-        data=payload,
-        headers={"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
-                 "Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
-    )
-    try:
-        urllib.request.urlopen(req, timeout=10)
-    except Exception as e:
-        print(f"[tgid-id] notify failed: {e}", flush=True)
+# (extracted to modules/llm.py)
 
 
 # ---------------------------------------------------------------------------
