@@ -6,6 +6,9 @@ import re
 # ---------------------------------------------------------------------------
 DB_PATH = "/opt/battlebuddy/calls.db"
 
+# Hard cap on concurrent audio processing threads
+_MAX_PROCESS_THREADS = 20
+
 # ---------------------------------------------------------------------------
 # Talkgroup classification constants
 # ---------------------------------------------------------------------------

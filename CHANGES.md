@@ -13,9 +13,6 @@
 2. Run the existing test suite and confirm all tests pass:
    python -m pytest
 
-3. Exercise the affected modules manually:
-   - Verify geocoding returns correct coordinates for a known address.
-   - Start audio_receiver.py and confirm audio is received and processed without errors.
 3. Exercise the affected modules manually and verify with expected output:
    - Run python3 -m pytest -k "test_geocoding or test_audio"
      Expected Output: ALL PASSED (e.g., "5 passed in 0.12s")
@@ -26,4 +23,4 @@
 
 If the changes introduced by PR #25 need to be reverted:
 
-git revert <squash-sha> && systemctl restart battlebuddy && journalctl -u battlebuddy -n 30 --no-pager
+git revert HEAD && systemctl restart battlebuddy && journalctl -u battlebuddy -n 30 --no-pager

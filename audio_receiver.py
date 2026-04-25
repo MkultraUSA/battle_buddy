@@ -10617,6 +10617,6 @@ if __name__ == "__main__":
     threading.Thread(target=apd_news_thread,          daemon=True).start()
     threading.Thread(target=reddit_intel_thread,      daemon=True).start()
     threading.Thread(target=adsb_air_asset_thread,    daemon=True).start()
-    queue_manager.start_queue()
+    queue_manager.start_queue(process_call_audio)
 
     app.run(host="0.0.0.0", port=args.port, threaded=True)
