@@ -50,7 +50,6 @@ from flask import Flask, jsonify, render_template_string, request
 
 from modules.config import DB_PATH
 from modules.incident_engine import (
-from modules import queue_manager
     analyze_for_incident,
     incident_cleanup_thread,
     load_active_incidents,
@@ -58,6 +57,7 @@ from modules import queue_manager
     _active_incidents,
     _incident_lock,
 )
+from modules import queue_manager
 TIPS_UPLOAD_DIR = "/opt/battlebuddy/static/tips"
 TGID_TSV      = "/opt/battlebuddy/gatrrs-tags.tsv"
 PI1_OP25_URL  = "http://radiodesk.ddns.net:8080/"
