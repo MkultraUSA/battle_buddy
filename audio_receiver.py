@@ -101,8 +101,6 @@ def detect_air_asset(tgid: int, transcript: str, category: str) -> str | None:
         return context
     return None
 
-IGNORE_TGIDS: set[int] = set()
-TGID_META: dict[int, dict] = {}
 
 
 def _tag_is_ignored(tag: str) -> bool:
