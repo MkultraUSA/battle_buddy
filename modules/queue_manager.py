@@ -18,10 +18,11 @@ def worker():
         finally:
             _processing_queue.task_done()
 
-# Start pool of workers
-executor = ThreadPoolExecutor(max_workers=_MAX_PROCESS_THREADS)
-for _ in range(_MAX_PROCESS_THREADS):
-    executor.submit(worker)
+def start_queue():
+    """Start pool of workers."""
+    executor = ThreadPoolExecutor(max_workers=_MAX_PROCESS_THREADS)
+    for _ in range(_MAX_PROCESS_THREADS):
+        executor.submit(worker)
 
 def enqueue_call(task_data):
     """Try to add a call to the queue. Returns False if full."""

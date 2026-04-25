@@ -50,6 +50,7 @@ from flask import Flask, jsonify, render_template_string, request
 
 from modules.config import DB_PATH
 from modules.incident_engine import (
+from modules import queue_manager
     analyze_for_incident,
     incident_cleanup_thread,
     load_active_incidents,
@@ -10616,5 +10617,6 @@ if __name__ == "__main__":
     threading.Thread(target=apd_news_thread,          daemon=True).start()
     threading.Thread(target=reddit_intel_thread,      daemon=True).start()
     threading.Thread(target=adsb_air_asset_thread,    daemon=True).start()
+    queue_manager.start_queue()
 
     app.run(host="0.0.0.0", port=args.port, threaded=True)
