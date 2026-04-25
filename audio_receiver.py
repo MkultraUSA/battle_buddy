@@ -848,6 +848,19 @@ _BROADCASTIFY_MAX       = 15                # broadcastify can hold at most this
 _process_sem            = threading.Semaphore(_MAX_PROCESS_THREADS)
 _broadcastify_sem       = threading.Semaphore(_BROADCASTIFY_MAX)
 
+# ---------------------------------------------------------------------------
+# /receive deduplication cache
+# Keyed by SHA-256 of the raw WAV bytes.  Each entry stores the Unix timestamp
+# at which the hash expires (default TTL: 60 s).  A second identical payload
+# arriving within that window is silently dropped with status "duplicate".
+# The cache is bounded to _DEDUP_MAX_ENTRIES entries; when full, stale entries
+# are evicted before inserting a new one.  Protected by a threading.Lock.
+# ---------------------------------------------------------------------------
+_DEDUP_TTL_SECONDS   = 60          # seconds a hash is remembered
+_DEDUP_MAX_ENTRIES   = 2048        # upper bound; prevents unbounded growth
+_recv_seen_hashes: dict[str, float] = {}   # {sha256_hex: expiry_ts}
+_recv_dedup_lock     = threading.Lock()
+
 def _get_fw_model() -> _FasterWhisperModel:
     global _fw_model
     if _fw_model is None:
@@ -4399,6 +4412,28 @@ def receive():
     if duration < 0.5:
         return jsonify({"status": "too_short"}), 202
 
+    # ------------------------------------------------------------------
+    # Deduplication: reject identical audio payloads received within
+    # _DEDUP_TTL_SECONDS of each other (e.g. Pi retransmit on network
+    # hiccup, double-post from the broadcastify bridge, etc.).
+    # We hash the raw decoded WAV bytes; same call == same bytes.
+    # ------------------------------------------------------------------
+    audio_hash = hashlib.sha256(wav_bytes).hexdigest()
+    now = time.time()
+    with _recv_dedup_lock:
+        # Evict expired entries first to keep the dict bounded
+        if len(_recv_seen_hashes) >= _DEDUP_MAX_ENTRIES:
+            expired_keys = [k for k, exp in _recv_seen_hashes.items() if exp <= now]
+            for k in expired_keys:
+                del _recv_seen_hashes[k]
+
+        if audio_hash in _recv_seen_hashes and _recv_seen_hashes[audio_hash] > now:
+            print(f"[recv] DEDUP {tag} ({duration:.1f}s) — identical payload seen within {_DEDUP_TTL_SECONDS}s window", flush=True)
+            return jsonify({"status": "duplicate"}), 202
+
+        # Register hash; will expire after TTL
+        _recv_seen_hashes[audio_hash] = now + _DEDUP_TTL_SECONDS
+
     # Bounded backlog with pi5 priority: broadcastify capped at _BROADCASTIFY_MAX
     # so at least (_MAX_PROCESS_THREADS - _BROADCASTIFY_MAX) slots are always
     # available for OP25 audio from the Pi.
@@ -4431,19 +4466,17 @@ def receive():
                         transcript=transcript, lat=lat, lon=lon, location=location)
             recent = calls_since(ts - 15 * 60)
             call["groq"] = groq_analyze(call, recent)
-            # If this is an unknown talkgroup, ask Groq to identify it
-            if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
-                threading.Thread(target=groq_identify_tgid, args=(tgid, transcript),
-                                 daemon=True).start()
-            analyze_for_incident(call)
-            post_to_talk(call)
-        finally:
-            _process_sem.release()
-            if is_broadcastify:
-                _broadcastify_sem.release()
+    from modules.queue_manager import enqueue_call
+    task_data = {"wav_bytes": wav_bytes, "tag": tag, "tgid": tgid, "ts": ts, 
+                 "category": category, "node": node, "duration": duration, 
+                 "is_broadcastify": is_broadcastify, "def_lat": def_lat, 
+                 "def_lon": def_lon}
 
-    threading.Thread(target=process, daemon=True).start()
-    return jsonify({"status": "queued"}), 202
+    if enqueue_call(task_data):
+        return jsonify({"status": "queued"}), 202
+    else:
+        print(f"[recv] DROP {tag} — queue full", flush=True)
+        return jsonify({"status": "backlog_full"}), 202
 
 
 @app.route("/watchdog_event", methods=["POST"])
