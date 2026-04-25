@@ -1448,40 +1448,6 @@ _incident_lock = threading.Lock()
 
 from modules.incident_engine import analyze_for_incident
 
-    flags.sort(key=lambda x: x[0])
-    _, itype, desc = flags[0]
-
-    with _incident_lock:
-        # Match by location first, then fall back to same itype within window
-        matched_id = loc_match
-        if matched_id is None:
-            for inc_id, inc in _active_incidents.items():
-                if (ts - inc["ts_updated"]) >= MULTIAGENCY_WINDOW_MIN * 60:
-                    continue
-                cur = inc["itype"]
-                if cur == itype or itype in ITYPE_MERGE_COMPAT.get(cur, set()):
-                    matched_id = inc_id
-                    break
-
-        if matched_id is not None:
-            _update_incident(matched_id, call, ts, desc, new_itype=itype)
-        else:
-            _create_incident(itype, desc, call, ts)
-            matched_id = max(_active_incidents.keys())  # just created
-
-    if stage:
-        _record_escalation(matched_id, stage,
-                           f"{call.get('tag','?')}: {(call.get('transcript') or '')[:80]}", ts)
-    if call_id:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("INSERT OR IGNORE INTO incident_calls (incident_id, call_id) VALUES (?,?)",
-                     (matched_id, call_id))
-        conn.commit()
-        conn.close()
-
-    if HOLD_ENABLED:
-        _consider_hold(tgid, itype, escalation_stage=stage or groq.get("escalation_stage"))
-
 
 # ---------------------------------------------------------------------------
 # Persistent FTS connection — Battle Buddy connects once as a TAK client and
@@ -4466,17 +4432,19 @@ def receive():
                         transcript=transcript, lat=lat, lon=lon, location=location)
             recent = calls_since(ts - 15 * 60)
             call["groq"] = groq_analyze(call, recent)
-    from modules.queue_manager import enqueue_call
-    task_data = {"wav_bytes": wav_bytes, "tag": tag, "tgid": tgid, "ts": ts, 
-                 "category": category, "node": node, "duration": duration, 
-                 "is_broadcastify": is_broadcastify, "def_lat": def_lat, 
-                 "def_lon": def_lon}
+            # If this is an unknown talkgroup, ask Groq to identify it
+            if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
+                threading.Thread(target=groq_identify_tgid, args=(tgid, transcript),
+                                 daemon=True).start()
+            analyze_for_incident(call)
+            post_to_talk(call)
+        finally:
+            _process_sem.release()
+            if is_broadcastify:
+                _broadcastify_sem.release()
 
-    if enqueue_call(task_data):
-        return jsonify({"status": "queued"}), 202
-    else:
-        print(f"[recv] DROP {tag} — queue full", flush=True)
-        return jsonify({"status": "backlog_full"}), 202
+    threading.Thread(target=process, daemon=True).start()
+    return jsonify({"status": "queued"}), 202
 
 
 @app.route("/watchdog_event", methods=["POST"])
