@@ -19,7 +19,7 @@ from modules.config import (
     NC_WEBDAV, NC_USER, NC_PASS, NC_REPORT_DIR,
 )
 from modules.talkgroups import (
-    CAT_COORDS, AIR_ASSET_TGIDS, ABIA_OPS_TGIDS, TRANSIT_TGIDS,
+    CAT_COORDS, AIR_ASSET_TGIDS, ABIA_OPS_TGIDS, TRANSIT_TGIDS, LOCUTION_TGIDS,
     detect_air_asset, detect_dps_assets, is_capitol_area, mentions_dps,
 )
 from modules.geocoding import extract_location
