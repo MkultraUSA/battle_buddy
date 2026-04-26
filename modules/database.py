@@ -27,7 +27,8 @@ def init_db():
             transcript  TEXT,
             lat         REAL,
             lon         REAL,
-            location    TEXT
+            location    TEXT,
+            coords_approx INTEGER DEFAULT 0
         )
     """)
     conn.execute("""

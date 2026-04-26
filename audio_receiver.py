@@ -49,7 +49,6 @@ from flask import Flask, jsonify, render_template_string, request
 # ---------------------------------------------------------------------------
 
 from modules.config import DB_PATH, CAT_COORDS  # noqa: E402 — must come after stdlib imports
-DB_PATH = DB_PATH  # re-export for any inline sqlite3.connect(DB_PATH) calls below
 TIPS_UPLOAD_DIR = "/opt/battlebuddy/static/tips"
 TGID_TSV      = "/opt/battlebuddy/gatrrs-tags.tsv"
 PI1_OP25_URL  = "http://radiodesk.ddns.net:8080/"
