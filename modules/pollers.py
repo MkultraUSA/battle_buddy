@@ -9,6 +9,7 @@ import urllib.request
 import urllib.parse
 
 from modules.config import (
+    _state,
     DB_PATH, TALK_BASE, TALK_USER, TALK_PASS, TALK_ROOMS, TALK_ROOM,
     PI1_OP25_URL, PI_FETCH_URL, PI_FETCH_TOKEN, PI_FETCH_ENABLED,
     GOOGLE_CSE_API_KEY, GOOGLE_CSE_ID,
