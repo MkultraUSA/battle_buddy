@@ -3,8 +3,6 @@ Shared constants for Battle Buddy modules.
 Moved here to avoid circular imports between audio_receiver.py and modules/.
 """
 
-import os
-
 DB_PATH = "/opt/battlebuddy/calls.db"
 
 # Default map coordinates by category
