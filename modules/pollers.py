@@ -18,6 +18,7 @@ from modules.config import (
 )
 from modules.incident_engine import analyze_for_incident, _active_incidents
 from modules.talkgroups import TGID_META, IGNORE_TGIDS, CAT_COORDS, AIR_ASSET_TGIDS, AIR_ASSET_PATTERN, LOCUTION_TGIDS, TRANSIT_TGIDS, ABIA_OPS_TGIDS, detect_air_asset, _apply_locution_corrections
+from modules.database import calls_for_sitrep, active_incidents
 
 PI_WATCHDOG_INTERVAL  = 60
 PI_CALL_SILENCE_MINS  = 20
