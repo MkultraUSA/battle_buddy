@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime, timedelta, timezone
 import json
 import re
 import sqlite3
@@ -841,3 +842,14 @@ def _send_skip():
         print(f"[hold] FAILED to release: {e}", flush=True)
 
 
+
+
+def hold_watchdog_thread():
+    while True:
+        time.sleep(30)
+        with _hold_lock:
+            if (_current_hold_tgid is not None and
+                    time.time() - _last_hold_activity > HOLD_RELEASE_MINUTES * 60):
+                print(f'[hold] watchdog: releasing TGID {_current_hold_tgid} (timeout)', flush=True)
+                if HOLD_ENABLED:
+                    _send_skip()
