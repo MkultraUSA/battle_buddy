@@ -128,3 +128,7 @@ STRIPE_PLANS = {
     "basic":   {"price_id": os.environ.get("STRIPE_PRICE_ID_BASIC",   ""), "tier": "basic"},
 }
 STRIPE_PRICE_TO_TIER = {v["price_id"]: v["tier"] for v in STRIPE_PLANS.values()}
+
+# Shared mutable state — used across modules that cannot directly import each other
+# audio_receiver.py writes _state["last_call_ts"]; pollers.py reads it
+_state = {"last_call_ts": __import__("time").time()}

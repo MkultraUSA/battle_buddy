@@ -59,6 +59,9 @@ from modules.transcription import *
 from modules.llm import *
 from modules.incident_engine import *
 from modules.pollers import *
+from modules.transcription import _broadcastify_sem, _process_sem, _MAX_PROCESS_THREADS, _BROADCASTIFY_MAX
+from modules.llm import _TGID_ID_MIN_LEN
+from modules.config import _state
 
 app = Flask(__name__, static_folder="/opt/battlebuddy/static", static_url_path="/static")
 
@@ -114,8 +117,8 @@ def receive():
 
     def process():
         try:
-            global _last_call_ts
-            _last_call_ts = time.time()
+            
+            _state['last_call_ts'] = time.time()
             transcript = transcribe(wav_bytes)
             lat, lon, location = extract_location(transcript)
             if lat is None:

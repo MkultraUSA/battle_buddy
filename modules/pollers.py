@@ -31,7 +31,7 @@ _op25_was_dead       = False
 _op25_fail_count     = 0
 _pi_fail_count       = 0
 _calls_were_silent   = False
-_last_call_ts        = time.time()
+# _last_call_ts moved to modules.config._state["last_call_ts"]
 _last_silence_alert  = 0.0
 _silence_alert_count = 0
 _last_autorestart_ts = 0.0
@@ -140,7 +140,7 @@ def _poll_op25_trunk() -> bool:
 
 
 def pi_watchdog_thread():
-    global _pi_was_down, _op25_was_dead, _calls_were_silent, _last_call_ts
+    global _pi_was_down, _op25_was_dead, _calls_were_silent
     global _op25_fail_count, _pi_fail_count
     global _last_silence_alert, _silence_alert_count, _last_autorestart_ts
     while True:
@@ -184,7 +184,7 @@ def pi_watchdog_thread():
                     _pi_watchdog_alert("✅ OP25 trunk decoder is active again — feed restored.")
 
         # --- Check 3: Calls received recently (repeat alerts + auto-restart) ---
-        silence_secs = time.time() - _last_call_ts
+        silence_secs = time.time() - _state['last_call_ts']
         if silence_secs > PI_CALL_SILENCE_MINS * 60:
             now = time.time()
             since_last_alert = now - _last_silence_alert
