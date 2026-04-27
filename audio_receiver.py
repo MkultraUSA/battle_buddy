@@ -6307,7 +6307,7 @@ if __name__ == "__main__":
     threading.Thread(target=incident_cleanup_thread,  daemon=True).start()
     threading.Thread(target=hold_watchdog_thread,     daemon=True).start()
     threading.Thread(target=pi_watchdog_thread,       daemon=True).start()
-    threading.Thread(target=afd_open_data_thread,     daemon=True).start()
+    AFDOpenDataPoller().start()
     threading.Thread(target=traffic_open_data_thread, daemon=True).start()
     threading.Thread(target=atxfloods_thread,         daemon=True).start()
     threading.Thread(target=austin_events_thread,    daemon=True).start()
