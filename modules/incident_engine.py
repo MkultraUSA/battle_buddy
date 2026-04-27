@@ -302,7 +302,7 @@ def analyze_for_incident(call: dict):
                       f"Cap Metro bus/rail event likely"))
 
     # --- Rule 2: Airport alert ---
-    if tgid in ABIA_ALERT_TGIDS:
+    if tgid in AIR_ASSET_TGIDS:
         flags.append((5, "AIRPORT EMERGENCY",
                       "ABIA Alert channel activated"))
 
