@@ -64,11 +64,7 @@ from modules.incident_engine import _fts_connect, _fts_keepalive_thread, _atak_r
 from modules.pollers import _pi_command_queue
 from modules.llm import _TGID_ID_MIN_LEN
 from modules.config import _state
-
-# Audio dedup — SHA-256 hash of raw WAV bytes, evicted after 5 minutes
-_seen_hashes: dict = {}  # hash -> timestamp
-_seen_lock   = threading.Lock()
-_DEDUP_TTL   = 300  # seconds
+from modules.audio_dedup import is_duplicate_and_mark
 
 app = Flask(__name__, static_folder="/opt/battlebuddy/static", static_url_path="/static")
 
@@ -110,13 +106,9 @@ def receive():
 
     # Audio dedup — drop if we have seen this exact clip within 5 minutes
     audio_hash = __import__("hashlib").sha256(wav_bytes).hexdigest()
-    now_dedup  = time.time()
-    with _seen_lock:
-        _seen_hashes.update({k: v for k, v in _seen_hashes.items() if now_dedup - v < _DEDUP_TTL})
-        if audio_hash in _seen_hashes:
-            print(f"[recv] DEDUP {tag} ({duration:.1f}s) — already seen", flush=True)
-            return jsonify({"status": "duplicate"}), 202
-        _seen_hashes[audio_hash] = now_dedup
+    if is_duplicate_and_mark(audio_hash):
+        print(f"[recv] DEDUP {tag} ({duration:.1f}s) — already seen", flush=True)
+        return jsonify({"status": "duplicate"}), 202
 
     # Bounded backlog with pi5 priority: broadcastify capped at _BROADCASTIFY_MAX
     # so at least (_MAX_PROCESS_THREADS - _BROADCASTIFY_MAX) slots are always
