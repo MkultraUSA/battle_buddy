@@ -38,3 +38,8 @@
 If the changes introduced by PR #25 need to be reverted:
 
 git revert HEAD && systemctl restart battlebuddy && journalctl -u battlebuddy -n 30 --no-pager
+
+## [2026-04-27] Refactored APD Press Release Poller
+- Refactored monolithic APD Press Release poller logic from `audio_receiver.py` into `modules/pollers/impl/apd_news.py`.
+- Implemented comprehensive test suite (96 tests) in `tests/test_apd_poller.py` with 100% pass rate.
+- Verified functional parity and ensured clean import isolation.
