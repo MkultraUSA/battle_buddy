@@ -1254,148 +1254,19 @@ def adsb_air_asset_thread():
                 daemon=True
             ).start()
 
-# Austin Open Data — AFD Real-Time Fire Incidents poller
 # ---------------------------------------------------------------------------
-
-AFD_OPEN_DATA_URL = (
-    "https://data.austintexas.gov/resource/wpu4-x69d.json"
-    "?$where=traffic_report_status='ACTIVE'&$limit=50"
-)
-AFD_POLL_INTERVAL = 60  # seconds
-
-# Maps issue_reported prefixes → our internal itype
-_AFD_ITYPE_MAP = {
-    "STRUCTURE":  "STRUCTURE FIRE",
-    "FIRE":       "STRUCTURE FIRE",
-    "GRASS":      "GRASS FIRE",
-    "WILDLAND":   "GRASS FIRE",
-    "AIRCRAFT":   "AIRCRAFT EMERGENCY",
-    "HANGER":     "STRUCTURE FIRE",
-    "HANGAR":     "STRUCTURE FIRE",
-    "EXPLOSION":  "EXPLOSION",
-    "HAZMAT":     "HAZMAT",
-    "ALARM":      "FIRE ALARM",
-    "ALARMM":     "FIRE ALARM",
-}
-
-_afd_active_ids: dict[str, dict] = {}   # report_id → AFD incident dict
-_afd_lock = threading.Lock()
-
-
-def _afd_issue_to_itype(issue: str) -> str:
-    """Map AFD issue_reported string to a BB itype."""
-    prefix = issue.split()[0].upper().rstrip("-")
-    return _AFD_ITYPE_MAP.get(prefix, "FIRE/EMS DISPATCH")
-
-
-def _afd_post_to_talk(incident: dict, itype: str, matched_bb_id: int | None):
-    """Post an AFD Open Data incident to the fire-ems Talk room."""
-    address  = incident.get("address", "Unknown address")
-    issue    = incident.get("issue_reported", "Unknown")
-    pub_dt   = incident.get("published_date", "")[:16].replace("T", " ")
-    lat      = incident.get("latitude")
-    lon      = incident.get("longitude")
-    coords   = f" ({lat}, {lon})" if lat and lon else ""
-
-    if matched_bb_id:
-        msg = (
-            f"📡 [AFD API CONFIRM] Scanner incident #{matched_bb_id} confirmed via city dispatch feed\n"
-            f"📍 {address}{coords}\n"
-            f"🚒 {issue} — dispatched {pub_dt}"
-        )
-    else:
-        msg = (
-            f"🚨 [AFD DISPATCH — scanner missed] {itype}\n"
-            f"📍 {address}{coords}\n"
-            f"🚒 {issue} — dispatched {pub_dt}"
-        )
-
-    payload = json.dumps({"message": msg}).encode()
-    creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-    headers = {"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
-               "Content-Type": "application/json"}
-    room_token = TALK_ROOMS["fire-ems"]
-    url  = f"{TALK_BASE}/chat/{room_token}"
-    req  = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-    try:
-        urllib.request.urlopen(req, timeout=10)
-        print(f"[afd] posted to fire-ems: {issue} @ {address}", flush=True)
-    except Exception as e:
-        print(f"[afd] Talk post failed: {e}", flush=True)
-
-
-def afd_open_data_thread():
-    """Poll Austin Open Data for active AFD incidents and cross-reference with scanner."""
-    print("[afd] AFD Open Data poller started", flush=True)
-    while True:
-        time.sleep(AFD_POLL_INTERVAL)
-        try:
-            req  = urllib.request.Request(AFD_OPEN_DATA_URL,
-                                          headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                incidents = json.loads(resp.read())
-        except Exception as e:
-            print(f"[afd] fetch error: {e}", flush=True)
-            continue
-
-        now = time.time()
-        with _afd_lock:
-            current_ids = {inc["traffic_report_id"] for inc in incidents}
-
-            # Detect incidents that just went ARCHIVED (were active, now gone)
-            cleared = set(_afd_active_ids.keys()) - current_ids
-            for rid in cleared:
-                old = _afd_active_ids.pop(rid)
-                print(f"[afd] CLEARED: {old.get('issue_reported')} @ {old.get('address')}", flush=True)
-                afd_mid = old.get("atak_marker_id")
-                if afd_mid is not None:
-                    threading.Thread(target=_atak_clear_marker, args=(afd_mid,), daemon=True).start()
-
-            # Process new active incidents
-            for inc in incidents:
-                rid = inc["traffic_report_id"]
-                if rid in _afd_active_ids:
-                    continue  # already processed
-
-                _afd_active_ids[rid] = inc
-                itype   = _afd_issue_to_itype(inc.get("issue_reported", ""))
-                lat     = float(inc["latitude"])  if inc.get("latitude")  else None
-                lon     = float(inc["longitude"]) if inc.get("longitude") else None
-                address = inc.get("address", "")
-
-                # Check if a scanner incident is already tracking this location
-                matched_id = None
-                if lat is not None and lon is not None:
-                    with _incident_lock:
-                        for iid, bb_inc in _active_incidents.items():
-                            blat = bb_inc.get("lat")
-                            blon = bb_inc.get("lon")
-                            if blat is None or blon is None:
-                                continue
-                            if _haversine_km(lat, lon, blat, blon) < 0.5:
-                                matched_id = iid
-                                break
-
-                print(f"[afd] NEW {'(matched #'+str(matched_id)+')' if matched_id else '(unmatched)'}: "
-                      f"{inc.get('issue_reported')} @ {address}", flush=True)
-
-                threading.Thread(
-                    target=_afd_post_to_talk,
-                    args=(inc, itype, matched_id),
-                    daemon=True
-                ).start()
-
-                # If unmatched and has a real geocoded address, post an ATAK marker too
-                if matched_id is None and address and lat is not None and lon is not None:
-                    # Use a negative sentinel incident_id to avoid colliding with real ones
-                    afd_marker_id = hash(rid) % 100000 * -1
-                    _afd_active_ids[rid]["atak_marker_id"] = afd_marker_id
-                    threading.Thread(
-                        target=_atak_post_marker,
-                        args=(afd_marker_id, lat, lon, itype, address),
-                        daemon=True
-                    ).start()
-
+# AFD Open Data poller — MOVED to modules/pollers/impl/afd_news.py
+# ---------------------------------------------------------------------------
+# afd_open_data_thread() and all helpers (_afd_post_to_talk, _afd_issue_to_itype,
+# _afd_active_ids, _afd_lock, AFD_OPEN_DATA_URL, AFD_POLL_INTERVAL, _AFD_ITYPE_MAP)
+# have been refactored into the AFDOpenDataPoller BasePoller subclass.
+#
+# Use:  from modules.pollers.impl.afd_news import AFDOpenDataPoller
+#       AFDOpenDataPoller().start()
+#
+# A backward-compatible afd_open_data_thread() shim is available in
+# modules/pollers/__init__.py for callers that have not yet been updated.
+# ---------------------------------------------------------------------------
 
 # Austin Open Data — Real-Time Traffic Incidents poller
 # ---------------------------------------------------------------------------
