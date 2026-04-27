@@ -480,6 +480,10 @@ class APDNewsPoller(BasePoller):
         super().__init__(interval=int(self.INTERVAL))
         self._lock = threading.Lock()
 
+    def diagnostics(self) -> str:
+        """Return a human-readable status string for health checks and tests."""
+        return f"APDNewsPoller(interval={self.interval}s)"
+
     # ------------------------------------------------------------------
     # BasePoller interface
     # ------------------------------------------------------------------
