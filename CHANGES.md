@@ -43,3 +43,4 @@ git revert HEAD && systemctl restart battlebuddy && journalctl -u battlebuddy -n
 - Refactored monolithic APD Press Release poller logic from `audio_receiver.py` into `modules/pollers/impl/apd_news.py`.
 - Implemented comprehensive test suite (96 tests) in `tests/test_apd_poller.py` with 100% pass rate.
 - Verified functional parity and ensured clean import isolation.
+Completed refactor of APD News poller into modules/pollers/impl/apd_news.py and integration with audio_receiver.py startup.

@@ -6312,7 +6312,7 @@ if __name__ == "__main__":
     threading.Thread(target=atxfloods_thread,         daemon=True).start()
     threading.Thread(target=austin_events_thread,    daemon=True).start()
     threading.Thread(target=apd_cad_thread,          daemon=True).start()
-    threading.Thread(target=apd_news_thread,          daemon=True).start()
+    APDNewsPoller().start()
     threading.Thread(target=reddit_intel_thread,      daemon=True).start()
     threading.Thread(target=adsb_air_asset_thread,    daemon=True).start()
 
