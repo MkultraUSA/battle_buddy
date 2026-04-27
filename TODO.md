@@ -1,4 +1,3 @@
 # TODO
 
-- [x] Refactor `afd_open_data_thread` (from `modules/pollers.py`) to `modules/pollers/impl/afd_news.py`
-      → Done in hermes/refactor-afd-open-data-thread: migrated to AFDOpenDataPoller (BasePoller subclass)
+- [ ] Refactor APD Press Release poller (`modules/pollers.py` lines 218-630) into `modules/pollers/impl/apd_news.py`
