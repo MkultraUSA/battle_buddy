@@ -23,6 +23,7 @@ from modules.talkgroups import (
     detect_air_asset, detect_dps_assets, is_capitol_area, mentions_dps, _apply_locution_corrections,
 )
 from modules.geocoding import extract_location
+from modules.database import calls_since
 
 # ---------------------------------------------------------------------------
 
