@@ -71,12 +71,3 @@ def apd_news_thread() -> None:  # noqa: D401
     while not poller.stop_event.is_set():
         time.sleep(60)
 
-
-__all__ = [
-    # Concrete BasePoller subclasses
-    "AFDOpenDataPoller",
-    "APDNewsPoller",
-    # Backward-compat shims
-    "afd_open_data_thread",
-    "apd_news_thread",
-]
