@@ -2011,6 +2011,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .cat-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.62rem; margin-left: 4px; vertical-align: middle; }
 #live-dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; margin-right: 6px; animation: blink 1s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.tip-card { background: #0f1729; border: 1px solid #1e3a5f; border-left: 4px solid #eab308; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; }
+.tip-card.matched { border-left-color: #22c55e; }
+.tip-card.no_data { border-left-color: #475569; opacity: 0.75; }
+.tip-card .tip-title { font-size: 0.88rem; font-weight: 600; margin-bottom: 4px; }
+.tip-card .tip-title a { color: #e2e8f0; text-decoration: none; }
+.tip-card .tip-title a:hover { color: #3b82f6; text-decoration: underline; }
+.tip-card .tip-meta { font-size: 0.7rem; color: #64748b; margin-bottom: 6px; }
+.tip-card .tip-summary { font-size: 0.78rem; line-height: 1.45; }
+.tip-card.matched .tip-summary { color: #4ade80; }
+.tip-card.no_data .tip-summary { color: #64748b; }
+.tip-card.investigating .tip-summary { color: #94a3b8; }
+.tip-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin-left: 6px; vertical-align: middle; }
+.tip-badge.investigating { background: #422006; color: #fbbf24; }
+.tip-badge.investigating .pulse { display:inline-block; width:6px; height:6px; background:#fbbf24; border-radius:50%; margin-right:5px; animation: blink 1.2s infinite; vertical-align: middle; }
+.tip-badge.matched { background: #064e3b; color: #4ade80; }
+.tip-badge.no_data { background: #1e293b; color: #94a3b8; }
 </style>
 </head>
 <body>
@@ -2029,7 +2045,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 </div>
 <div id="breaking"></div>
 <div id="content">
-  <div class="section-title"><span id="live-dot"></span>Active Incidents</div>
+  <div class="section-title">Community Tips</div>
+  <div id="tips-section"><p style="color:#475569;font-size:0.8rem">Loading community tips...</p></div>
+  <div class="section-title" style="margin-top:28px"><span id="live-dot"></span>Active Incidents</div>
   <div id="incidents-section"></div>
   <div class="section-title" style="margin-top:28px">Recent Radio Activity</div>
   <div id="feed-section"></div>
@@ -2040,12 +2058,40 @@ const CAT_COLORS = {"APD":"#3b82f6","TCSO":"#3b82f6","UTPD":"#3b82f6","DPS":"#a8
 function timeStr(ts) { return new Date(ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
 function timeAgo(ts) { const m=Math.round((Date.now()/1000-ts)/60); return m<60?`${m}m ago`:`${Math.round(m/60)}h ago`; }
 
+function tipBadge(status) {
+  if (status === 'investigating') return '<span class="tip-badge investigating"><span class="pulse"></span>Investigating</span>';
+  if (status === 'matched')      return '<span class="tip-badge matched">Radio Match Found</span>';
+  if (status === 'no_data')      return '<span class="tip-badge no_data">Nothing on Radio</span>';
+  return '';
+}
+function tipBody(t) {
+  if (t.tip_status === 'matched')      return t.tip_summary || 'Radio match found.';
+  if (t.tip_status === 'no_data')      return 'Monitored 2 hours — nothing detected on radio.';
+  if (t.tip_status === 'investigating') return 'Checking radio traffic' + (t.tip_location ? (' near ' + t.tip_location) : '') + '...';
+  return '';
+}
 async function refresh() {
-  const [callsR, activeR, allR] = await Promise.all([
-    fetch('/api/calls'), fetch('/api/incidents/active'), fetch('/api/incidents')]);
+  const [callsR, activeR, allR, tipsR] = await Promise.all([
+    fetch('/api/calls'), fetch('/api/incidents/active'), fetch('/api/incidents'), fetch('/api/reddit_tips')]);
   const calls = await callsR.json();
   const active = await activeR.json();
   const all = await allR.json();
+  let tips = []; try { tips = await tipsR.json(); } catch(e) { tips = []; }
+
+  // Community Tips
+  const tipsEl = document.getElementById('tips-section');
+  if (!tips.length) {
+    tipsEl.innerHTML = '<p style="color:#475569;font-size:0.8rem">No community tips in the last 48 hours.</p>';
+  } else {
+    tipsEl.innerHTML = tips.map(t => {
+      const safeTitle = (t.title||'').replace(/</g,'&lt;');
+      return `<div class="tip-card ${t.tip_status||''}">
+        <div class="tip-title"><a href="${t.url||'#'}" target="_blank" rel="noopener">${safeTitle}</a>${tipBadge(t.tip_status)}</div>
+        <div class="tip-meta">r/${t.subreddit||'Austin'} · ${timeAgo(t.ts)}${t.tip_location?(' · '+t.tip_location):''}</div>
+        <div class="tip-summary">${tipBody(t)}</div>
+      </div>`;
+    }).join('');
+  }
 
   // Breaking bar — never show test incidents
   const realActive = active.filter(i => !i.is_test);
@@ -3547,6 +3593,27 @@ def tip_submit():
         daemon=True
     ).start()
     return jsonify({"status": "ok"}), 200
+
+
+@app.route("/api/reddit_tips")
+def api_reddit_tips():
+    cutoff = time.time() - 48 * 3600
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("""
+        SELECT r.ts, r.post_id, r.subreddit, r.title, r.url, r.author,
+               r.keywords, r.tip_status, r.tip_location, r.tip_lat, r.tip_lon,
+               r.tip_summary, r.tip_ts_start, r.tip_ts_cleared,
+               r.incident_id, i.itype, i.location as inc_location
+        FROM reddit_intel r
+        LEFT JOIN incidents i ON r.incident_id = i.id
+        WHERE r.ts > ? AND r.tip_status IS NOT NULL AND r.tip_status != 'new'
+        ORDER BY r.ts DESC LIMIT 50
+    """, (cutoff,)).fetchall()
+    conn.close()
+    keys = ["ts","post_id","subreddit","title","url","author","keywords",
+            "tip_status","tip_location","tip_lat","tip_lon","tip_summary",
+            "tip_ts_start","tip_ts_cleared","incident_id","incident_type","incident_location"]
+    return jsonify([dict(zip(keys, row)) for row in rows])
 
 
 @app.route("/admin/tips")
