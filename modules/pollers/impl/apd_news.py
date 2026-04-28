@@ -118,6 +118,47 @@ _APD_NEWS_LOCK = threading.Lock()
 # Pure helper functions — no module-level config imports
 # ---------------------------------------------------------------------------
 
+_HOMICIDE_JSON_PATH = "/opt/battlebuddy/homicides_2026.json"
+_HOMICIDE_JSON_LOCK = threading.Lock()
+
+
+def _append_homicide_json(
+    *,
+    inc_id: int,
+    date: str,
+    address: str,
+    victim: str,
+    summary: str,
+    url: str,
+    lat: float | None,
+    lon: float | None,
+) -> None:
+    """Append a new confirmed homicide to homicides_2026.json (thread-safe)."""
+    import os
+    with _HOMICIDE_JSON_LOCK:
+        try:
+            with open(_HOMICIDE_JSON_PATH) as f:
+                data = json.load(f)
+        except Exception:
+            data = []
+        # Deduplicate by URL
+        if any(h.get("url") == url for h in data):
+            return
+        n = max((h.get("n", 0) for h in data), default=0) + 1
+        entry = {"n": n, "date": date, "address": address,
+                 "victim": victim, "summary": summary, "url": url}
+        if lat is not None:
+            entry["lat"] = lat
+        if lon is not None:
+            entry["lon"] = lon
+        data.append(entry)
+        tmp = _HOMICIDE_JSON_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=4)
+        os.replace(tmp, _HOMICIDE_JSON_PATH)
+        logger.info("[apd-news] homicide #%d appended to JSON: %s", n, summary[:80])
+
+
 def _apd_parse_rss(xml_text: str) -> list[dict]:
     """Parse Google News RSS feed; return list of {title, link, source_url, pub_ts}."""
     items: list[dict] = []
@@ -620,6 +661,17 @@ class APDNewsPoller(BasePoller):
                     matched_id, ts, article["title"], url,
                     "apd_pr", summary[:300], match_score, db_path,
                 )
+                if itype == "HOMICIDE":
+                    _append_homicide_json(
+                        inc_id=matched_id,
+                        date=__import__('datetime').datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                        address=address or "",
+                        victim="",
+                        summary=article["title"].rsplit(" - ", 1)[0],
+                        url=url,
+                        lat=lat,
+                        lon=lon,
+                    )
                 logger.info(
                     "[apd-news] LINKED: '%s' → incident %s (score=%.1f)",
                     article["title"], matched_id, match_score,
@@ -653,6 +705,18 @@ class APDNewsPoller(BasePoller):
 
                 _store_article_link(inc_id, ts, article["title"], url, "apd_pr",
                                     summary[:300], 0.0, db_path)
+
+                if itype == "HOMICIDE":
+                    _append_homicide_json(
+                        inc_id=inc_id,
+                        date=__import__('datetime').datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                        address=address or "",
+                        victim="",
+                        summary=article["title"].rsplit(" - ", 1)[0],
+                        url=url,
+                        lat=lat,
+                        lon=lon,
+                    )
 
                 loc_str = f" @ {address}" if address else ""
                 msg = (
