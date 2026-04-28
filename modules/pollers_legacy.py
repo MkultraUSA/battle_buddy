@@ -847,6 +847,186 @@ def _reddit_match_incident(title, body, ts):
 
     return (best_id, round(best_score, 1)) if best_score >= 8 else (None, 0.0)
 
+_AUSTIN_NEIGHBORHOODS = {
+    "circle c":      (30.1827, -97.8640),
+    "mueller":       (30.2932, -97.6987),
+    "hyde park":     (30.3091, -97.7341),
+    "rundberg":      (30.3614, -97.6985),
+    "domain":        (30.4023, -97.7230),
+    "east 6th":      (30.2598, -97.7200),
+    "south congress":(30.2412, -97.7500),
+    "decker lane":   (30.2950, -97.6200),
+    "cedar park":    (30.5052, -97.8203),
+}
+
+_INTERSECTION_RE = re.compile(
+    r"\b(?:at|near|corner of)\s+([A-Z0-9][\w\.\-]+(?:\s+[A-Z0-9][\w\.\-]+){0,3})\s+(?:and|&|/|\\)\s+([A-Z0-9][\w\.\-]+(?:\s+[A-Z0-9][\w\.\-]+){0,3})",
+    re.IGNORECASE,
+)
+_SLASH_RE = re.compile(
+    r"\b([A-Z][A-Za-z0-9\.\-]+(?:\s+[A-Z][A-Za-z0-9\.\-]+){0,3})\s*/\s*([A-Z][A-Za-z0-9\.\-]+(?:\s+[A-Z][A-Za-z0-9\.\-]+){0,3})"
+)
+_ADDRESS_RE = re.compile(
+    r"\b(\d{2,5}\s+(?:[NSEW]\.?\s+)?[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3}\s+(?:St|Street|Ave|Avenue|Blvd|Boulevard|Rd|Road|Dr|Drive|Ln|Lane|Pkwy|Parkway|Hwy|Highway|Trail|Ct|Court|Way))\b",
+    re.IGNORECASE,
+)
+
+
+def _nominatim_geocode(query: str):
+    """Geocode a free-form Austin string. Returns (lat, lon) or (None, None)."""
+    try:
+        q = urllib.parse.quote_plus(f"{query} Austin TX")
+        url = f"https://nominatim.openstreetmap.org/search?q={q}&format=json&limit=1"
+        req = urllib.request.Request(url, headers={"User-Agent": "BattleBuddy/2.0"})
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
+        if data:
+            return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception as e:
+        print(f"[reddit] nominatim error for {query!r}: {e}", flush=True)
+    return None, None
+
+
+def _extract_tip_location(title, body):
+    """Extract a location from a Reddit post. Returns (location_str, lat, lon) or (None, None, None)."""
+    text = f"{title or ''} {body or ''}".strip()
+    if not text:
+        return (None, None, None)
+    low = text.lower()
+
+    # 1. Known neighborhoods/corridors — skip Nominatim
+    for name, (lat, lon) in _AUSTIN_NEIGHBORHOODS.items():
+        if name in low:
+            return (name.title(), lat, lon)
+
+    # 2. Intersection ("at X and Y", "corner of X and Y")
+    m = _INTERSECTION_RE.search(text)
+    if m:
+        loc = f"{m.group(1).strip()} & {m.group(2).strip()}"
+        lat, lon = _nominatim_geocode(loc)
+        if lat is not None:
+            return (loc, lat, lon)
+
+    # 3. Slash form ("Lamar / 38th")
+    m = _SLASH_RE.search(text)
+    if m:
+        loc = f"{m.group(1).strip()} & {m.group(2).strip()}"
+        lat, lon = _nominatim_geocode(loc)
+        if lat is not None:
+            return (loc, lat, lon)
+
+    # 4. Street address
+    m = _ADDRESS_RE.search(text)
+    if m:
+        loc = m.group(1).strip()
+        lat, lon = _nominatim_geocode(loc)
+        if lat is not None:
+            return (loc, lat, lon)
+
+    return (None, None, None)
+
+
+def _reddit_tip_recheck(db_path):
+    """Re-check investigating tips against radio calls and incidents. Marks matched / no_data."""
+    now = time.time()
+    try:
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT post_id, title, body, tip_lat, tip_lon, tip_location, tip_ts_start "
+            "FROM reddit_intel WHERE tip_status='investigating'"
+        ).fetchall()
+        conn.close()
+    except Exception as e:
+        print(f"[reddit] tip_recheck load error: {e}", flush=True)
+        return
+
+    for post_id, title, body, tip_lat, tip_lon, tip_location, tip_ts_start in rows:
+        if not tip_ts_start:
+            continue
+
+        # Timeout — 2 hours, no match
+        if now - tip_ts_start > 7200:
+            try:
+                c = sqlite3.connect(db_path)
+                c.execute(
+                    "UPDATE reddit_intel SET tip_status='no_data', tip_ts_cleared=?, "
+                    "tip_summary=? WHERE post_id=?",
+                    (now, "Monitored for 2 hours — nothing detected on radio", post_id),
+                )
+                c.commit(); c.close()
+                print(f"[reddit] tip {post_id} -> no_data (timeout)", flush=True)
+            except Exception as e:
+                print(f"[reddit] tip_recheck timeout error: {e}", flush=True)
+            continue
+
+        # Geographic call match (within 0.8 km, last 2 hours)
+        nearby_calls = []
+        if tip_lat is not None and tip_lon is not None:
+            try:
+                c = sqlite3.connect(db_path)
+                call_rows = c.execute(
+                    "SELECT id, ts, tag, category, transcript, lat, lon, location FROM calls "
+                    "WHERE ts >= ? AND lat IS NOT NULL AND lon IS NOT NULL",
+                    (tip_ts_start - 7200,),
+                ).fetchall()
+                c.close()
+                for cr in call_rows:
+                    cid, cts, ctag, ccat, ctranscript, clat, clon, cloc = cr
+                    try:
+                        d = _haversine_km(tip_lat, tip_lon, clat, clon)
+                    except Exception:
+                        continue
+                    if d <= 0.8:
+                        nearby_calls.append((cid, cts, ctag, ccat, ctranscript, cloc))
+            except Exception as e:
+                print(f"[reddit] tip_recheck calls error: {e}", flush=True)
+
+        # Text-based incident match
+        inc_id, inc_score = _reddit_match_incident(title or "", body or "", tip_ts_start)
+
+        if nearby_calls or inc_id:
+            # Build summary
+            parts = []
+            if inc_id:
+                try:
+                    c = sqlite3.connect(db_path)
+                    irow = c.execute(
+                        "SELECT itype, location FROM incidents WHERE id=?", (inc_id,)
+                    ).fetchone()
+                    c.close()
+                    if irow:
+                        itype, iloc = irow
+                        parts.append(
+                            f"{itype} detected on radio"
+                            + (f" near {iloc}" if iloc else "")
+                        )
+                except Exception:
+                    pass
+            if nearby_calls:
+                parts.append(f"{len(nearby_calls)} related radio call(s) within 0.5 mi")
+            elif not parts:
+                parts.append("Possible radio match")
+            summary = " — ".join(parts) + "."
+
+            try:
+                c = sqlite3.connect(db_path)
+                if inc_id:
+                    c.execute(
+                        "UPDATE reddit_intel SET tip_status='matched', tip_ts_cleared=?, "
+                        "tip_summary=?, incident_id=?, match_score=? WHERE post_id=?",
+                        (now, summary, inc_id, inc_score, post_id),
+                    )
+                else:
+                    c.execute(
+                        "UPDATE reddit_intel SET tip_status='matched', tip_ts_cleared=?, "
+                        "tip_summary=? WHERE post_id=?",
+                        (now, summary, post_id),
+                    )
+                c.commit(); c.close()
+                print(f"[reddit] tip {post_id} -> matched: {summary}", flush=True)
+            except Exception as e:
+                print(f"[reddit] tip_recheck update error: {e}", flush=True)
+
+
 def reddit_intel_thread():
     import xml.etree.ElementTree as _ET
     import html as _html
@@ -867,6 +1047,13 @@ def reddit_intel_thread():
     for _col_sql in [
         "ALTER TABLE reddit_intel ADD COLUMN incident_id INTEGER",
         "ALTER TABLE reddit_intel ADD COLUMN match_score REAL DEFAULT 0",
+        "ALTER TABLE reddit_intel ADD COLUMN tip_lat REAL",
+        "ALTER TABLE reddit_intel ADD COLUMN tip_lon REAL",
+        "ALTER TABLE reddit_intel ADD COLUMN tip_location TEXT",
+        "ALTER TABLE reddit_intel ADD COLUMN tip_status TEXT DEFAULT 'new'",
+        "ALTER TABLE reddit_intel ADD COLUMN tip_ts_start REAL",
+        "ALTER TABLE reddit_intel ADD COLUMN tip_ts_cleared REAL",
+        "ALTER TABLE reddit_intel ADD COLUMN tip_summary TEXT",
     ]:
         try: conn.execute(_col_sql)
         except Exception: pass
@@ -923,14 +1110,28 @@ def reddit_intel_thread():
                 ).fetchone()
 
                 if existing is None:
+                    _now_ts = time.time()
                     conn.execute(
-                        "INSERT INTO reddit_intel (ts,post_id,subreddit,title,url,author,body,keywords,notified) "
-                        "VALUES (?,?,?,?,?,?,?,?,0)",
-                        (time.time(), post_id, subreddit, title, url, author, body[:500], keywords)
+                        "INSERT INTO reddit_intel (ts,post_id,subreddit,title,url,author,body,keywords,notified,tip_status,tip_ts_start) "
+                        "VALUES (?,?,?,?,?,?,?,?,0,'investigating',?)",
+                        (_now_ts, post_id, subreddit, title, url, author, body[:500], keywords, _now_ts)
                     )
                     conn.commit()
                     conn.close()
                     print(f"[reddit] NEW {'HI' if hi else 'med'}: {title[:80]}", flush=True)
+                    # Extract + geocode tip location
+                    try:
+                        _loc, _lat, _lon = _extract_tip_location(title, body)
+                        if _loc:
+                            _gc = sqlite3.connect(DB_PATH)
+                            _gc.execute(
+                                "UPDATE reddit_intel SET tip_location=?, tip_lat=?, tip_lon=? WHERE post_id=?",
+                                (_loc, _lat, _lon, post_id)
+                            )
+                            _gc.commit(); _gc.close()
+                            print(f"[reddit] tip {post_id} geocoded -> {_loc} ({_lat},{_lon})", flush=True)
+                    except Exception as _e:
+                        print(f"[reddit] geocode error for {post_id}: {_e}", flush=True)
                     # cross-reference against incidents
                     inc_id, inc_score = _reddit_match_incident(title, body, time.time())
                     if inc_id:
@@ -959,6 +1160,10 @@ def reddit_intel_thread():
                 else:
                     conn.close()
 
+        try:
+            _reddit_tip_recheck(DB_PATH)
+        except Exception as _e:
+            print(f"[reddit] tip_recheck loop error: {_e}", flush=True)
         time.sleep(_REDDIT_INTERVAL)
 
 
