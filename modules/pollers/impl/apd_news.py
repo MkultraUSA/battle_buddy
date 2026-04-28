@@ -36,6 +36,8 @@ initialised (e.g. during tests).
 from __future__ import annotations
 
 import base64
+import datetime
+import os
 import json
 import logging
 import re
@@ -134,7 +136,8 @@ def _append_homicide_json(
     lon: float | None,
 ) -> None:
     """Append a new confirmed homicide to homicides_2026.json (thread-safe)."""
-    import os
+    if not url:
+        return
     with _HOMICIDE_JSON_LOCK:
         try:
             with open(_HOMICIDE_JSON_PATH) as f:
@@ -664,7 +667,7 @@ class APDNewsPoller(BasePoller):
                 if itype == "HOMICIDE":
                     _append_homicide_json(
                         inc_id=matched_id,
-                        date=__import__('datetime').datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                        date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
                         address=address or "",
                         victim="",
                         summary=article["title"].rsplit(" - ", 1)[0],
@@ -709,7 +712,7 @@ class APDNewsPoller(BasePoller):
                 if itype == "HOMICIDE":
                     _append_homicide_json(
                         inc_id=inc_id,
-                        date=__import__('datetime').datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                        date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
                         address=address or "",
                         victim="",
                         summary=article["title"].rsplit(" - ", 1)[0],
