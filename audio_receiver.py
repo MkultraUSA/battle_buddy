@@ -60,7 +60,7 @@ from modules.llm import *
 from modules.incident_engine import *
 from modules.pollers import *
 from modules.transcription import _broadcastify_sem, _process_sem, _MAX_PROCESS_THREADS, _BROADCASTIFY_MAX, _get_fw_model
-from modules.incident_engine import _fts_connect, _fts_keepalive_thread, _atak_resync_thread, _incident_lock, _active_incidents
+from modules.incident_engine import _fts_connect, _fts_keepalive_thread, _atak_resync_thread, _incident_lock, _active_incidents, _atak_post_marker, _atak_clear_marker
 from modules.pollers import _pi_command_queue
 from modules.llm import _TGID_ID_MIN_LEN
 from modules.config import _state
