@@ -821,6 +821,7 @@ class TestPollAPDPressReleases(unittest.TestCase):
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
                         side_effect=lambda su, t, l, k, cid: l), \
+             mock.patch("modules.pollers.impl.apd_news._append_homicide_json"), \
              mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=send_dm):
             self.poller._poll_apd_press_releases(
                 db_path=self.db_path,
@@ -953,6 +954,7 @@ class TestPollAPDPressReleases(unittest.TestCase):
                         return_value={"address": "800 Cesar Chavez St", "summary": "APD stabbing"}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
                         side_effect=lambda su, t, l, k, cid: l), \
+             mock.patch("modules.pollers.impl.apd_news._append_homicide_json"), \
              mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=send_dm):
             self.poller._poll_apd_press_releases(
                 db_path=self.db_path,
