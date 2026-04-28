@@ -20,7 +20,7 @@ from modules.config import (
 )
 from modules.talkgroups import (
     CAT_COORDS, AIR_ASSET_TGIDS, ABIA_OPS_TGIDS, TRANSIT_TGIDS, LOCUTION_TGIDS,
-    detect_air_asset, detect_dps_assets, is_capitol_area, mentions_dps,
+    detect_air_asset, detect_dps_assets, is_capitol_area, mentions_dps, _apply_locution_corrections,
 )
 from modules.geocoding import extract_location
 
@@ -204,6 +204,7 @@ def _find_incident_by_location(lat: float, lon: float, ts: float) -> int | None:
 
 def _record_escalation(incident_id: int, stage: str, description: str, ts: float):
     """Store an escalation step and alert if the stage is higher than last recorded."""
+    from modules.pollers_legacy import send_dm_alert
     inc = _active_incidents.get(incident_id)
     if inc is None:
         return
@@ -675,6 +676,7 @@ def _atak_clear_marker(incident_id: int):
 
 
 def _create_incident(itype: str, desc: str, call: dict, ts: float):
+    from modules.pollers_legacy import create_deck_card, send_dm_alert, post_banner
     cat    = call.get("category", "Unknown")
     tgid   = call.get("tgid")
     agencies = json.dumps([cat])
@@ -743,6 +745,7 @@ def _update_incident(inc_id: int, call: dict, ts: float, desc: str, new_itype: s
 
 def incident_cleanup_thread():
     """Mark incidents as cleared when they've had no updates for their type's timeout."""
+    from modules.pollers_legacy import clear_banner
     while True:
         time.sleep(60)
         now = time.time()
