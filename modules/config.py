@@ -20,7 +20,7 @@ BATTLE_BUDDY_WEB_DIR = os.environ.get("BATTLE_BUDDY_WEB_DIR", os.path.join(BATTL
 DB_PATH = os.environ.get("DB_PATH", os.path.join(BATTLE_BUDDY_HOME, "calls.db"))
 TIPS_UPLOAD_DIR = os.environ.get("TIPS_UPLOAD_DIR", os.path.join(BATTLE_BUDDY_HOME, "static", "tips"))
 TGID_TSV = os.environ.get("TGID_TSV", os.path.join(BATTLE_BUDDY_HOME, "gatrrs-tags.tsv"))
-PI1_OP25_URL = os.environ.get("PI1_OP25_URL", "http://radiodesk.ddns.net:8080/")
+PI1_OP25_URL = os.environ.get("PI1_OP25_URL", "http://radio-node.example.local:8080/")
 
 # ---------------------------------------------------------------------------
 # LLM providers
@@ -69,11 +69,11 @@ DECK_LABELS = {
     "DPS CAPITOL ACTIVATION": int(os.environ.get("DECK_LABEL_DPS_CAPITOL_ACTIVATION", "18")),
 }
 
-TALK_ROOM = os.environ.get("TALK_ROOM", "iyidr3xy")
+TALK_ROOM = os.environ.get("TALK_ROOM", "")
 TALK_ROOMS = {
-    "incidents": os.environ.get("TALK_ROOM_INCIDENTS", "89q5fnh5"),
-    "apd":       os.environ.get("TALK_ROOM_APD", "m38srso2"),
-    "fire-ems":  os.environ.get("TALK_ROOM_FIRE_EMS", "ee6si4vj"),
+    "incidents": os.environ.get("TALK_ROOM_INCIDENTS", ""),
+    "apd":       os.environ.get("TALK_ROOM_APD", ""),
+    "fire-ems":  os.environ.get("TALK_ROOM_FIRE_EMS", ""),
     "general":   os.environ.get("TALK_ROOM_GENERAL", TALK_ROOM),
 }
 
@@ -118,7 +118,7 @@ FTS_HOST = os.environ.get("FTS_HOST", "radiodesk.ddns.net")
 FTS_REST_PORT = int(os.environ.get("FTS_REST_PORT", "19023"))
 FTS_COT_PORT = int(os.environ.get("FTS_COT_PORT", "8089"))
 FTS_TOKEN = os.environ.get("FTS_TOKEN", "")
-FTS_ENABLED = os.environ.get("FTS_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+FTS_ENABLED = os.environ.get("FTS_ENABLED", "false").lower() in ("1", "true", "yes", "on")
 
 # ---------------------------------------------------------------------------
 # Incident behavior
