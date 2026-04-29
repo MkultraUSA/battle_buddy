@@ -13,7 +13,8 @@ def test_config_imports_without_required_secrets(monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
 
-    config = importlib.import_module("modules.config")
+    import modules.config as _config
+    config = importlib.reload(_config)
 
     assert config.OPENROUTER_API_KEY == ""
     assert config.ANTHROPIC_API_KEY == ""
