@@ -9,10 +9,10 @@ TIPS_UPLOAD_DIR = "/opt/battlebuddy/static/tips"
 TGID_TSV        = "/opt/battlebuddy/gatrrs-tags.tsv"
 PI1_OP25_URL    = "http://radiodesk.ddns.net:8080/"
 
-GROQ_API_KEY  = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL    = "llama-3.3-70b-versatile"
-GROQ_ENABLED  = bool(GROQ_API_KEY)
-GROQ_API_BASE = "https://api.groq.com/openai/v1"
+OPENROUTER_API_KEY  = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL    = "google/gemini-2.5-flash"
+OPENROUTER_ENABLED  = bool(OPENROUTER_API_KEY)
+OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_ENABLED = bool(ANTHROPIC_API_KEY) and (_anthropic is not None)
