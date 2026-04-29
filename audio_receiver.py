@@ -1009,16 +1009,126 @@ def bot_talk():
             except Exception as e:
                 respond(f"Error saving tag: {e}")
 
+    elif command == "!query":
+        question = " ".join(parts[1:]).strip() if len(parts) > 1 else ""
+        if not question:
+            respond(
+                "Usage: !query <your question>\n\nExamples:\n"
+                "• !query how many shootings this week\n"
+                "• !query any structure fires near downtown today\n"
+                "• !query what did radio say during the last homicide call\n"
+                "• !query show last 5 APD transcripts\n"
+                "• !query how many homicides in 2026"
+            )
+        else:
+            def _do_query(q, tok, name):
+                try:
+                    import time as _t, json as _j, os as _os, urllib.request as _ur
+                    _now = _t.time()
+                    conn = sqlite3.connect(DB_PATH, timeout=5)
+
+                    rows_inc = conn.execute(
+                        "SELECT itype, location, description, agencies, "
+                        "datetime(ts_start,'unixepoch','localtime') as ts, status "
+                        "FROM incidents WHERE ts_start >= ? "
+                        "AND (is_test IS NULL OR is_test=0) "
+                        "ORDER BY ts_start DESC LIMIT 80",
+                        (_now - 30*86400,)
+                    ).fetchall()
+
+                    rows_calls = conn.execute(
+                        "SELECT tag, transcript, datetime(ts,'unixepoch','localtime') as ts "
+                        "FROM calls WHERE ts >= ? AND transcript != '' "
+                        "ORDER BY ts DESC LIMIT 120",
+                        (_now - 48*3600,)
+                    ).fetchall()
+
+                    conn.close()
+
+                    try:
+                        _hf = _os.path.join(_os.path.dirname(__file__), "homicides_2026.json")
+                        _hdata = _j.load(open(_hf))
+                        hom_summary = f"{len(_hdata)} homicide incidents, {sum(h.get('count',1) for h in _hdata)} victims YTD 2026"
+                    except Exception:
+                        hom_summary = "homicide data unavailable"
+
+                    inc_text = "\n".join(
+                        f"[{r[4]}] {r[0]} @ {r[1] or 'unknown location'} | {r[2] or 'no desc'} | agencies: {r[3]} | {r[5]}"
+                        for r in rows_inc
+                    ) or "no incidents in window"
+
+                    calls_text = "\n".join(
+                        f"[{r[2]}] {r[0]}: {r[1][:200]}"
+                        for r in rows_calls
+                    ) or "no calls in window"
+
+                    system_prompt = (
+                        "You are Battle Buddy, an AI assistant with access to Austin Texas public safety radio data. "
+                        "Answer the user's question using ONLY the data provided below. Be concise and direct. "
+                        "If the answer is not in the data, say so clearly — do not guess or hallucinate. "
+                        "Format counts, lists, and summaries in plain text. No markdown headers or asterisks."
+                    )
+                    user_msg = (
+                        f"DATABASE CONTEXT\n"
+                        f"Homicides 2026: {hom_summary}\n\n"
+                        f"Recent incidents (last 30 days, newest first):\n{inc_text}\n\n"
+                        f"Recent radio transcripts (last 48h, newest first):\n{calls_text}\n\n"
+                        f"USER QUESTION: {q}"
+                    )
+
+                    req = _ur.Request(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        data=_j.dumps({
+                            "model": "google/gemini-2.5-flash",
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user",   "content": user_msg},
+                            ],
+                            "max_tokens": 400,
+                            "temperature": 0.1,
+                        }).encode(),
+                        headers={
+                            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                            "Content-Type":  "application/json",
+                            "HTTP-Referer":  "https://battlebuddy.news",
+                        },
+                        method="POST",
+                    )
+                    with _ur.urlopen(req, timeout=25) as resp:
+                        result = _j.loads(resp.read())
+                    answer = result["choices"][0]["message"]["content"].strip()
+                    _bot_reply(tok, f"🔍 {name} asked: {q}\n\n{answer}")
+                except Exception as _e:
+                    print(f"[bot] !query error: {_e}", flush=True)
+                    _bot_reply(tok, f"❌ Query failed: {_e}")
+
+            respond("⏳ Searching the database, one moment...")
+            threading.Thread(target=_do_query, args=(question, token, actor), daemon=True).start()
+
     elif command == "!help":
         respond(
             "🤖 Battle Buddy Commands\n\n"
-            "!sitrep [minutes] — Situation report (default 60m, max 360m)\n"
-            "!incidents — List active incidents\n"
-            "!status — System status and call volume\n"
+            "📋 SITUATION REPORTS\n"
+            "!sitrep [minutes] — AI situation report (default 60m, max 360m)\n"
+            "!incidents — Active incidents right now\n"
+            "!status — System status and call volume\n\n"
+            "🔍 DATABASE QUERY\n"
+            "!query <question> — Ask anything about incidents and radio transcripts\n\n"
+            "  Examples:\n"
+            "  !query how many shootings happened this week\n"
+            "  !query any structure fires near downtown today\n"
+            "  !query what did radio say during the last homicide call\n"
+            "  !query show me the last 5 APD transcripts\n"
+            "  !query how many homicides in 2026\n"
+            "  !query were there any SWAT callouts in the last 30 days\n"
+            "  !query what agencies responded to the last multi-agency incident\n"
+            "  !query any mass casualty events this month\n\n"
+            "🔔 ALERTS\n"
+            "!subscribe [beat] — 🔴 DM alerts (beats: all, apd, fire-ems, general)\n"
+            "!unsubscribe [beat] — Stop DM alerts\n\n"
+            "🛠 ADMIN\n"
             "!unknowns — Show unidentified talkgroup guesses\n"
-            "!addtag <tgid> <name> — Confirm a talkgroup name\n"
-            "!subscribe [beat] — Get 🔴 DM alerts (beats: all, apd, fire-ems, general)\n"
-            "!unsubscribe [beat] — Stop DM alerts\n"
+            "!addtag <tgid> <name> — Confirm a talkgroup name\n\n"
             "!help — This message"
         )
 
@@ -1586,7 +1696,9 @@ footer {
     <div class="feature"><div class="icon">🔴</div><h3>Austin Homicide Map</h3><p>Every confirmed 2026 homicide from official APD press releases — geocoded, mapped, and linked to the source. Self-updating.</p></div>
     <div class="feature"><div class="icon">🗺️</div><h3>TAK Integration</h3><p>Every detected incident automatically pushed to FreeTAKServer as a CoT marker — appearing in real time on WinTAK, ATAK, and iTAK across your team. Markers auto-clear when the incident closes.</p></div>
     <div class="feature"><div class="icon">🛸</div><h3>FAA Remote ID Drone Detection <span style="font-size:0.58rem;background:#1e3a5f;color:#60a5fa;padding:2px 6px;border-radius:3px;vertical-align:middle;margin-left:4px">COMING SOON</span></h3><p>FAA Remote ID broadcasts from licensed drones captured via SDR and plotted on the live map in real time — adding aerial dimension to ground-level situational awareness.</p></div>
+    <div class="feature"><div class="icon">📊</div><h3>Public Intelligence Dashboard</h3><p>Live Grafana dashboard showing shooting intel tiers (confirmed vs signal vs official press release), homicides YTD, structure fires, EMS callouts, radio volume by agency, and incident trends — with a full confidence model so you know exactly how to read each number.</p></div>
     <div class="feature"><div class="icon">🗞️</div><h3>Intel News Feed</h3><p>Every confirmed incident and APD press release delivered as a live RSS feed in Nextcloud News — auto-subscribed at signup. One scrollable feed covering radio detections, press releases, and homicide updates.</p></div>
+    <div class="feature"><div class="icon">💬</div><h3>Talk Bot Database Queries</h3><p>Ask the Battle Buddy bot anything directly in Nextcloud Talk. Natural language queries against the live incident and transcript database — how many shootings this week, what radio said during the last homicide call, SWAT callouts in the last 30 days. Type !help to see all commands.</p></div>
   </div>
 </section>
 
@@ -1647,7 +1759,7 @@ footer {
   <a href="/public/homicides" style="color:#ef4444;text-decoration:none">Homicide Map</a> &nbsp;&middot;&nbsp;
   <a href="/public/feed" style="color:#3b82f6;text-decoration:none">Feed</a> &nbsp;·&nbsp;
   <a href="/public/about" style="color:#3b82f6;text-decoration:none">About</a> &nbsp;·&nbsp;
-  <a href="https://kevinwatkins.grafana.net/public-dashboards/40592df4da7946c7861619906c8de92c" target="_blank" style="color:#10b981;text-decoration:none">📊 Stats</a>
+  <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" style="color:#10b981;text-decoration:none">📊 Stats</a>
 </footer>
 
 <script>
@@ -1734,7 +1846,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about">About</a>
-    <a href="https://kevinwatkins.grafana.net/public-dashboards/40592df4da7946c7861619906c8de92c" target="_blank">📊 Stats</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank">📊 Stats</a>
     <a href="/tip">Submit Tip</a>
   </nav>
   <button id="sitrep-btn" onclick="speakSitrep()" title="Read situation report aloud">&#128266; SITREP</button>
@@ -2065,7 +2177,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed" class="active">Live Feed</a>
     <a href="/public/about">About</a>
-    <a href="https://kevinwatkins.grafana.net/public-dashboards/40592df4da7946c7861619906c8de92c" target="_blank">📊 Stats</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank">📊 Stats</a>
     <a href="/tip">Submit Tip</a>
   </nav>
 </div>
@@ -2252,7 +2364,7 @@ footer a{color:#3b82f6;text-decoration:none}
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about" class="active">About</a>
-    <a href="https://kevinwatkins.grafana.net/public-dashboards/40592df4da7946c7861619906c8de92c" target="_blank">📊 Stats</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank">📊 Stats</a>
   </nav>
 </div>
 
@@ -2364,9 +2476,19 @@ footer a{color:#3b82f6;text-decoration:none}
       <p>FAA Remote ID broadcasts from licensed drones captured via software-defined radio and plotted on the live map in real time — adding aerial dimension to ground-level situational awareness.</p>
     </div>
     <div class="feature">
+      <div class="icon">📊</div>
+      <h3>Public Intelligence Dashboard</h3>
+      <p>Live Grafana dashboard showing shooting intel tiers (confirmed vs signal vs official press release), homicides YTD, structure fires, EMS callouts, radio volume by agency, and incident trends — with a full confidence model so you know exactly how to read each number.</p>
+    </div>
+    <div class="feature">
       <div class="icon">🗞️</div>
       <h3>Intel News Feed</h3>
       <p>Every confirmed incident and APD press release delivered as a live RSS feed directly in Nextcloud News — auto-subscribed at signup. One scrollable feed covering radio detections, press releases, and homicide updates across Austin.</p>
+    </div>
+    <div class="feature">
+      <div class="icon">💬</div>
+      <h3>Talk Bot Database Queries</h3>
+      <p>Ask the Battle Buddy bot anything directly in Nextcloud Talk. Natural language queries against the live incident and transcript database — how many shootings this week, what radio said during the last homicide call, SWAT callouts in the last 30 days. Type !help to see all commands.</p>
     </div>
   </div>
 </div>
