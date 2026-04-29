@@ -383,6 +383,32 @@ try:
                 g_calls.add_metric([], float(calls_24h))
                 yield g_calls
 
+                # --- process memory / thread metrics (leak detection) ---
+                try:
+                    import psutil as _psutil
+                    _proc = _psutil.Process()
+                    _mi = _proc.memory_info()
+                    g_rss = GaugeMetricFamily(
+                        'battlebuddy_process_rss_bytes',
+                        'Battle Buddy Flask process RSS memory in bytes',
+                    )
+                    g_rss.add_metric([], float(_mi.rss))
+                    yield g_rss
+                    g_vms = GaugeMetricFamily(
+                        'battlebuddy_process_vms_bytes',
+                        'Battle Buddy Flask process VMS (virtual) memory in bytes',
+                    )
+                    g_vms.add_metric([], float(_mi.vms))
+                    yield g_vms
+                    g_thr = GaugeMetricFamily(
+                        'battlebuddy_process_threads',
+                        'Battle Buddy Flask process thread count',
+                    )
+                    g_thr.add_metric([], float(_proc.num_threads()))
+                    yield g_thr
+                except Exception as _pe:
+                    print(f'[metrics] psutil error: {_pe}', flush=True)
+
                 c.close()
             except Exception as _e:
                 print(f"[metrics] collector error: {_e}", flush=True)
