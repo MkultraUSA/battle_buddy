@@ -8,7 +8,7 @@ import urllib.parse
 from collections import Counter
 
 from modules.config import (
-    GROQ_API_KEY, GROQ_MODEL, GROQ_ENABLED, GROQ_API_BASE,
+    OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_ENABLED, OPENROUTER_API_BASE,
     ANTHROPIC_API_KEY, ANTHROPIC_ENABLED,
     TALK_BASE, TALK_USER, TALK_PASS, TALK_ROOMS, DB_PATH,
 )
@@ -19,11 +19,11 @@ except ImportError:
     _anthropic_mod = None
 
 
-def _call_groq_llm(system_prompt: str, user_msg: str) -> dict:
+def _call_openrouter_llm(system_prompt: str, user_msg: str) -> dict:
     req = urllib.request.Request(
-        f"{GROQ_API_BASE}/chat/completions",
+        f"{OPENROUTER_API_BASE}/chat/completions",
         data=json.dumps({
-            "model":           GROQ_MODEL,
+            "model":           OPENROUTER_MODEL,
             "messages":        [
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_msg},
@@ -33,9 +33,10 @@ def _call_groq_llm(system_prompt: str, user_msg: str) -> dict:
             "response_format": {"type": "json_object"},
         }).encode(),
         headers={
-            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type":  "application/json",
             "User-Agent":    "Mozilla/5.0",
+            "HTTP-Referer":  "https://battlebuddy.news",
         },
         method="POST",
     )
@@ -77,13 +78,13 @@ should_hold: true only if the event is actively unfolding and worth continuous m
 
 Be conservative. Most radio traffic is routine. Only flag genuine emergencies."""
 
-_groq_call_times: list     = []
-_groq_rate_lock            = threading.Lock()
-_groq_backoff_until        = 0.0
-_GROQ_RATE_LIMIT           = 4
+_llm_call_times: list      = []
+_llm_rate_lock             = threading.Lock()
+_llm_backoff_until         = 0.0
+_LLM_RATE_LIMIT            = 10
 _GROQ_MIN_TRANSCRIPT       = 50
 _GROQ_MIN_DURATION         = 2.5
-_GROQ_BACKOFF_SECS         = 600
+_LLM_BACKOFF_SECS          = 600
 _GROQ_ROUTINE_STREAK       = 3
 _GROQ_ROUTINE_WINDOW       = 600
 _GROQ_ROUTINE_COOLDOWN     = 300
@@ -92,12 +93,12 @@ _GROQ_SAFETY_RE            = __import__('re').compile(
     r"officer down|man down|unconscious|not breathing|overdose|hostage|threat|bomb",
     __import__('re').IGNORECASE
 )
-_groq_routine_tracker: dict = {}
+_llm_routine_tracker: dict = {}
 
 
 def groq_analyze(call: dict, recent_calls_list: list):
-    global _groq_backoff_until, _groq_call_times
-    if not GROQ_ENABLED:
+    global _llm_backoff_until, _llm_call_times
+    if not OPENROUTER_ENABLED:
         return None
     if call.get("tgid", 0) == 0:
         return None
@@ -109,17 +110,17 @@ def groq_analyze(call: dict, recent_calls_list: list):
     tgid = call.get("tgid", 0)
     if not _GROQ_SAFETY_RE.search(transcript):
         now_pre = time.time()
-        tracker = _groq_routine_tracker.get(tgid)
+        tracker = _llm_routine_tracker.get(tgid)
         if tracker and now_pre < tracker.get("cooldown_until", 0):
             return None
     now = time.time()
-    with _groq_rate_lock:
-        if now < _groq_backoff_until:
+    with _llm_rate_lock:
+        if now < _llm_backoff_until:
             return None
-        _groq_call_times[:] = [t for t in _groq_call_times if now - t < 60]
-        if len(_groq_call_times) >= _GROQ_RATE_LIMIT:
+        _llm_call_times[:] = [t for t in _llm_call_times if now - t < 60]
+        if len(_llm_call_times) >= _LLM_RATE_LIMIT:
             return None
-        _groq_call_times.append(now)
+        _llm_call_times.append(now)
 
     ctx_lines = []
     for rc in recent_calls_list[-6:]:
@@ -137,15 +138,15 @@ def groq_analyze(call: dict, recent_calls_list: list):
         f"Recent calls (last 15 min):\n{context_block}"
     )
     try:
-        result = _call_groq_llm(_GROQ_SYSTEM, user_msg)
+        result = _call_openrouter_llm(_GROQ_SYSTEM, user_msg)
         itype  = result.get("incident_type") or "ROUTINE"
         pri    = result.get("priority", "NONE")
         hold   = result.get("should_hold", False)
         reason = (result.get("reasoning") or "")[:100]
-        print(f"[groq] {call.get('tag','?')} → {itype} pri={pri} hold={hold} | {reason}", flush=True)
+        print(f"[llm] {call.get('tag','?')} → {itype} pri={pri} hold={hold} | {reason}", flush=True)
         now_post = time.time()
         if itype in (None, "ROUTINE"):
-            tr = _groq_routine_tracker.setdefault(tgid, {"streak": 0, "cooldown_until": 0.0, "last_ts": 0.0})
+            tr = _llm_routine_tracker.setdefault(tgid, {"streak": 0, "cooldown_until": 0.0, "last_ts": 0.0})
             if now_post - tr["last_ts"] < _GROQ_ROUTINE_WINDOW:
                 tr["streak"] += 1
             else:
@@ -155,13 +156,13 @@ def groq_analyze(call: dict, recent_calls_list: list):
                 tr["cooldown_until"] = now_post + _GROQ_ROUTINE_COOLDOWN
                 tr["streak"] = 0
         else:
-            _groq_routine_tracker.pop(tgid, None)
+            _llm_routine_tracker.pop(tgid, None)
         return result
     except Exception as exc:
-        print(f"[groq] error: {exc}", flush=True)
+        print(f"[llm] error: {exc}", flush=True)
         if "429" in str(exc):
-            _groq_backoff_until = time.time() + _GROQ_BACKOFF_SECS
-            print(f"[groq] rate limited — backing off {_GROQ_BACKOFF_SECS}s", flush=True)
+            _llm_backoff_until = time.time() + _LLM_BACKOFF_SECS
+            print(f"[llm] rate limited — backing off {_LLM_BACKOFF_SECS}s", flush=True)
         return None
 
 
@@ -197,7 +198,7 @@ _TGID_ID_CONFIRM_THRESHOLD = 3
 
 
 def groq_identify_tgid(tgid: int, transcript: str):
-    if not GROQ_ENABLED or not transcript or len(transcript) < _TGID_ID_MIN_LEN:
+    if not OPENROUTER_ENABLED or not transcript or len(transcript) < _TGID_ID_MIN_LEN:
         return None
     try:
         user_msg = (
@@ -205,7 +206,7 @@ def groq_identify_tgid(tgid: int, transcript: str):
             f"Radio transcript: {transcript}\n\n"
             f"What Austin/Travis County public safety agency and role does this talkgroup belong to?"
         )
-        raw       = _call_groq_llm(_TGID_ID_SYSTEM, user_msg)
+        raw       = _call_openrouter_llm(_TGID_ID_SYSTEM, user_msg)
         guess     = raw.get("guess")
         agency    = raw.get("agency")
         reasoning = raw.get("reasoning", "")
@@ -249,7 +250,7 @@ def _notify_tgid_confirmed(tgid: int, name: str, agency: str, count: int):
     msg = (
         f"🔍 **Unknown talkgroup identified!**\n"
         f"TGID {tgid} → **{name}** (agency: {agency or 'unknown'})\n"
-        f"Auto-confirmed from {count} agreeing Groq guesses.\n"
+        f"Auto-confirmed from {count} agreeing LLM guesses.\n"
         f"Review at /api/tgid_guesses — run `/addtag {tgid} {name}` to write to tags file."
     )
     creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
