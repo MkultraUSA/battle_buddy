@@ -219,7 +219,7 @@ if analysis_set:
     system = (
         "You are a public safety radio analyst helping improve an automated P25 radio "
         "incident detection system for Austin TX. The system classifies events from "
-        "Whisper ASR transcripts of APD, AFD, TCEMS and TCSO radio traffic. "
+        "Whisper ASR transcripts of AFD, TCEMS, TCSO and other unencrypted GATRRS talkgroups. APD traffic is encrypted and produces no transcripts. "
         "Be specific and practical — suggest exact phrases to add as keywords."
     )
     user = (
