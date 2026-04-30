@@ -2166,33 +2166,40 @@ def _cad_match_and_harvest():
                     WHERE incident_number = ?
                 """, (cad["incident_number"],))
 
-            # Harvest TGID hints regardless of incident match, for worthwhile categories
-            if sector and init_cat in _CAD_HARVEST_CATEGORIES:
-                tgid_window_start = response_ts - TGID_WINDOW_PRE
-                tgid_window_end   = call_closed + TGID_WINDOW_POST
-                tgid_rows = conn.execute("""
-                    SELECT tgid, COUNT(*) as call_count
-                    FROM calls
-                    WHERE ts BETWEEN ? AND ?
-                      AND tgid IS NOT NULL
-                      AND tgid > 0
-                    GROUP BY tgid
-                    HAVING call_count >= 2
-                """, (tgid_window_start, tgid_window_end)).fetchall()
+    # Harvest TGID hints once per CAD row (after both match passes complete)
+    # to avoid double-incrementing hit_count on rows that run in pass 1 and pass 2.
+    for cad in cad_rows:
+        response_ts = cad["response_ts"]
+        sector      = cad["sector"]
+        init_cat    = cad["initial_category"] or ""
+        call_closed = cad["call_closed_ts"] or (response_ts + 1800)
 
-                for tr in tgid_rows:
-                    tgid = tr["tgid"]
-                    # Skip already-tagged/ignored TGIDs — harvest is for unknown discovery
-                    if tgid in TGID_META or tgid in IGNORE_TGIDS:
-                        continue
-                    conn.execute("""
-                        INSERT INTO tgid_sector_hints (tgid, sector, hit_count, last_seen)
-                        VALUES (?, ?, 1, ?)
-                        ON CONFLICT(tgid, sector) DO UPDATE SET
-                            hit_count = hit_count + 1,
-                            last_seen = excluded.last_seen
-                    """, (tgid, sector, response_ts))
-                    harvested_hints += 1
+        if sector and init_cat in _CAD_HARVEST_CATEGORIES:
+            tgid_window_start = response_ts - TGID_WINDOW_PRE
+            tgid_window_end   = call_closed + TGID_WINDOW_POST
+            tgid_rows = conn.execute("""
+                SELECT tgid, COUNT(*) as call_count
+                FROM calls
+                WHERE ts BETWEEN ? AND ?
+                  AND tgid IS NOT NULL
+                  AND tgid > 0
+                GROUP BY tgid
+                HAVING call_count >= 2
+            """, (tgid_window_start, tgid_window_end)).fetchall()
+
+            for tr in tgid_rows:
+                tgid = tr["tgid"]
+                # Skip already-tagged/ignored TGIDs — harvest is for unknown discovery
+                if tgid in TGID_META or tgid in IGNORE_TGIDS:
+                    continue
+                conn.execute("""
+                    INSERT INTO tgid_sector_hints (tgid, sector, hit_count, last_seen)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(tgid, sector) DO UPDATE SET
+                        hit_count = hit_count + 1,
+                        last_seen = excluded.last_seen
+                """, (tgid, sector, response_ts))
+                harvested_hints += 1
 
     conn.commit()
     conn.close()
