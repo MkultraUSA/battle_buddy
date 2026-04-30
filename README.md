@@ -14,6 +14,7 @@ The project demonstrates practical Linux service deployment, Python audio proces
 
 ![Tests](https://github.com/MkultraUSA/battle_buddy/actions/workflows/tests.yml/badge.svg)
 ![Lint](https://github.com/MkultraUSA/battle_buddy/actions/workflows/lint.yml/badge.svg)
+![Python Syntax](https://github.com/MkultraUSA/battle_buddy/actions/workflows/python-syntax.yml/badge.svg)
 ![Secrets Scan](https://github.com/MkultraUSA/battle_buddy/actions/workflows/secrets-scan.yml/badge.svg)
 
 ---
@@ -142,16 +143,18 @@ BATTLE_BUDDY_HOME=/opt/battlebuddy
 BATTLE_BUDDY_LOG_DIR=/var/log/battlebuddy
 BATTLE_BUDDY_DATA_DIR=/var/lib/battlebuddy
 BATTLE_BUDDY_WEB_DIR=/var/www/battlebuddy
+ALLOW_INSECURE_TLS=false
 
 OPENROUTER_API_KEY=your_openrouter_key_here
 GROQ_API_KEY=your_groq_key_here
 ANTHROPIC_API_KEY=your_anthropic_key_here
+TALK_ENABLED=false
 TALK_PASS=your_nextcloud_app_password_here
 NC_USER=your_nextcloud_user_here
 NC_PASS=your_nextcloud_app_password_here
 ```
 
-Do not place real credentials directly in URLs or committed files.
+Do not place real credentials directly in URLs or committed files. TLS verification is enabled by default. `ALLOW_INSECURE_TLS=true` should only be used temporarily on isolated lab systems with self-signed certificates.
 
 ---
 
@@ -170,6 +173,8 @@ Do not place real credentials directly in URLs or committed files.
 | `/bot/talk` | POST | Nextcloud Talk bot webhook |
 | `/pi/commands` | GET | Command queue for capture node polling |
 | `/metrics` | GET | Prometheus-compatible metrics, when enabled |
+
+Not every route is safe to expose publicly. Keep ingest, bot, command, metrics, and admin-style routes behind a private network, VPN, reverse-proxy allowlist, or application-level shared-token/HMAC control. See [`docs/api-security.md`](docs/api-security.md).
 
 ---
 
@@ -252,6 +257,7 @@ See [`docs/release-checklist.md`](docs/release-checklist.md).
 - This system monitors publicly broadcast radio — it does not intercept encrypted communications.
 - Users are responsible for complying with local laws governing radio monitoring and data publication.
 - Do not use this software to harass, track, or publish personally identifiable information about individuals.
+- Do not expose live tactical details that could interfere with public safety operations.
 - See [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 
 ---
