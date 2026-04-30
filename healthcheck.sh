@@ -1,6 +1,20 @@
 #!/bin/bash
-# Battle Buddy + Nextcloud Health Check
-# Usage: bash /opt/battlebuddy/healthcheck.sh
+# Battle Buddy Health Check
+# Usage: bash ./healthcheck.sh
+#
+# Public-safe defaults are placeholders. For a real deployment, set these
+# environment variables locally or in a private environment file:
+#   BATTLE_BUDDY_DB=/opt/battlebuddy/calls.db
+#   BATTLE_BUDDY_SERVICE=battlebuddy
+#   AUDIO_RECEIVER_PROCESS=audio_receiver
+#   PI_HOST=radio-node.example.local
+#   PI_USER=pi
+#   NEXTCLOUD_HOST=nextcloud.example.com
+#   NEXTCLOUD_OCC=/var/www/nextcloud/occ
+#   NEXTCLOUD_DATA_DIR=/srv/nextcloud-data
+#   GROQ_ENV_FILE=/opt/battlebuddy/.env
+
+set -u
 
 RED='\033[0;31m'
 GRN='\033[0;32m'
@@ -15,6 +29,25 @@ warn() { echo -e "  ${YLW}⚠${RST}  $1"; }
 fail() { echo -e "  ${RED}✗${RST} $1"; }
 hdr()  { echo -e "\n${BLU}━━━ ${WHT}$1${RST}${BLU} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}"; }
 
+BB_SERVICE="${BATTLE_BUDDY_SERVICE:-battlebuddy}"
+BB_DB="${BATTLE_BUDDY_DB:-/opt/battlebuddy/calls.db}"
+BB_PROCESS="${AUDIO_RECEIVER_PROCESS:-audio_receiver}"
+PI_HOST="${PI_HOST:-radio-node.example.local}"
+PI_USER="${PI_USER:-pi}"
+NC_HOST="${NEXTCLOUD_HOST:-nextcloud.example.com}"
+NC_OCC="${NEXTCLOUD_OCC:-/var/www/nextcloud/occ}"
+NC_DATA_DIR="${NEXTCLOUD_DATA_DIR:-/srv/nextcloud-data}"
+GROQ_ENV_FILE="${GROQ_ENV_FILE:-/opt/battlebuddy/.env}"
+
+has_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+sqlite_count() {
+  local sql="$1"
+  if has_cmd sqlite3 && [ -f "$BB_DB" ]; then
+    sqlite3 "$BB_DB" "$sql" 2>/dev/null || true
+  fi
+}
+
 echo -e "${CYN}"
 echo "  ██████╗  █████╗ ████████╗████████╗██╗     ███████╗"
 echo "  ██╔══██╗██╔══██╗╚══██╔══╝╚══██╔══╝██║     ██╔════╝"
@@ -27,220 +60,213 @@ echo -e "${RST}  ${WHT}Battle Buddy Health Check${RST}  —  $(date '+%Y-%m-%d %
 # ── System ───────────────────────────────────────────────────────────────────
 hdr "SYSTEM"
 
-# Memory
-TOTAL=$(free -m | awk '/^Mem:/{print $2}')
-USED=$(free -m  | awk '/^Mem:/{print $3}')
-FREE=$(free -m  | awk '/^Mem:/{print $7}')
-SWAP_TOTAL=$(free -m | awk '/^Swap:/{print $2}')
-SWAP_USED=$(free -m  | awk '/^Swap:/{print $3}')
-MEM_PCT=$(( USED * 100 / TOTAL ))
-echo -e "  RAM:  ${USED}MB / ${TOTAL}MB used (${MEM_PCT}%)  —  ${FREE}MB available"
-if [ "$SWAP_TOTAL" -gt 0 ]; then
-  echo -e "  Swap: ${SWAP_USED}MB / ${SWAP_TOTAL}MB used"
-  [ "$SWAP_USED" -gt 1024 ] && warn "Swap usage high — consider RAM upgrade" || ok "Swap present and healthy"
+if has_cmd free; then
+  TOTAL=$(free -m | awk '/^Mem:/{print $2}')
+  USED=$(free -m  | awk '/^Mem:/{print $3}')
+  FREE=$(free -m  | awk '/^Mem:/{print $7}')
+  SWAP_TOTAL=$(free -m | awk '/^Swap:/{print $2}')
+  SWAP_USED=$(free -m  | awk '/^Swap:/{print $3}')
+  MEM_PCT=$(( USED * 100 / TOTAL ))
+  echo -e "  RAM:  ${USED}MB / ${TOTAL}MB used (${MEM_PCT}%)  —  ${FREE}MB available"
+  if [ "$SWAP_TOTAL" -gt 0 ]; then
+    echo -e "  Swap: ${SWAP_USED}MB / ${SWAP_TOTAL}MB used"
+    [ "$SWAP_USED" -gt 1024 ] && warn "Swap usage high — consider RAM upgrade" || ok "Swap present and healthy"
+  else
+    warn "No swap configured"
+  fi
+  [ "$MEM_PCT" -gt 90 ] && fail "Memory critically high (${MEM_PCT}%)" || \
+  [ "$MEM_PCT" -gt 75 ] && warn "Memory elevated (${MEM_PCT}%)" || ok "Memory OK (${MEM_PCT}%)"
 else
-  fail "No swap configured"
+  warn "free command not available"
 fi
-[ "$MEM_PCT" -gt 90 ] && fail "Memory critically high (${MEM_PCT}%)" || \
-[ "$MEM_PCT" -gt 75 ] && warn "Memory elevated (${MEM_PCT}%)" || ok "Memory OK (${MEM_PCT}%)"
 
-# Load
-LOAD=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1}' | tr -d ',')
-CORES=$(nproc)
-echo -e "  Load: ${LOAD} (${CORES} cores)"
-LOAD_INT=${LOAD%.*}
-[ "$LOAD_INT" -gt "$CORES" ] && fail "Load average above core count" || ok "Load OK"
+if has_cmd uptime; then
+  LOAD=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1}' | tr -d ',')
+  CORES=$(nproc 2>/dev/null || echo 1)
+  echo -e "  Load: ${LOAD:-unknown} (${CORES} cores)"
+fi
 
-# Disk
-DISK_PCT=$(df / | awk 'NR==2{print $5}' | tr -d '%')
-DISK_FREE=$(df -h / | awk 'NR==2{print $4}')
-[ "$DISK_PCT" -gt 90 ] && fail "Disk ${DISK_PCT}% full (${DISK_FREE} free)" || \
-[ "$DISK_PCT" -gt 75 ] && warn "Disk ${DISK_PCT}% full (${DISK_FREE} free)" || \
-ok "Disk ${DISK_PCT}% used (${DISK_FREE} free)"
+if has_cmd df; then
+  DISK_PCT=$(df / | awk 'NR==2{print $5}' | tr -d '%')
+  DISK_FREE=$(df -h / | awk 'NR==2{print $4}')
+  [ "$DISK_PCT" -gt 90 ] && fail "Disk ${DISK_PCT}% full (${DISK_FREE} free)" || \
+  [ "$DISK_PCT" -gt 75 ] && warn "Disk ${DISK_PCT}% full (${DISK_FREE} free)" || \
+  ok "Disk ${DISK_PCT}% used (${DISK_FREE} free)"
+fi
 
 # ── Battle Buddy ─────────────────────────────────────────────────────────────
 hdr "BATTLE BUDDY"
 
-# Service status
-BB_STATUS=$(systemctl is-active battlebuddy 2>/dev/null)
-[ "$BB_STATUS" = "active" ] && ok "battlebuddy.service running" || fail "battlebuddy.service is $BB_STATUS"
+if has_cmd systemctl; then
+  BB_STATUS=$(systemctl is-active "$BB_SERVICE" 2>/dev/null || true)
+  [ "$BB_STATUS" = "active" ] && ok "${BB_SERVICE}.service running" || warn "${BB_SERVICE}.service is ${BB_STATUS:-unknown}"
 
-# Uptime
-BB_START=$(systemctl show battlebuddy --property=ActiveEnterTimestamp --value 2>/dev/null)
-[ -n "$BB_START" ] && echo -e "  Started: $BB_START"
+  BB_START=$(systemctl show "$BB_SERVICE" --property=ActiveEnterTimestamp --value 2>/dev/null || true)
+  [ -n "$BB_START" ] && echo -e "  Started: $BB_START"
+else
+  warn "systemctl not available"
+fi
 
-# Memory used by Battle Buddy
-BB_MEM=$(ps aux | grep audio_receiver | grep -v grep | awk '{sum+=$6} END {printf "%.0f", sum/1024}')
-BB_CPU=$(ps aux | grep audio_receiver | grep -v grep | awk '{sum+=$3} END {printf "%.0f", sum}')
-[ -n "$BB_MEM" ] && echo -e "  Process RAM: ${BB_MEM}MB  |  CPU: ${BB_CPU}%"
-[ "${BB_MEM:-0}" -gt 3000 ] && warn "High RAM usage (${BB_MEM}MB)" || ok "RAM usage normal (${BB_MEM}MB)"
-[ "${BB_CPU:-0}" -gt 150 ]  && warn "CPU usage elevated (${BB_CPU}%) — transcription backlog?" || ok "CPU usage normal (${BB_CPU}%)"
+BB_MEM=$(ps aux | grep "$BB_PROCESS" | grep -v grep | awk '{sum+=$6} END {printf "%.0f", sum/1024}' 2>/dev/null || true)
+BB_CPU=$(ps aux | grep "$BB_PROCESS" | grep -v grep | awk '{sum+=$3} END {printf "%.0f", sum}' 2>/dev/null || true)
+if [ -n "${BB_MEM:-}" ]; then
+  echo -e "  Process RAM: ${BB_MEM}MB  |  CPU: ${BB_CPU:-0}%"
+  [ "${BB_MEM:-0}" -gt 3000 ] && warn "High RAM usage (${BB_MEM}MB)" || ok "RAM usage normal (${BB_MEM}MB)"
+else
+  warn "No ${BB_PROCESS} process found"
+fi
 
-# Last call from Pi (real TGID intel)
-LAST_PI=$(sqlite3 /opt/battlebuddy/calls.db \
-  "SELECT CAST((strftime('%s','now') - MAX(ts)) AS INTEGER) FROM calls WHERE node NOT LIKE '%broadcastify%';" 2>/dev/null)
-if [ -n "$LAST_PI" ] && [ "$LAST_PI" -ge 0 ]; then
-  LAST_PI_MIN=$(( LAST_PI / 60 ))
-  if   [ "$LAST_PI_MIN" -lt 10 ]; then ok "Pi intel: last call ${LAST_PI_MIN}m ago"
-  elif [ "$LAST_PI_MIN" -lt 30 ]; then warn "Pi intel: last call ${LAST_PI_MIN}m ago (quiet or OP25 issue?)"
-  else                                  fail "Pi intel: no call in ${LAST_PI_MIN}m — check OP25"
+if [ -f "$BB_DB" ]; then
+  LAST_PI=$(sqlite_count "SELECT CAST((strftime('%s','now') - MAX(ts)) AS INTEGER) FROM calls WHERE node NOT LIKE '%broadcastify%';")
+  if [ -n "${LAST_PI:-}" ] && [ "$LAST_PI" -ge 0 ]; then
+    LAST_PI_MIN=$(( LAST_PI / 60 ))
+    if   [ "$LAST_PI_MIN" -lt 10 ]; then ok "Capture-node intel: last call ${LAST_PI_MIN}m ago"
+    elif [ "$LAST_PI_MIN" -lt 30 ]; then warn "Capture-node intel: last call ${LAST_PI_MIN}m ago"
+    else                                  fail "Capture-node intel: no call in ${LAST_PI_MIN}m"
+    fi
   fi
+
+  LAST_BFY=$(sqlite_count "SELECT CAST((strftime('%s','now') - MAX(ts)) AS INTEGER) FROM calls WHERE node LIKE '%broadcastify%';")
+  if [ -n "${LAST_BFY:-}" ] && [ "$LAST_BFY" -ge 0 ]; then
+    LAST_BFY_MIN=$(( LAST_BFY / 60 ))
+    [ "$LAST_BFY_MIN" -lt 5 ] && ok "Backup feed: last call ${LAST_BFY_MIN}m ago" || \
+    warn "Backup feed: last call ${LAST_BFY_MIN}m ago"
+  fi
+
+  CALLS_TODAY=$(sqlite_count "SELECT COUNT(*) FROM calls WHERE date(ts,'unixepoch','localtime')=date('now','localtime');")
+  PI_TODAY=$(sqlite_count "SELECT COUNT(*) FROM calls WHERE date(ts,'unixepoch','localtime')=date('now','localtime') AND node NOT LIKE '%broadcastify%';")
+  echo -e "  Calls today: ${CALLS_TODAY:-0} total  (${PI_TODAY:-0} from capture node)"
+
+  ACTIVE_INC=$(sqlite_count "SELECT COUNT(*) FROM incidents WHERE status='active';")
+  echo -e "  Active incidents: ${ACTIVE_INC:-0}"
+else
+  warn "Battle Buddy database not found at ${BB_DB}"
 fi
-
-# Last call from Broadcastify (backup feed)
-LAST_BFY=$(sqlite3 /opt/battlebuddy/calls.db \
-  "SELECT CAST((strftime('%s','now') - MAX(ts)) AS INTEGER) FROM calls WHERE node LIKE '%broadcastify%';" 2>/dev/null)
-if [ -n "$LAST_BFY" ] && [ "$LAST_BFY" -ge 0 ]; then
-  LAST_BFY_MIN=$(( LAST_BFY / 60 ))
-  [ "$LAST_BFY_MIN" -lt 5 ] && ok "Broadcastify feed: last call ${LAST_BFY_MIN}m ago" || \
-  warn "Broadcastify feed: last call ${LAST_BFY_MIN}m ago"
-fi
-
-# Calls today
-CALLS_TODAY=$(sqlite3 /opt/battlebuddy/calls.db \
-  "SELECT COUNT(*) FROM calls WHERE date(ts,'unixepoch','localtime')=date('now','localtime');" 2>/dev/null)
-PI_TODAY=$(sqlite3 /opt/battlebuddy/calls.db \
-  "SELECT COUNT(*) FROM calls WHERE date(ts,'unixepoch','localtime')=date('now','localtime') AND node NOT LIKE '%broadcastify%';" 2>/dev/null)
-echo -e "  Calls today: ${CALLS_TODAY:-0} total  (${PI_TODAY:-0} from Pi, $((${CALLS_TODAY:-0} - ${PI_TODAY:-0})) broadcastify)"
-
-# Active incidents
-ACTIVE_INC=$(sqlite3 /opt/battlebuddy/calls.db \
-  "SELECT COUNT(*) FROM incidents WHERE status='active';" 2>/dev/null)
-INC_TODAY=$(sqlite3 /opt/battlebuddy/calls.db \
-  "SELECT COUNT(*) FROM incidents WHERE date(created_at,'unixepoch','localtime')=date('now','localtime');" 2>/dev/null)
-echo -e "  Active incidents: ${ACTIVE_INC:-0}  |  Incidents today: ${INC_TODAY:-0}"
 
 # ── AI Pipeline ──────────────────────────────────────────────────────────────
 hdr "AI PIPELINE"
 
-# faster-whisper model cached on disk
-FW_CACHE=$(find /root/.cache/huggingface/hub -name "*.bin" -o -name "model.bin" 2>/dev/null | head -1)
-[ -n "$FW_CACHE" ] && ok "faster-whisper: model cached on disk (offline-ready)" \
-  || warn "faster-whisper: model not found in cache — will download on first run"
+FW_CACHE=$(find /root/.cache/huggingface/hub -name "*.bin" -o -name "model.bin" 2>/dev/null | head -1 || true)
+[ -n "$FW_CACHE" ] && ok "faster-whisper: model cached on disk" \
+  || warn "faster-whisper: model not found in cache — first run may download it"
 
-# faster-whisper process check (model loaded in-process, not a separate binary)
-FW_RUNNING=$(ps aux | grep audio_receiver | grep -v grep | wc -l)
-FW_MODEL=$(grep -oP '(?<=WhisperModel\()"[^"]+"' /opt/battlebuddy/audio_receiver.py 2>/dev/null | head -1 | tr -d '"')
-if [ "${FW_RUNNING:-0}" -gt 0 ]; then
-  ok "faster-whisper: loaded in battlebuddy process (${FW_MODEL:-unknown model})"
+FW_RUNNING=$(ps aux | grep "$BB_PROCESS" | grep -v grep | wc -l | tr -d ' ')
+[ "${FW_RUNNING:-0}" -gt 0 ] && ok "transcription process appears to be running" \
+  || warn "transcription process not running"
+
+if [ -f "$GROQ_ENV_FILE" ] && grep -q '^GROQ_API_KEY=' "$GROQ_ENV_FILE" && has_cmd curl; then
+  GROQ_KEY=$(grep '^GROQ_API_KEY=' "$GROQ_ENV_FILE" | cut -d= -f2-)
+  GROQ_RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
+    -H "Authorization: Bearer ${GROQ_KEY}" \
+    -H "Content-Type: application/json" \
+    -H "User-Agent: BattleBuddyHealthCheck/1.0" \
+    -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
+    "https://api.groq.com/openai/v1/chat/completions" 2>/dev/null || true)
+  case "$GROQ_RESULT" in
+    200) ok "Groq LLM API: reachable" ;;
+    429) warn "Groq LLM API: reachable but rate-limited" ;;
+    401) fail "Groq LLM API: auth failed — check API key" ;;
+    403) fail "Groq LLM API: blocked by provider or network policy" ;;
+    *)   warn "Groq LLM API: unexpected HTTP ${GROQ_RESULT:-timeout}" ;;
+  esac
 else
-  warn "faster-whisper: battlebuddy process not running"
+  warn "Groq live check skipped — no env file/key or curl unavailable"
 fi
 
-# Groq API live connectivity test (LLM analysis — chat/completions endpoint)
-GROQ_RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
-  -H "Authorization: Bearer $(grep '^GROQ_API_KEY=' /opt/battlebuddy/.env 2>/dev/null | cut -d= -f2)" \
-  -H "Content-Type: application/json" \
-  -H "User-Agent: Mozilla/5.0" \
-  -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
-  "https://api.groq.com/openai/v1/chat/completions" 2>/dev/null)
-if   [ "$GROQ_RESULT" = "200" ]; then ok "Groq LLM API: reachable (direct from server)"
-elif [ "$GROQ_RESULT" = "429" ]; then warn "Groq LLM API: reachable but rate-limited (free tier quota)"
-elif [ "$GROQ_RESULT" = "401" ]; then fail "Groq LLM API: auth failed — check API key"
-elif [ "$GROQ_RESULT" = "403" ]; then fail "Groq LLM API: blocked (Cloudflare 403) — Pi relay required"
-else                                   fail "Groq LLM API: unreachable (HTTP ${GROQ_RESULT:-timeout})"
+LAST_TRANSCRIPT=$(sqlite_count "SELECT CAST((strftime('%s','now') - MAX(ts)) AS INTEGER) FROM calls WHERE transcript != '' AND LENGTH(transcript) > 10;")
+if [ -n "${LAST_TRANSCRIPT:-}" ] && [ "$LAST_TRANSCRIPT" -ge 0 ]; then
+  LAST_TRANSCRIPT_MIN=$(( LAST_TRANSCRIPT / 60 ))
+  [ "$LAST_TRANSCRIPT_MIN" -lt 15 ] && ok "Transcription pipeline: last transcript ${LAST_TRANSCRIPT_MIN}m ago" \
+    || warn "Transcription pipeline: last transcript ${LAST_TRANSCRIPT_MIN}m ago"
 fi
 
-# Last successful Groq-analyzed call (incident_type not from keyword detection)
-LAST_GROQ=$(sqlite3 /opt/battlebuddy/calls.db \
-  "SELECT CAST((strftime('%s','now') - MAX(ts)) AS INTEGER) FROM calls WHERE transcript != '' AND LENGTH(transcript) > 10;" 2>/dev/null)
-if [ -n "$LAST_GROQ" ] && [ "$LAST_GROQ" -ge 0 ]; then
-  LAST_GROQ_MIN=$(( LAST_GROQ / 60 ))
-  [ "$LAST_GROQ_MIN" -lt 15 ] && ok "Transcription pipeline: last transcript ${LAST_GROQ_MIN}m ago" \
-    || warn "Transcription pipeline: last transcript ${LAST_GROQ_MIN}m ago"
-fi
+# ── Capture Node ─────────────────────────────────────────────────────────────
+hdr "CAPTURE NODE (${PI_HOST})"
 
-# ── Pi 5 ─────────────────────────────────────────────────────────────────────
-hdr "PI 5 (radiodesk.ddns.net)"
+if has_cmd ssh; then
+  if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 -o BatchMode=yes "${PI_USER}@${PI_HOST}" "exit" &>/dev/null; then
+    ok "Capture node reachable"
 
-PI_REACHABLE=false
-if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 -o BatchMode=yes pi@radiodesk.ddns.net "exit" &>/dev/null; then
-  ok "Pi 5 reachable"
-  PI_REACHABLE=true
+    PI_STATUS=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "${PI_USER}@${PI_HOST}" \
+      'echo op25=$(systemctl is-active op25-multi_rx 2>/dev/null) collector=$(systemctl --user is-active op25-collector 2>/dev/null) recorder=$(systemctl --user is-active call_recorder 2>/dev/null)' 2>/dev/null || true)
+
+    for svc in op25 collector recorder; do
+      VAL=$(echo "$PI_STATUS" | grep -o "${svc}=[a-z]*" | cut -d= -f2)
+      case $svc in
+        op25)      label="op25-multi_rx (P25 decoder)" ;;
+        collector) label="op25-collector (talkgroup data)" ;;
+        recorder)  label="call_recorder (audio → server)" ;;
+      esac
+      [ "$VAL" = "active" ] && ok "Capture node: ${label}" || warn "Capture node: ${label} is ${VAL:-unknown}"
+    done
+
+    OP25_PORT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "${PI_USER}@${PI_HOST}" \
+      'ss -tlnp 2>/dev/null | grep -c ":8080"' 2>/dev/null || true)
+    [ "${OP25_PORT:-0}" -gt 0 ] && ok "Capture node: OP25 HTTP port 8080 listening" \
+      || warn "Capture node: OP25 port 8080 not listening"
+  else
+    warn "Capture node unreachable; set PI_HOST/PI_USER for your deployment"
+  fi
 else
-  fail "Pi 5 unreachable"
+  warn "ssh not available"
 fi
 
-if $PI_REACHABLE; then
-  PI_STATUS=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
-    'echo op25=$(systemctl is-active op25-multi_rx) collector=$(systemctl --user is-active op25-collector) recorder=$(systemctl --user is-active call_recorder)' 2>/dev/null)
+# ── Nextcloud ────────────────────────────────────────────────────────────────
+hdr "NEXTCLOUD (${NC_HOST})"
 
-  for svc in op25 collector recorder; do
-    VAL=$(echo "$PI_STATUS" | grep -o "${svc}=[a-z]*" | cut -d= -f2)
-    case $svc in
-      op25)      label="op25-multi_rx (P25 decoder)" ;;
-      collector) label="op25-collector (talkgroup data)" ;;
-      recorder)  label="call_recorder (audio → server)" ;;
-    esac
-    [ "$VAL" = "active" ] && ok "Pi: ${label}" || fail "Pi: ${label} is ${VAL:-unknown}"
-  done
+if has_cmd systemctl; then
+  NC_STATUS=$(systemctl is-active nginx 2>/dev/null || true)
+  [ "$NC_STATUS" = "active" ] && ok "nginx running" || warn "nginx is ${NC_STATUS:-unknown}"
 
-  # OP25 HTTP port 8080 — confirms RTL-SDR lock and trunking active
-  OP25_PORT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
-    'ss -tlnp | grep -c ":8080"' 2>/dev/null)
-  [ "${OP25_PORT:-0}" -gt 0 ] && ok "Pi: OP25 HTTP port 8080 listening (RTL-SDR active)" \
-    || warn "Pi: OP25 port 8080 not listening — RTL-SDR may not have lock"
+  MYSQL_STATUS=$(systemctl is-active mysql 2>/dev/null || true)
+  [ "$MYSQL_STATUS" = "active" ] && ok "MySQL running" || warn "MySQL is ${MYSQL_STATUS:-unknown}"
 
-  # Groq relay — still running on Pi (not required for LLM anymore, kept as backup path)
-  RELAY_STATUS=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
-    'systemctl --user is-active groq-relay' 2>/dev/null)
-  [ "$RELAY_STATUS" = "active" ] && ok "Pi: groq-relay running (backup path)" \
-    || warn "Pi: groq-relay inactive"
-
-  # Pi CPU/RAM snapshot
-  PI_LOAD=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
-    'uptime | awk -F"load average:" "{print \$2}" | awk "{print \$1}" | tr -d ","' 2>/dev/null)
-  PI_MEM=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 pi@radiodesk.ddns.net \
-    'free -m | awk "/^Mem:/{printf \"%d/%dMB\", \$3, \$2}"' 2>/dev/null)
-  [ -n "$PI_LOAD" ] && echo -e "  Pi load: ${PI_LOAD}  |  RAM: ${PI_MEM}"
+  PHP_STATUS=$(systemctl is-active php8.3-fpm 2>/dev/null || true)
+  [ "$PHP_STATUS" = "active" ] && ok "PHP-FPM running" || warn "PHP-FPM is ${PHP_STATUS:-unknown}"
 fi
 
-# ── Nextcloud ─────────────────────────────────────────────────────────────────
-hdr "NEXTCLOUD"
+if has_cmd curl; then
+  NC_TIME=$(curl -s -o /dev/null -w "%{time_total}" --max-time 10 "https://${NC_HOST}/" 2>/dev/null || true)
+  if [ -n "$NC_TIME" ] && has_cmd bc; then
+    NC_MS=$(echo "$NC_TIME * 1000" | bc 2>/dev/null | cut -d. -f1)
+    if [ -n "$NC_MS" ] && [ "$NC_MS" -gt 0 ]; then
+      [ "$NC_MS" -ge 3000 ] && fail "Nextcloud very slow: ${NC_MS}ms" || \
+      [ "$NC_MS" -ge 1000 ] && warn "Nextcloud slow: ${NC_MS}ms" || \
+      ok "Nextcloud response time: ${NC_MS}ms"
+    else
+      warn "Nextcloud response check did not return timing"
+    fi
+  fi
+fi
 
-NC_STATUS=$(systemctl is-active nginx 2>/dev/null)
-[ "$NC_STATUS" = "active" ] && ok "nginx running (Nextcloud)" || fail "nginx is $NC_STATUS"
-
-MYSQL_STATUS=$(systemctl is-active mysql 2>/dev/null)
-[ "$MYSQL_STATUS" = "active" ] && ok "Nextcloud MySQL running" || fail "Nextcloud MySQL is $MYSQL_STATUS"
-
-PHP_STATUS=$(systemctl is-active php8.3-fpm 2>/dev/null)
-[ "$PHP_STATUS" = "active" ] && ok "Nextcloud PHP-FPM running" || fail "Nextcloud PHP-FPM is $PHP_STATUS"
-
-# HTTP response time
-NC_TIME=$(curl -s -k -o /dev/null -w "%{time_total}" --max-time 10 "https://kevcloud.ddns.net/" 2>/dev/null)
-NC_MS=$(echo "$NC_TIME * 1000" | bc 2>/dev/null | cut -d. -f1)
-if [ -n "$NC_MS" ] && [ "$NC_MS" -gt 0 ]; then
-  [ "$NC_MS" -ge 3000 ] && fail "Nextcloud very slow: ${NC_MS}ms" || \
-  [ "$NC_MS" -ge 1000 ] && warn "Nextcloud slow: ${NC_MS}ms" || \
-  ok "Nextcloud response time: ${NC_MS}ms"
+if [ -f "$NC_OCC" ]; then
+  NC_MAINTENANCE=$(php "$NC_OCC" status 2>/dev/null | grep -i "maintenance.*true" || true)
+  [ -n "$NC_MAINTENANCE" ] && warn "Nextcloud in maintenance mode" || ok "Nextcloud not in maintenance mode"
 else
-  fail "Nextcloud not responding"
+  warn "Nextcloud occ not found at ${NC_OCC}"
 fi
 
-# OCC status
-NC_MAINTENANCE=$(php /var/www/nextcloud/occ status 2>/dev/null | grep -i "maintenance.*true")
-[ -n "$NC_MAINTENANCE" ] && warn "Nextcloud in maintenance mode" || ok "Nextcloud not in maintenance mode"
+if [ -d "$NC_DATA_DIR" ]; then
+  NC_DB_SIZE=$(du -sh "$NC_DATA_DIR" 2>/dev/null | cut -f1)
+  [ -n "$NC_DB_SIZE" ] && echo -e "  Data directory: ${NC_DB_SIZE}"
+fi
 
-# Nextcloud DB size
-NC_DB_SIZE=$(du -sh /var/snap/nextcloud/current/nextcloud/data 2>/dev/null | cut -f1)
-[ -n "$NC_DB_SIZE" ] && echo -e "  Data directory: ${NC_DB_SIZE}"
+# ── TLS Certificate ─────────────────────────────────────────────────────────
+hdr "TLS CERTIFICATE"
 
-# ── Nginx ────────────────────────────────────────────────────────────────────
-hdr "NGINX"
-NGX_STATUS=$(systemctl is-active nginx 2>/dev/null)
-[ "$NGX_STATUS" = "active" ] && ok "nginx running" || fail "nginx is $NGX_STATUS"
-
-# SSL cert expiry
-CERT_EXPIRY=$(echo | openssl s_client -servername kevcloud.ddns.net -connect kevcloud.ddns.net:443 2>/dev/null \
-  | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
-if [ -n "$CERT_EXPIRY" ]; then
-  EXPIRY_EPOCH=$(date -d "$CERT_EXPIRY" +%s 2>/dev/null)
-  NOW_EPOCH=$(date +%s)
-  DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
-  [ "$DAYS_LEFT" -lt 14 ] && fail "SSL cert expires in ${DAYS_LEFT} days!" || \
-  [ "$DAYS_LEFT" -lt 30 ] && warn "SSL cert expires in ${DAYS_LEFT} days" || \
-  ok "SSL cert valid for ${DAYS_LEFT} days"
+if has_cmd openssl; then
+  CERT_EXPIRY=$(echo | openssl s_client -servername "$NC_HOST" -connect "${NC_HOST}:443" 2>/dev/null \
+    | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)
+  if [ -n "$CERT_EXPIRY" ]; then
+    EXPIRY_EPOCH=$(date -d "$CERT_EXPIRY" +%s 2>/dev/null || echo 0)
+    NOW_EPOCH=$(date +%s)
+    DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+    [ "$DAYS_LEFT" -lt 14 ] && fail "TLS cert expires in ${DAYS_LEFT} days" || \
+    [ "$DAYS_LEFT" -lt 30 ] && warn "TLS cert expires in ${DAYS_LEFT} days" || \
+    ok "TLS cert valid for ${DAYS_LEFT} days"
+  else
+    warn "TLS cert check skipped or failed for ${NC_HOST}"
+  fi
 fi
 
 echo -e "\n${BLU}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
