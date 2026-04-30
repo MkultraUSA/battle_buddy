@@ -2526,7 +2526,7 @@ footer a{color:#3b82f6;text-decoration:none}
       <div class="step-num">1</div>
       <div>
         <h4>P25 Radio Capture</h4>
-        <p>A software-defined radio receiver continuously monitors the GATRRS P25 trunked radio system — the shared radio backbone for APD, AFD, DPS, Travis County EMS, UT Police, ABIA, and Austin Energy. Every active talkgroup is captured simultaneously, 24 hours a day.</p>
+        <p>A software-defined radio receiver continuously monitors the GATRRS P25 trunked radio system — the shared radio backbone for AFD, DPS, Travis County EMS, UT Police, ABIA, Austin Energy, and others. Every unencrypted talkgroup is captured simultaneously, 24 hours a day. APD traffic is P25 encrypted and does not produce transcripts.</p>
       </div>
     </div>
     <div class="method-step">
