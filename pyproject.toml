@@ -8,4 +8,7 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "--cov=modules --cov-report=term-missing --cov-report=xml"
+
+[tool.coverage.run]
+omit = ["tests/*", "*/migrations/*"]

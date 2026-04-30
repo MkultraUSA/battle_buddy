@@ -12,6 +12,12 @@ The project demonstrates practical Linux service deployment, Python audio proces
 
 ---
 
+![Tests](https://github.com/MkultraUSA/battle_buddy/actions/workflows/tests.yml/badge.svg)
+![Lint](https://github.com/MkultraUSA/battle_buddy/actions/workflows/lint.yml/badge.svg)
+![Secrets Scan](https://github.com/MkultraUSA/battle_buddy/actions/workflows/secrets-scan.yml/badge.svg)
+
+---
+
 ## What This Project Demonstrates
 
 - Python service development for long-running Linux systems
@@ -238,6 +244,15 @@ Long term, the application can be migrated toward a `src/battle_buddy/` package 
 ## Release Checklist
 
 See [`docs/release-checklist.md`](docs/release-checklist.md).
+
+---
+
+## Responsible Use
+
+- This system monitors publicly broadcast radio — it does not intercept encrypted communications.
+- Users are responsible for complying with local laws governing radio monitoring and data publication.
+- Do not use this software to harass, track, or publish personally identifiable information about individuals.
+- See [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 
 ---
 
