@@ -96,6 +96,73 @@ _GROQ_SAFETY_RE            = __import__('re').compile(
 _llm_routine_tracker: dict = {}
 
 
+# --- Classification config (self-improving constraints) ---------------------
+import os as _os
+_CLASSIFICATION_CONFIG_PATH = _os.path.join(
+    _os.path.dirname(_os.path.abspath(__file__)), "classification_config.json"
+)
+try:
+    with open(_CLASSIFICATION_CONFIG_PATH, "r") as _f:
+        CLASSIFICATION_CONFIG = json.load(_f)
+except Exception as _exc:
+    print(f"[llm] WARN could not load classification_config.json: {_exc}", flush=True)
+    CLASSIFICATION_CONFIG = {}
+
+
+def build_classification_rules_text() -> str:
+    """Render CLASSIFICATION_CONFIG into a constraints block appended to the
+    base system prompt at call time. Never mutates _GROQ_SYSTEM."""
+    if not CLASSIFICATION_CONFIG:
+        return ""
+    lines = ["", "ADDITIONAL CLASSIFICATION CONSTRAINTS (per-incident-type rules):"]
+    for itype, rules in CLASSIFICATION_CONFIG.items():
+        parts = [f"- {itype}:"]
+        tgids = rules.get("trusted_tgids") or []
+        names = rules.get("trusted_tgid_names") or []
+        if tgids:
+            tg_label = ", ".join(
+                f"{t} ({n})" for t, n in zip(tgids, names)
+            ) if names and len(names) == len(tgids) else ", ".join(str(t) for t in tgids)
+            parts.append(f"trusted talkgroups: {tg_label}")
+        min_calls = rules.get("required_min_calls", 1)
+        if min_calls and min_calls > 1:
+            parts.append(f"requires >= {min_calls} corroborating calls")
+        kw_req = rules.get("keywords_required") or []
+        if kw_req:
+            parts.append(f"required keywords: {kw_req}")
+        kw_ex = rules.get("keywords_excluded") or []
+        if kw_ex:
+            parts.append(f"excluded jargon (do NOT classify if transcript contains any): {kw_ex}")
+        notes = rules.get("notes") or ""
+        if notes:
+            parts.append(f"notes: {notes}")
+        lines.append("  " + " | ".join(parts))
+    lines.append(
+        "If a call's talkgroup is not in an incident type's trusted_tgids list "
+        "(when that list is non-empty), you MUST NOT classify the call as that "
+        "type. Prefer ROUTINE when constraints are not met."
+    )
+    return "\n".join(lines)
+
+
+def _per_call_tgid_restrictions(tgid: int) -> str:
+    """Return an explicit per-call restriction string for the user message
+    listing incident types this tgid is NOT allowed to be classified as."""
+    blocked = []
+    for itype, rules in CLASSIFICATION_CONFIG.items():
+        trusted = rules.get("trusted_tgids") or []
+        if trusted and tgid not in trusted:
+            blocked.append(itype)
+    if not blocked:
+        return ""
+    return (
+        "\nHARD RESTRICTION: this call's talkgroup is NOT in the trusted list "
+        "for the following incident types. Do NOT classify as any of these: "
+        + ", ".join(blocked)
+    )
+
+
+
 def groq_analyze(call: dict, recent_calls_list: list):
     global _llm_backoff_until, _llm_call_times
     if not OPENROUTER_ENABLED:
@@ -137,8 +204,11 @@ def groq_analyze(call: dict, recent_calls_list: list):
         f"Transcript: {transcript}\n\n"
         f"Recent calls (last 15 min):\n{context_block}"
     )
+    rules_text = build_classification_rules_text()
+    system_prompt = _GROQ_SYSTEM + ("\n" + rules_text if rules_text else "")
+    user_msg = user_msg + _per_call_tgid_restrictions(tgid)
     try:
-        result = _call_openrouter_llm(_GROQ_SYSTEM, user_msg)
+        result = _call_openrouter_llm(system_prompt, user_msg)
         itype  = result.get("incident_type") or "ROUTINE"
         pri    = result.get("priority", "NONE")
         hold   = result.get("should_hold", False)

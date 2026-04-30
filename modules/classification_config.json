@@ -1,0 +1,146 @@
+{
+  "OFFICER DOWN": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Highest priority. Any law enforcement talkgroup valid. Officer in distress, shots fired at officer, code 3 backup."
+  },
+  "SHOOTING": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Any talkgroup valid. GSW/gunshot wound/shots fired keywords sufficient."
+  },
+  "STABBING": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Any talkgroup valid. Stab wound, edged weapon."
+  },
+  "AIRCRAFT EMERGENCY": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "ABIA tower, AFD aircraft response, mayday/pan-pan, gear issue, emergency landing."
+  },
+  "MASS CASUALTY": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "MCI declaration, multiple patients, triage tags, START triage."
+  },
+  "STRUCTURE FIRE": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": ["controlled burn", "training burn"],
+    "notes": "Working fire, smoke showing, fully involved. AFD/TCFD primary."
+  },
+  "HAZMAT": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Hazmat team, decon, chemical spill, gas leak with evac."
+  },
+  "HOSTAGE/BARRICADE": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "SWAT activation, barricaded subject, hostage negotiator, perimeter."
+  },
+  "CRASH/COLLISION": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": ["minor", "no injury"],
+    "notes": "MVC with injury or roadway closure. Routine fender-benders are not incidents."
+  },
+  "FATAL CRASH": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Confirmed fatality on scene of MVC. ME en route or signal 27."
+  },
+  "FIRE DISPATCH": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Box alarm, working assignment dispatched. AFD/TCFD."
+  },
+  "TRANSIT INCIDENT": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Cap Metro bus/rail, MetroRail crossing, transit police response."
+  },
+  "AIRPORT EMERGENCY": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "ABIA ARFF, alert 1/2/3, gate hold, runway closure."
+  },
+  "MULTI-AGENCY RESPONSE": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 2,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Two or more distinct agencies coordinating on the same incident. Requires corroboration."
+  },
+  "APD SURGE": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 2,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "Multiple APD units converging on a scene. Requires multiple calls to confirm surge pattern."
+  },
+  "AIR ASSET ACTIVE": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "STAR Flight, APD Air One, DPS aviation deployed to scene."
+  },
+  "DPS CAPITOL ACTIVATION": {
+    "trusted_tgids": [],
+    "trusted_tgid_names": [],
+    "required_min_calls": 1,
+    "keywords_required": [],
+    "keywords_excluded": [],
+    "notes": "DPS Capitol detail surge, Capitol building lockdown or threat response."
+  },
+  "DEATH INVESTIGATION": {
+    "trusted_tgids": [2413, 2414],
+    "trusted_tgid_names": ["TCSO CID East", "TCSO CID West"],
+    "required_min_calls": 2,
+    "keywords_required": [],
+    "keywords_excluded": ["dead end", "dead-end", "deadend"],
+    "notes": "ME-involved scenes only. CID talkgroups only. Utility jargon ('dead end' = pipe terminus) is a known false positive vector — never classify utility/public-works talkgroups as DEATH INVESTIGATION."
+  }
+}
