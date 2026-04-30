@@ -2050,7 +2050,7 @@ def _cad_match_and_harvest():
     Match unmatched CAD records against scanner incidents.
     On match: enrich the incident row and harvest TGID→sector hints.
     """
-    MATCH_WINDOW = 600   # ±10 minutes in seconds
+    MATCH_WINDOW = 1800  # ±30 minutes in seconds
     TGID_WINDOW_PRE  = 300  # seconds before CAD response_ts to include calls
     TGID_WINDOW_POST = 120  # seconds after call_closed_ts to include calls
 
@@ -2080,80 +2080,100 @@ def _cad_match_and_harvest():
 
     matched = 0
     harvested_hints = 0
+    # matched_cad_nums tracks CAD records successfully matched in pass 1
+    # so pass 2 doesn't overwrite them (sqlite3.Row objects are stale after UPDATEs)
+    matched_cad_nums = set()
 
-    for cad in cad_rows:
-        response_ts  = cad["response_ts"]
-        sector       = cad["sector"]
-        init_cat     = cad["initial_category"] or ""
-        bb_itype     = _CAD_CATEGORY_MAP.get(init_cat)
-        call_closed  = cad["call_closed_ts"] or (response_ts + 1800)
-
-        # Find scanner incidents within time window where APD was involved
-        candidates = conn.execute("""
-            SELECT id, itype, agencies, ts_start FROM incidents
-            WHERE ts_start BETWEEN ? AND ?
-              AND agencies LIKE '%APD%'
-              AND is_test = 0
-            ORDER BY ABS(ts_start - ?) ASC
-            LIMIT 5
-        """, (response_ts - MATCH_WINDOW, response_ts + MATCH_WINDOW, response_ts)
-        ).fetchall()
-
-        best_match_id   = None
-        best_confidence = None
-
-        for inc in candidates:
-            if inc["id"] in claimed_ids:
+    # Two-pass: pass 1 = high-confidence type matches only; pass 2 = time_only fallback
+    for pass_num in (1, 2):
+        for cad in cad_rows:
+            # Pass 2: skip records already matched in pass 1
+            if pass_num == 2 and cad["incident_number"] in matched_cad_nums:
                 continue
-            inc_itype = inc["itype"] or ""
-            # High confidence: type matches
-            if bb_itype and inc_itype == bb_itype:
-                best_match_id   = inc["id"]
-                best_confidence = "high"
-                break
-            # Time-only confidence: within window, right agency, no type match
-            if best_match_id is None:
-                best_match_id   = inc["id"]
-                best_confidence = "time_only"
 
-        # Update CAD record with match result
-        # Unique index on matched_incident_id prevents two CAD rows claiming the same incident.
-        # Catch constraint violation and treat as no-match for this CAD record.
-        if best_match_id:
-            try:
+            response_ts  = cad["response_ts"]
+            sector       = cad["sector"]
+            init_cat     = cad["initial_category"] or ""
+            bb_itype     = _CAD_CATEGORY_MAP.get(init_cat)
+            call_closed  = cad["call_closed_ts"] or (response_ts + 1800)
+
+            # Pass 1: only typed categories (those with a known bb_itype)
+            if pass_num == 1 and not bb_itype:
+                continue
+
+            # Find scanner incidents within time window
+            candidates = conn.execute("""
+                SELECT id, itype, agencies, ts_start FROM incidents
+                WHERE ts_start BETWEEN ? AND ?
+                  AND (is_test IS NULL OR is_test = 0)
+                ORDER BY ABS(ts_start - ?) ASC
+                LIMIT 5
+            """, (response_ts - MATCH_WINDOW, response_ts + MATCH_WINDOW, response_ts)
+            ).fetchall()
+
+            best_match_id   = None
+            best_confidence = None
+
+            for inc in candidates:
+                if inc["id"] in claimed_ids:
+                    continue
+                inc_itype = inc["itype"] or ""
+                # High confidence: itype matches the CAD category mapping
+                if bb_itype and inc_itype == bb_itype:
+                    best_match_id   = inc["id"]
+                    best_confidence = "high"
+                    break
+                # Time-only fallback: pass 2 only
+                if pass_num == 2 and best_match_id is None:
+                    best_match_id   = inc["id"]
+                    best_confidence = "time_only"
+
+            # Update CAD record with match result
+            # Unique index on matched_incident_id prevents two CAD rows claiming the same incident.
+            # Catch constraint violation and treat as no-match for this CAD record.
+            if best_match_id:
+                try:
+                    conn.execute("""
+                        UPDATE apd_cad
+                        SET matched_incident_id = ?, match_confidence = ?
+                        WHERE incident_number = ?
+                    """, (best_match_id, best_confidence, cad["incident_number"]))
+                    matched += 1
+                    claimed_ids.add(best_match_id)
+                    matched_cad_nums.add(cad["incident_number"])
+                    # Enrich the scanner incident on high-confidence matches
+                    if best_confidence == "high":
+                        conn.execute("""
+                            UPDATE incidents SET
+                                description = description || ' [CAD: ' || ? || ', ' || ? || ', sector ' || ? || ']'
+                            WHERE id = ? AND description NOT LIKE '%[CAD:%'
+                        """, (
+                            cad["final_description"] or cad["initial_description"] or "",
+                            cad["disposition"] or "",
+                            sector or "?",
+                            best_match_id,
+                        ))
+                except sqlite3.IntegrityError:
+                    best_match_id = None
+                    conn.execute("""
+                        UPDATE apd_cad SET matched_incident_id = NULL, match_confidence = NULL
+                        WHERE incident_number = ?
+                    """, (cad["incident_number"],))
+            else:
                 conn.execute("""
                     UPDATE apd_cad
-                    SET matched_incident_id = ?, match_confidence = ?
-                    WHERE incident_number = ?
-                """, (best_match_id, best_confidence, cad["incident_number"]))
-                matched += 1
-                claimed_ids.add(best_match_id)
-            except sqlite3.IntegrityError:
-                best_match_id = None
-                conn.execute("""
-                    UPDATE apd_cad SET matched_incident_id = NULL, match_confidence = NULL
+                    SET matched_incident_id = NULL, match_confidence = NULL
                     WHERE incident_number = ?
                 """, (cad["incident_number"],))
-        else:
-            conn.execute("""
-                UPDATE apd_cad
-                SET matched_incident_id = NULL, match_confidence = NULL
-                WHERE incident_number = ?
-            """, (cad["incident_number"],))
-            # Enrich the scanner incident only on high-confidence matches
-            if best_confidence == "high":
-                conn.execute("""
-                    UPDATE incidents SET
-                        description = description || ' [CAD: ' || ? || ', ' || ? || ', sector ' || ? || ']'
-                    WHERE id = ? AND description NOT LIKE '%[CAD:%'
-                """, (
-                    cad["final_description"] or cad["initial_description"] or "",
-                    cad["disposition"] or "",
-                    sector or "?",
-                    best_match_id,
-                ))
 
-        # Harvest TGID hints regardless of incident match, for worthwhile categories
+    # Harvest TGID hints once per CAD row (after both match passes complete)
+    # to avoid double-incrementing hit_count on rows that run in pass 1 and pass 2.
+    for cad in cad_rows:
+        response_ts = cad["response_ts"]
+        sector      = cad["sector"]
+        init_cat    = cad["initial_category"] or ""
+        call_closed = cad["call_closed_ts"] or (response_ts + 1800)
+
         if sector and init_cat in _CAD_HARVEST_CATEGORIES:
             tgid_window_start = response_ts - TGID_WINDOW_PRE
             tgid_window_end   = call_closed + TGID_WINDOW_POST
