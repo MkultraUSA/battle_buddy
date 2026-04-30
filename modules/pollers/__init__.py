@@ -20,12 +20,11 @@ And backward-compatibility shims:
 
 # Re-export everything from the legacy monolith (all remaining poller threads,
 # helpers, and shared state that hasn't been extracted yet)
-from modules.pollers_legacy import *  # noqa: F401, F403
-from modules.pollers_legacy import _pi_command_queue  # noqa: F401
-
 # Concrete BasePoller subclasses
 from modules.pollers.impl.afd_news import AFDOpenDataPoller  # noqa: F401
-from modules.pollers.impl.apd_news import APDNewsPoller      # noqa: F401
+from modules.pollers.impl.apd_news import APDNewsPoller  # noqa: F401
+from modules.pollers_legacy import *  # noqa: F401, F403
+from modules.pollers_legacy import _pi_command_queue  # noqa: F401
 
 
 def afd_open_data_thread() -> None:  # noqa: D401

@@ -15,7 +15,6 @@ import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers to build a fake faster_whisper module so the import at the top of
 # modules/transcription.py does not require the real package to be installed.
@@ -28,7 +27,7 @@ def _make_fake_faster_whisper():
     return fake_module
 
 
-import sys
+import sys  # noqa: E402
 
 # Inject fake module before importing transcription so the module-level import
 # succeeds even when faster-whisper is not installed.
@@ -36,9 +35,7 @@ if "faster_whisper" not in sys.modules:
     sys.modules["faster_whisper"] = _make_fake_faster_whisper()
 
 # Now safe to import
-import importlib
-import modules.transcription as transcription_mod
-
+import modules.transcription as transcription_mod  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Unit tests

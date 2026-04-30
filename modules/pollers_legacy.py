@@ -1,27 +1,56 @@
 import base64
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 import json
 import re
 import sqlite3
 import subprocess
 import threading
 import time
-import urllib.request
 import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from modules.config import (
+    ALERT_EMAIL,
+    DB_PATH,
+    DECK_BASE,
+    DECK_BOARD_ID,
+    DECK_LABELS,
+    DECK_STACK_NEW,
+    GOOGLE_CSE_API_KEY,
+    GOOGLE_CSE_ID,
+    MAILGUN_API_KEY,
+    MAILGUN_DOMAIN,
+    MAILGUN_FROM,
+    PI1_OP25_URL,
+    PI_FETCH_ENABLED,
+    PI_FETCH_TOKEN,
+    PI_FETCH_URL,
+    TALK_BASE,
+    TALK_ENABLED,
+    TALK_PASS,
+    TALK_ROOMS,
+    TALK_USER,
+    _room_for_call,
     _state,
-    DB_PATH, TALK_BASE, TALK_USER, TALK_PASS, TALK_ROOMS, TALK_ROOM,
-    PI1_OP25_URL, PI_FETCH_URL, PI_FETCH_TOKEN, PI_FETCH_ENABLED,
-    GOOGLE_CSE_API_KEY, GOOGLE_CSE_ID,
-    MAILGUN_API_KEY, MAILGUN_DOMAIN, MAILGUN_FROM, ALERT_EMAIL,
-    TALK_ENABLED, _room_for_call, DECK_LABELS, DECK_BASE, DECK_BOARD_ID, DECK_STACK_NEW,
 )
-from modules.incident_engine import analyze_for_incident, _active_incidents, _atak_post_marker, _atak_clear_marker, _incident_lock, _haversine_km
-from modules.talkgroups import TGID_META, IGNORE_TGIDS, CAT_COORDS, AIR_ASSET_TGIDS, AIR_ASSET_PATTERN, LOCUTION_TGIDS, TRANSIT_TGIDS, ABIA_OPS_TGIDS, detect_air_asset, _apply_locution_corrections, mentions_dps, detect_dps_assets, is_capitol_area
-from modules.database import calls_for_sitrep, active_incidents, get_subscribers
+from modules.database import active_incidents, calls_for_sitrep, get_subscribers
 from modules.geocoding import _geocode_address
+from modules.incident_engine import (
+    _active_incidents,
+    _atak_clear_marker,
+    _atak_post_marker,
+    _haversine_km,
+    _incident_lock,
+)
+from modules.talkgroups import (
+    IGNORE_TGIDS,
+    TGID_META,
+    detect_air_asset,
+    detect_dps_assets,
+    is_capitol_area,
+    mentions_dps,
+)
 
 _CDT = ZoneInfo("America/Chicago")
 
@@ -435,7 +464,7 @@ def _pi_fetch(url: str, referer: str = "") -> dict:
         if data.get("status") != 200:
             return {}
         text = data.get("text", "")
-        html = data.get("html", "")
+        html = data.get("html", "")  # noqa: F841
         # Extract address from text (reuse same regex as _apd_fetch_article)
         addr_m = re.search(
             r"(\d{3,5}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.]+(?:Street|St|Avenue|Ave|"
@@ -952,7 +981,7 @@ def _reddit_tip_recheck(db_path):
                     "tip_summary=? WHERE post_id=?",
                     (now, "Monitored for 2 hours — nothing detected on radio", post_id),
                 )
-                c.commit(); c.close()
+                c.commit(); c.close()  # noqa: E702
                 print(f"[reddit] tip {post_id} -> no_data (timeout)", flush=True)
             except Exception as e:
                 print(f"[reddit] tip_recheck timeout error: {e}", flush=True)
@@ -1021,15 +1050,15 @@ def _reddit_tip_recheck(db_path):
                         "tip_summary=? WHERE post_id=?",
                         (now, summary, post_id),
                     )
-                c.commit(); c.close()
+                c.commit(); c.close()  # noqa: E702
                 print(f"[reddit] tip {post_id} -> matched: {summary}", flush=True)
             except Exception as e:
                 print(f"[reddit] tip_recheck update error: {e}", flush=True)
 
 
 def reddit_intel_thread():
-    import xml.etree.ElementTree as _ET
     import html as _html
+    import xml.etree.ElementTree as _ET
     print("[reddit] citizen intel poller started", flush=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""CREATE TABLE IF NOT EXISTS reddit_intel (
@@ -1055,8 +1084,8 @@ def reddit_intel_thread():
         "ALTER TABLE reddit_intel ADD COLUMN tip_ts_cleared REAL",
         "ALTER TABLE reddit_intel ADD COLUMN tip_summary TEXT",
     ]:
-        try: conn.execute(_col_sql)
-        except Exception: pass
+        try: conn.execute(_col_sql)  # noqa: E701
+        except Exception: pass  # noqa: E701
     conn.commit()
     conn.close()
 
@@ -1128,7 +1157,7 @@ def reddit_intel_thread():
                                 "UPDATE reddit_intel SET tip_location=?, tip_lat=?, tip_lon=? WHERE post_id=?",
                                 (_loc, _lat, _lon, post_id)
                             )
-                            _gc.commit(); _gc.close()
+                            _gc.commit(); _gc.close()  # noqa: E702
                             print(f"[reddit] tip {post_id} geocoded -> {_loc} ({_lat},{_lon})", flush=True)
                     except Exception as _e:
                         print(f"[reddit] geocode error for {post_id}: {_e}", flush=True)
@@ -1138,7 +1167,7 @@ def reddit_intel_thread():
                         _c = sqlite3.connect(DB_PATH)
                         _c.execute("UPDATE reddit_intel SET incident_id=?,match_score=? WHERE post_id=?",
                                    (inc_id, inc_score, post_id))
-                        _c.commit(); _c.close()
+                        _c.commit(); _c.close()  # noqa: E702
                         print(f"[reddit] matched post {post_id} → incident #{inc_id} (score {inc_score})", flush=True)
 
                     if hi:
@@ -1727,7 +1756,7 @@ def atxfloods_thread():
                 _atxfloods_post_to_talk(c, status, old_status)
 
                 try:
-                    lat = float(c["lat"]); lon = float(c["lon"])
+                    lat = float(c["lat"]); lon = float(c["lon"])  # noqa: E702
                 except (KeyError, ValueError, TypeError):
                     lat = lon = None
 
@@ -1854,7 +1883,8 @@ def austin_events_thread():
         austin_tz = zoneinfo.ZoneInfo("America/Chicago")
     except Exception:
         austin_tz = None
-    from datetime import datetime as _dt, date as _date
+    from datetime import date as _date
+    from datetime import datetime as _dt
     while True:
         try:
             now_austin = _dt.now(austin_tz) if austin_tz else _dt.now()
@@ -2368,7 +2398,7 @@ def post_to_talk(call: dict):
         for inc in _active_incidents.values():
             if tgid in inc.get("tgids", set()) or cat in inc.get("agencies", set()):
                 age = int((time.time() - inc["ts_updated"]) / 60)
-                matched_itype = inc["itype"]
+                matched_itype = inc["itype"]  # noqa: F841
                 incident_line = f"\n⚡ INCIDENT: {inc['itype']} — active {age}m"
                 break
 

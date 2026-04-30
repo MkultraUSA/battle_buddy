@@ -37,9 +37,9 @@ from __future__ import annotations
 
 import base64
 import datetime
-import os
 import json
 import logging
+import os
 import re
 import sqlite3
 import threading
@@ -536,9 +536,15 @@ class APDNewsPoller(BasePoller):
         """Perform one full poll cycle: APD press releases + traffic fatalities."""
         # Lazy imports — avoids circular dependency at module load time
         from modules.config import (  # noqa: PLC0415
-            DB_PATH, TALK_BASE, TALK_USER, TALK_PASS, TALK_ROOMS,
-            GOOGLE_CSE_API_KEY, GOOGLE_CSE_ID,
-            PI_FETCH_URL, PI_FETCH_TOKEN,
+            DB_PATH,
+            GOOGLE_CSE_API_KEY,
+            GOOGLE_CSE_ID,
+            PI_FETCH_TOKEN,
+            PI_FETCH_URL,
+            TALK_BASE,
+            TALK_PASS,
+            TALK_ROOMS,
+            TALK_USER,
         )
         from modules.geocoding import _geocode_address  # noqa: PLC0415
         from modules.incident_engine import _atak_post_marker  # noqa: PLC0415

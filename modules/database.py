@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import time
+
 from modules.config import DB_PATH
 from modules.talkgroups import CAT_COORDS
 

@@ -25,13 +25,13 @@ All DB operations use a fresh in-memory (or tmp-file) SQLite database.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import sys
 import tempfile
 import textwrap
 import threading
 import time
-import os
-import sys
 import unittest
 import unittest.mock as mock
 from email.utils import formatdate
@@ -121,7 +121,8 @@ _stub_leaf(
 
 # Now load modules.pollers.base and apd_news directly from disk, bypassing
 # the heavy modules.pollers.__init__ (which pulls in pollers_legacy → full app).
-import importlib.util as _ilu
+import importlib.util as _ilu  # noqa: E402
+
 
 def _load_from_file(dotted_name: str, rel_path: str):
     spec = _ilu.spec_from_file_location(dotted_name, str(_ROOT / rel_path))
@@ -142,28 +143,27 @@ apd_news = _load_from_file(
     "modules/pollers/impl/apd_news.py",
 )
 
-from modules.pollers.impl.apd_news import (
-    APDNewsPoller,
-    APD_NEWS_URL,
-    APD_NEWS_INTERVAL,
-    TRAFFIC_NEWS_URL,
-    _ARTICLE_MAX_AGE_SECS,
-    _NEWS_ITYPE_COMPAT,
-    _APD_SOURCE_RSS,
+from modules.pollers.base import BasePoller  # noqa: E402
+from modules.pollers.impl.apd_news import (  # noqa: E402
     _APD_HEADLINE_KW,
-    _ARTICLE_STOP_WORDS,
     _APD_NEWS_LOCK,
-    _apd_parse_rss,
-    _resolve_article_url,
-    _pi_fetch,
+    _APD_SOURCE_RSS,
+    _ARTICLE_MAX_AGE_SECS,
+    _ARTICLE_STOP_WORDS,
+    _NEWS_ITYPE_COMPAT,
+    APD_NEWS_INTERVAL,
+    APD_NEWS_URL,
+    TRAFFIC_NEWS_URL,
+    APDNewsPoller,
     _apd_fetch_article,
+    _apd_parse_rss,
     _article_itype_from_title,
     _match_article_to_incident,
-    _store_article_link,
+    _pi_fetch,
     _post_to_talk,
+    _resolve_article_url,
+    _store_article_link,
 )
-from modules.pollers.base import BasePoller
-
 
 # ---------------------------------------------------------------------------
 # Shared DB helpers
@@ -641,7 +641,7 @@ class TestMatchArticleToIncident(unittest.TestCase):
 
     def test_location_token_boosts_score(self):
         ts = time.time() - 3600
-        id1 = self._insert_incident("SHOOTING", "Shooting near Lamar", "Lamar Blvd", ts)
+        id1 = self._insert_incident("SHOOTING", "Shooting near Lamar", "Lamar Blvd", ts)  # noqa: F841
         id2 = self._insert_incident("SHOOTING", "Shooting near Congress", "Congress Ave", ts)
         inc_id, score = _match_article_to_incident(
             "Man shot on Congress Avenue near downtown", "SHOOTING", time.time(), self.db_path
@@ -806,7 +806,7 @@ class TestPollAPDPressReleases(unittest.TestCase):
     def _run_poll(self, rss_xml: str, *, geocode_fn=None, atak_fn=None, send_dm=None):
         """Run _poll_apd_press_releases with mocked network and stubs."""
         if geocode_fn is None:
-            geocode_fn = lambda addr: None
+            geocode_fn = lambda addr: None  # noqa: E731
         if atak_fn is None:
             atak_fn = mock.MagicMock()
         if send_dm is None:
@@ -820,7 +820,7 @@ class TestPollAPDPressReleases(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
-                        side_effect=lambda su, t, l, k, cid: l), \
+                        side_effect=lambda su, t, link, k, cid: link), \
              mock.patch("modules.pollers.impl.apd_news._append_homicide_json"), \
              mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=send_dm):
             self.poller._poll_apd_press_releases(
@@ -953,7 +953,7 @@ class TestPollAPDPressReleases(unittest.TestCase):
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
                         return_value={"address": "800 Cesar Chavez St", "summary": "APD stabbing"}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
-                        side_effect=lambda su, t, l, k, cid: l), \
+                        side_effect=lambda su, t, link, k, cid: link), \
              mock.patch("modules.pollers.impl.apd_news._append_homicide_json"), \
              mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=send_dm):
             self.poller._poll_apd_press_releases(
@@ -1006,7 +1006,7 @@ class TestPollTrafficNews(unittest.TestCase):
 
     def _run_poll(self, rss_xml: str, geocode_fn=None):
         if geocode_fn is None:
-            geocode_fn = lambda addr: None
+            geocode_fn = lambda addr: None  # noqa: E731
 
         def _fake_urlopen(req, timeout=None):
             resp = mock.MagicMock()
@@ -1016,7 +1016,7 @@ class TestPollTrafficNews(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
-                        side_effect=lambda su, t, l, k, cid: l):
+                        side_effect=lambda su, t, l, k, cid: l):  # noqa: E741
             self.poller._poll_traffic_news(
                 db_path=self.db_path,
                 google_cse_api_key="",
@@ -1119,7 +1119,7 @@ class TestPollTrafficNews(unittest.TestCase):
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
                         return_value={"address": "183 Freeway at Airport Blvd", "summary": "Fatal crash"}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
-                        side_effect=lambda su, t, l, k, cid: l):
+                        side_effect=lambda su, t, l, k, cid: l):  # noqa: E741
             self.poller._poll_traffic_news(
                 db_path=self.db_path,
                 google_cse_api_key="", google_cse_id="",

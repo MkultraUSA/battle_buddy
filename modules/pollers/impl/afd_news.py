@@ -94,14 +94,17 @@ class AFDOpenDataPoller(BasePoller):
         """Fetch AFD incidents and process new/cleared entries."""
         # Lazy imports — avoid circular dependency at module load time
         from modules.config import (  # noqa: PLC0415
-            TALK_BASE, TALK_USER, TALK_PASS, TALK_ROOMS,
+            TALK_BASE,
+            TALK_PASS,
+            TALK_ROOMS,
+            TALK_USER,
         )
         from modules.incident_engine import (  # noqa: PLC0415
             _active_incidents,
-            _incident_lock,
-            _haversine_km,
-            _atak_post_marker,
             _atak_clear_marker,
+            _atak_post_marker,
+            _haversine_km,
+            _incident_lock,
         )
 
         # ------------------------------------------------------------------

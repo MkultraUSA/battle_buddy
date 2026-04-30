@@ -3,14 +3,20 @@ import json
 import sqlite3
 import threading
 import time
-import urllib.request
 import urllib.parse
+import urllib.request
 from collections import Counter
 
 from modules.config import (
-    OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_ENABLED, OPENROUTER_API_BASE,
-    ANTHROPIC_API_KEY, ANTHROPIC_ENABLED,
-    TALK_BASE, TALK_USER, TALK_PASS, TALK_ROOMS, DB_PATH,
+    DB_PATH,
+    OPENROUTER_API_BASE,
+    OPENROUTER_API_KEY,
+    OPENROUTER_ENABLED,
+    OPENROUTER_MODEL,
+    TALK_BASE,
+    TALK_PASS,
+    TALK_ROOMS,
+    TALK_USER,
 )
 
 try:
@@ -97,7 +103,8 @@ _llm_routine_tracker: dict = {}
 
 
 # --- Classification config (self-improving constraints) ---------------------
-import os as _os
+import os as _os  # noqa: E402
+
 _CLASSIFICATION_CONFIG_PATH = _os.path.join(
     _os.path.dirname(_os.path.abspath(__file__)), "classification_config.json"
 )

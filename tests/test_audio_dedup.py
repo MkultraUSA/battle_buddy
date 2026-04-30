@@ -6,10 +6,9 @@ Tests verify thread-safety, TTL eviction, and all three public functions:
   - is_duplicate_and_mark()
 """
 
-import time
 import threading
+import time
 import unittest
-import importlib
 
 import modules.audio_dedup as dedup_mod
 

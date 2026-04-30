@@ -1,7 +1,5 @@
 import re
 import threading
-import urllib.request
-from modules.talkgroups import CAT_COORDS
 
 LOCATION_HINTS = [
     ("state capitol",      30.2747, -97.7404),

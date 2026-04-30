@@ -12,7 +12,9 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from modules.config import (
-    TALK_BASE, TALK_USER, TALK_PASS,
+    TALK_BASE,
+    TALK_PASS,
+    TALK_USER,
 )
 from modules.database import get_subscribers
 
