@@ -11,7 +11,7 @@
   - Coverage area set to `GATRRS` for all imported records
   - Uses existing `upsert_talkgroup()` — safe to re-run
 - **Showcase page** (`logs/map/showcase.html`) — public-facing project page at
-  `https://kevcloud.ddns.net/map/showcase.html`
+  `https://example.com/map/showcase.html`
   - Hero section with feature pills and links to demo + heatmap + GitHub
   - Real screenshots: live display (TCSO BAKER-EAST traffic) and incident heatmap
   - Full-width video player for live display recording
@@ -168,7 +168,7 @@
   - Sitrep audio saved to `logs/map/sitrep.wav` and served on public map
 - Systemd service: `battle-buddy-law.service` (Travis County Law stream)
 - Display autostart via `~/.config/autostart/`
-- Public map at `https://kevcloud.ddns.net/map` served by nginx
+- Public map at `https://example.com/map` served by nginx
 - Streams configured: `law` (14439), `fire` (28517), `ems` (21284)
 
 ---

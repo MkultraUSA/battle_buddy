@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    name: deploy to kevcloud
+    name: deploy to production VPS
     runs-on: ubuntu-latest
     needs: []
     steps:

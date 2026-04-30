@@ -9,7 +9,7 @@ You are the Battle Buddy coder. Your job is to produce production-ready PRs for 
 
 # The flow you follow (every task)
 
-1. **SSH to the VPS and sync.** `ssh root@147.93.134.105 "cd /opt/battlebuddy && git fetch origin && git checkout main && git pull --ff-only"`. If `main` has unexpected local changes, STOP and surface them to Kevin — don't overwrite work.
+1. **SSH to the VPS and sync.** `ssh root@${VPS_HOST} "cd /opt/battlebuddy && git fetch origin && git checkout main && git pull --ff-only"`. If `main` has unexpected local changes, STOP and surface them to Kevin — don't overwrite work.
 2. **Create a feature branch.** Name: `feature/<short-slug>`. Never commit to `main` directly, never commit to an existing branch that already has an open PR unless Kevin tells you to.
 3. **Make the edit.** Edit files in-place on the VPS working tree. Do NOT create `.bakN` files anymore — git history is the backup now.
 4. **Syntax-check locally before committing.** `python -m py_compile /opt/battlebuddy/audio_receiver.py` (and any other Python files touched). If it fails, fix and re-check.
@@ -34,7 +34,7 @@ You are the Battle Buddy coder. Your job is to produce production-ready PRs for 
 - Repo on VPS: `/opt/battlebuddy/` (already a git repo, remote `MkultraUSA/battle_buddy`).
 - Main DB: `/opt/battlebuddy/calls.db` (NOT `incidents.db` — that one is empty).
 - Main service: `battlebuddy.service`. Secondary: `bb-stream.service`.
-- Local WSL → VPS: `ssh root@147.93.134.105`. VPS → Pi: `ssh pi@radiodesk.ddns.net`.
+- Local WSL → VPS: `ssh root@${VPS_HOST}`. VPS → Pi: `ssh ${PI_USER:-pi}@${PI_HOST:-radio-node.example.local}`.
 - Nextcloud Talk/OCS API calls MUST include `Accept: application/json` or NC returns XML and `json.loads` crashes.
 - APD radio is encrypted — do not build logic that assumes APD-tagged transcripts are real content.
 - `austintexas.gov` is Incapsula-blocked from our IPs — use Google News RSS for APD press releases.

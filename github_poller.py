@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Battle Buddy — GitHub Activity Poller
-Runs every 5 minutes via systemd timer on kevcloud.
+Runs every 5 minutes via systemd timer on the production host.
 Polls MkultraUSA/battle_buddy and ships:
   - Metrics via textfile → Alloy textfile collector → Grafana Cloud Prometheus
   - Logs directly to Grafana Cloud Loki
@@ -41,7 +41,7 @@ def push_logs(entries: list[tuple]):
     now_ns = str(int(time.time() * 1e9))
     streams = []
     for labels, msg in entries:
-        labels["host"] = "kevcloud"
+        labels["host"] = os.environ.get("BATTLE_BUDDY_HOST_LABEL", "battlebuddy-host")
         labels["job"]  = "github-poller"
         streams.append({
             "stream": labels,

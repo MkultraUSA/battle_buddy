@@ -19,7 +19,7 @@ Flagged incidents: $FLAGGED
 $(echo "$REPORT" | head -80)"
 
 # Post to Nextcloud Talk (incidents room)
-NC_URL="https://kevcloud.ddns.net/ocs/v2.php/apps/spreed/api/v1/chat/89q5fnh5"
+NC_URL="${NC_URL:-https://nextcloud.example.com/ocs/v2.php/apps/spreed/api/v1/chat/ROOM_TOKEN}"
 AUTH=$(echo -n "${NC_USER}:${NC_PASS}" | base64)
 
 curl -s -X POST "$NC_URL" \

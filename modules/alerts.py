@@ -6,6 +6,7 @@ No imports from audio_receiver — zero circular deps.
 import base64
 import json
 import math
+import os
 import sqlite3
 import threading
 import urllib.request
@@ -26,7 +27,7 @@ from modules.talk import _bot_reply, _get_or_create_dm_room
 # Announcement banner — site-wide breaking alert
 # ---------------------------------------------------------------------------
 
-BANNER_BASE = "https://kevcloud.ddns.net/index.php/apps/announcementbanner/banners"
+BANNER_BASE = os.environ.get("NEXTCLOUD_BANNER_BASE", "https://nextcloud.example.com/index.php/apps/announcementbanner/banners")
 
 BANNER_ITYPES = {
     "OFFICER DOWN", "SHOOTING", "STABBING", "MASS CASUALTY",

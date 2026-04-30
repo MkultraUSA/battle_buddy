@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -59,8 +60,8 @@ PI_CALL_SILENCE_MINS  = 20
 PI_ALERT_REPEAT_MINS  = 20
 PI_AUTORESTART_MINS   = 30
 PI_ALERT_USERS        = ["kevin"]
-PI1_OP25_CMD_URL      = "http://radiodesk.ddns.net:8080/"
-PI1_SSH_HOST          = "radiodesk.ddns.net"
+PI1_OP25_CMD_URL      = os.environ.get("PI1_OP25_CMD_URL", "http://radio-node.example.local:8080/")
+PI1_SSH_HOST          = os.environ.get("PI1_SSH_HOST", "radio-node.example.local")
 PI1_SSH_USER          = "pi"
 PI1_SSH_KEY           = "/root/.ssh/id_ed25519"
 
@@ -251,7 +252,7 @@ def pi_watchdog_thread():
 # ---------------------------------------------------------------------------
 # APD Press Release poller — Google News RSS
 # NOTE: austintexas.gov/news is behind Incapsula CDN which hard-blocks the
-# Contabo VPS IP (147.93.134.105). Do NOT attempt to scrape austintexas.gov
+# Some VPS/cloud IP ranges may be blocked. Do NOT attempt to scrape austintexas.gov
 # directly from this server — it will always return 403. Google News RSS
 # aggregates APD press releases from KXAN, KVUE, AAS, etc. with no bot-detect.
 # ---------------------------------------------------------------------------
@@ -2456,7 +2457,7 @@ def post_to_talk(call: dict):
 # Announcement banner — site-wide breaking alert for the most serious incidents
 # ---------------------------------------------------------------------------
 
-BANNER_BASE = "https://kevcloud.ddns.net/index.php/apps/announcementbanner/banners"
+BANNER_BASE = os.environ.get("NEXTCLOUD_BANNER_BASE", "https://nextcloud.example.com/index.php/apps/announcementbanner/banners")
 
 # Only these incident types trigger a site-wide banner
 BANNER_ITYPES = {
