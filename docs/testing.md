@@ -35,7 +35,7 @@ A machine-readable `coverage.xml` is also produced (see `pyproject.toml`).
 
 ## CI pipeline
 
-Three GitHub Actions workflows run on every push and PR to `main`:
+Four GitHub Actions workflows run on every push and PR to `main`:
 
 - `.github/workflows/tests.yml` — installs deps and runs `pytest`, uploads
   `coverage.xml` as a build artifact.
