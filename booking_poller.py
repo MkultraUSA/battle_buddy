@@ -19,9 +19,8 @@ import logging
 import os
 import sqlite3
 import time
-import urllib.request
 import urllib.parse
-from datetime import datetime, timezone
+import urllib.request
 
 DB_PATH      = os.environ.get("BB_DB", "/opt/battlebuddy/calls.db")
 SOCRATA_URL  = "https://data.austintexas.gov/resource/9tem-ywan.json"

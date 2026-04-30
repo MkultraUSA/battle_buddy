@@ -12,28 +12,29 @@ Usage:
 """
 
 import argparse
-import uuid
 import base64
 import hashlib
 import hmac
 import json
 import os
+import pwd
 import re
+import shutil
 import sqlite3
 import ssl
 import subprocess
-import shutil
-import pwd
-import tempfile
 import threading
 import time
 import urllib.request
+import uuid
+
 try:
     import anthropic
 except ImportError:
     anthropic = None
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+
 _CDT = ZoneInfo("America/Chicago")
 
 # Bypass SSL cert verification for all urllib calls (Nextcloud snap cert not in system store)
@@ -42,29 +43,42 @@ urllib.request.install_opener(
     urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ssl_ctx))
 )
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request  # noqa: E402
+
+from modules.audio_dedup import is_duplicate_and_mark  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-
 # ---------------------------------------------------------------------------
 # Modules
 # ---------------------------------------------------------------------------
-from modules.config import *
-from modules.talkgroups import *
-from modules.database import *
-from modules.geocoding import *
-from modules.transcription import *
-from modules.llm import *
-from modules.incident_engine import *
-from modules.pollers import *
-from modules.transcription import _broadcastify_sem, _process_sem, _MAX_PROCESS_THREADS, _BROADCASTIFY_MAX, _get_fw_model
-from modules.incident_engine import _fts_connect, _fts_keepalive_thread, _atak_resync_thread, _incident_lock, _active_incidents, _atak_post_marker, _atak_clear_marker
-from modules.pollers import _pi_command_queue
-from modules.llm import _TGID_ID_MIN_LEN
-from modules.config import _state
-from modules.audio_dedup import is_duplicate_and_mark
+from modules.config import *  # noqa: E402
+from modules.config import _state  # noqa: E402
+from modules.database import *  # noqa: E402
+from modules.geocoding import *  # noqa: E402
+from modules.incident_engine import *  # noqa: E402
+from modules.incident_engine import (  # noqa: E402
+    _active_incidents,
+    _atak_post_marker,
+    _atak_resync_thread,
+    _fts_connect,
+    _fts_keepalive_thread,
+    _incident_lock,
+)
+from modules.llm import *  # noqa: E402
+from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
+from modules.pollers import *  # noqa: E402
+from modules.pollers import _pi_command_queue  # noqa: E402
+from modules.talkgroups import *  # noqa: E402
+from modules.transcription import *  # noqa: E402
+from modules.transcription import (  # noqa: E402
+    _BROADCASTIFY_MAX,
+    _MAX_PROCESS_THREADS,
+    _broadcastify_sem,
+    _get_fw_model,
+    _process_sem,
+)
 
 app = Flask(__name__, static_folder="/opt/battlebuddy/static", static_url_path="/static")
 
@@ -209,7 +223,7 @@ def api_calls():
 
 # --- Prometheus metrics endpoint (added 2026-04-18 / bak39) ---
 try:
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, CollectorRegistry
+    from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
     from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
     _BB_METRICS_REGISTRY = CollectorRegistry()
@@ -268,7 +282,8 @@ try:
 
                 # --- homicide YTD gauge — sourced from curated homicides_2026.json ---
                 try:
-                    import json as _json, os as _os
+                    import json as _json
+                    import os as _os
                     _hf = _os.path.join(_os.path.dirname(__file__), "homicides_2026.json")
                     _hdata = _json.load(open(_hf))
                     _homicide_victims = sum(h.get("count", 1) for h in _hdata)
@@ -1023,7 +1038,10 @@ def bot_talk():
         else:
             def _do_query(q, tok, name):
                 try:
-                    import time as _t, json as _j, os as _os, urllib.request as _ur
+                    import json as _j
+                    import os as _os
+                    import time as _t
+                    import urllib.request as _ur
                     _now = _t.time()
                     conn = sqlite3.connect(DB_PATH, timeout=5)
 
@@ -3300,8 +3318,8 @@ def _atak_resync_on_startup():
 
 def _nc_upload(path: str, data: bytes, content_type: str = "text/markdown"):
     """Upload a file to Nextcloud via WebDAV."""
-    import urllib.request as _ur
     import base64 as _b64
+    import urllib.request as _ur
     creds = _b64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
     url   = f"{NC_WEBDAV}/{path}"
     req   = _ur.Request(url, data=data,
@@ -3384,15 +3402,16 @@ def _export_incident_snapshot(inc_id: int):
     data     = "\n".join(lines).encode("utf-8")
 
     # Ensure directory exists
-    import urllib.request as _ur, base64 as _b64
+    import base64 as _b64
+    import urllib.request as _ur
     creds = _b64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
     mkcol_req = _ur.Request(
         f"{NC_WEBDAV}/{NC_REPORT_DIR}",
         headers={"Authorization": f"Basic {creds}"},
         method="MKCOL"
     )
-    try: _ur.urlopen(mkcol_req, timeout=10)
-    except Exception: pass
+    try: _ur.urlopen(mkcol_req, timeout=10)  # noqa: E701
+    except Exception: pass  # noqa: E701
 
     if _nc_upload(filename, data):
         print(f"[flag] snapshot uploaded: {filename}", flush=True)
@@ -3422,7 +3441,8 @@ def api_flagged_incidents():
     return jsonify([_fill_incident_coords(dict(r)) for r in rows])
 
 # ── TIP SUBMISSION SYSTEM ────────────────────────────────────────────────────
-import os as _os
+import os as _os  # noqa: E402
+
 _os.makedirs(TIPS_UPLOAD_DIR, exist_ok=True)
 
 _ALLOWED_TIP_EXT = {"jpg", "jpeg", "png", "gif", "webp"}
@@ -3806,8 +3826,9 @@ def api_tip_reject(tip_id):
 # ===========================================================================
 # STRIPE + AUTH — Premium membership integration
 # ===========================================================================
-import stripe as _stripe
-import secrets as _secrets
+import secrets as _secrets  # noqa: E402
+
+import stripe as _stripe  # noqa: E402
 
 STRIPE_SECRET_KEY      = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
@@ -4477,11 +4498,11 @@ def _point_to_segment_distance_miles(px, py, ax, ay, bx, by) -> float:
     import math
     dx, dy = bx - ax, by - ay
     if dx == 0 and dy == 0:
-        dx2 = px - ax; dy2 = py - ay
+        dx2 = px - ax; dy2 = py - ay  # noqa: E702
         return math.sqrt(dx2*dx2 + dy2*dy2) * 69.0
     t = max(0.0, min(1.0, ((px-ax)*dx + (py-ay)*dy) / (dx*dx + dy*dy)))
-    cx2 = ax + t*dx; cy2 = ay + t*dy
-    ddx = px - cx2; ddy = py - cy2
+    cx2 = ax + t*dx; cy2 = ay + t*dy  # noqa: E702
+    ddx = px - cx2; ddy = py - cy2  # noqa: E702
     deg = math.sqrt(ddx*ddx + ddy*ddy)
     return deg * 69.0  # rough degrees→miles
 
@@ -4611,7 +4632,7 @@ def _check_commute_alerts(inc_id: int, itype: str, inc_lat: float, inc_lon: floa
         # Send Talk DM
         try:
             token = _get_or_create_dm_room(username)
-            if token: _bot_reply(token, msg)
+            if token: _bot_reply(token, msg)  # noqa: E701
             print(f"[commute] alert sent to {username}: {itype} {dist:.1f}mi, {live_mins}min", flush=True)
         except Exception as e:
             print(f"[commute] DM failed for {username}: {e}", flush=True)
@@ -5526,7 +5547,7 @@ def api_premium_weather():
 # ---------------------------------------------------------------------------
 @app.route("/premium/display")
 def premium_display():
-    sess = _get_session(request)
+    sess = _get_session(request)  # noqa: F841
     html = """<!DOCTYPE html>
 <html><head>
 <title>Battle Buddy Display</title>
@@ -6029,7 +6050,7 @@ def api_premium_citizen_intel():
 @app.route("/premium/")
 def premium_index():
     sess = _get_session(request)
-    logged_in = sess is not None
+    logged_in = sess is not None  # noqa: F841
     is_premium = sess["is_premium"] if sess else False
     is_admin   = sess["is_admin"]   if sess else False
     username = sess["username"] if sess else ""

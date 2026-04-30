@@ -9,8 +9,8 @@ Listens on port 9002 — not exposed to internet, VM reaches it via LAN or VPN.
 
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY",

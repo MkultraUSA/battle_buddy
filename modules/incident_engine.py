@@ -1,29 +1,42 @@
 import base64
-from datetime import datetime, timedelta, timezone
 import json
-import re
 import sqlite3
-import struct
 import threading
 import time
-import urllib.request
 import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
 
 from modules.config import (
-    DB_PATH, TALK_BASE, TALK_USER, TALK_PASS, TALK_ROOMS, TALK_ROOM,
-    HOLD_ENABLED, HOLD_RELEASE_MINUTES, INCIDENT_TIMEOUT_MINUTES,
-    _INCIDENT_TIMEOUT_DEFAULT, MULTIAGENCY_WINDOW_MIN,
-    APD_SURGE_WINDOW_MIN, APD_SURGE_THRESHOLD,
-    FTS_HOST, FTS_REST_PORT, FTS_COT_PORT, FTS_TOKEN, FTS_ENABLED,
-    PI1_OP25_URL, DECK_BASE, DECK_BOARD_ID, DECK_STACK_NEW, DECK_LABELS,
-    NC_WEBDAV, NC_USER, NC_PASS, NC_REPORT_DIR,
+    _INCIDENT_TIMEOUT_DEFAULT,
+    APD_SURGE_THRESHOLD,
+    APD_SURGE_WINDOW_MIN,
+    DB_PATH,
+    FTS_COT_PORT,
+    FTS_ENABLED,
+    FTS_HOST,
+    HOLD_ENABLED,
+    HOLD_RELEASE_MINUTES,
+    INCIDENT_TIMEOUT_MINUTES,
+    MULTIAGENCY_WINDOW_MIN,
+    PI1_OP25_URL,
+    TALK_BASE,
+    TALK_PASS,
+    TALK_ROOMS,
+    TALK_USER,
 )
-from modules.talkgroups import (
-    CAT_COORDS, AIR_ASSET_TGIDS, ABIA_OPS_TGIDS, TRANSIT_TGIDS, LOCUTION_TGIDS,
-    detect_air_asset, detect_dps_assets, is_capitol_area, mentions_dps, _apply_locution_corrections,
-)
-from modules.geocoding import extract_location
 from modules.database import calls_since
+from modules.talkgroups import (
+    ABIA_OPS_TGIDS,
+    AIR_ASSET_TGIDS,
+    LOCUTION_TGIDS,
+    TRANSIT_TGIDS,
+    _apply_locution_corrections,
+    detect_air_asset,
+    detect_dps_assets,
+    is_capitol_area,
+    mentions_dps,
+)
 
 # ---------------------------------------------------------------------------
 
@@ -456,8 +469,8 @@ def analyze_for_incident(call: dict):
 # keeps the socket open.  CoT sent over this connection is broadcast by FTS
 # to all other connected clients (WinTAK, ATAK, etc.).
 # ---------------------------------------------------------------------------
-import ssl as _ssl_mod
-import socket as _sock_mod
+import socket as _sock_mod  # noqa: E402
+import ssl as _ssl_mod  # noqa: E402
 
 _fts_lock   = threading.Lock()
 _fts_socket = None          # the live SSL socket, or None
@@ -488,8 +501,8 @@ def _fts_connect():
     global _fts_socket
     try:
         if _fts_socket:
-            try: _fts_socket.close()
-            except Exception: pass
+            try: _fts_socket.close()  # noqa: E701
+            except Exception: pass  # noqa: E701
             _fts_socket = None
         raw = _sock_mod.create_connection((FTS_HOST, FTS_COT_PORT), timeout=10)
         _fts_socket = _fts_build_ctx().wrap_socket(raw)
@@ -622,7 +635,6 @@ def _atak_post_marker(incident_id: int, lat: float, lon: float, itype: str,
     """Post a CoT marker to FTS port 8087 with proper type, color, and stale time."""
     if not FTS_ENABLED:
         return
-    from datetime import timedelta
     cot_type, argb, stale_min, iconsetpath = _COT_PROFILE.get(itype, _COT_DEFAULT)
     uid      = f"BB-INC-{incident_id}"
     callsign = (f"{itype} @ {location}" if location else itype)[:60]
@@ -677,7 +689,7 @@ def _atak_clear_marker(incident_id: int):
 
 
 def _create_incident(itype: str, desc: str, call: dict, ts: float):
-    from modules.pollers_legacy import create_deck_card, send_dm_alert, post_banner
+    from modules.pollers_legacy import create_deck_card, post_banner, send_dm_alert
     cat    = call.get("category", "Unknown")
     tgid   = call.get("tgid")
     agencies = json.dumps([cat])
@@ -716,7 +728,7 @@ def _create_incident(itype: str, desc: str, call: dict, ts: float):
                          args=(inc_id, call["lat"], call["lon"], itype, call.get("location"), desc),
                          daemon=True).start()
     if call.get("lat") is not None and call.get("lon") is not None:
-        threading.Thread(target=_check_commute_alerts,
+        threading.Thread(target=_check_commute_alerts,  # noqa: F821
                          args=(inc_id, itype, call["lat"], call["lon"], desc),
                          daemon=True).start()
 

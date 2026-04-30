@@ -1,5 +1,6 @@
 import os
 import re
+
 from modules.config import TGID_TSV
 
 IGNORE_TAGS = [

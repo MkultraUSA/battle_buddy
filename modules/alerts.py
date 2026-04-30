@@ -11,9 +11,14 @@ import threading
 import urllib.request
 
 from modules.config import (
-    DB_PATH, TALK_USER, TALK_PASS,
-    DECK_BASE, DECK_BOARD_ID, DECK_STACK_NEW, DECK_LABELS,
+    DB_PATH,
+    DECK_BASE,
+    DECK_BOARD_ID,
+    DECK_LABELS,
+    DECK_STACK_NEW,
     GOOGLE_ROUTES_KEY,
+    TALK_PASS,
+    TALK_USER,
 )
 from modules.talk import _bot_reply, _get_or_create_dm_room
 
@@ -148,11 +153,11 @@ def _point_to_segment_distance_miles(px, py, ax, ay, bx, by) -> float:
     """Perpendicular distance (miles) from point P to line segment A→B."""
     dx, dy = bx - ax, by - ay
     if dx == 0 and dy == 0:
-        dx2 = px - ax; dy2 = py - ay
+        dx2 = px - ax; dy2 = py - ay  # noqa: E702
         return math.sqrt(dx2*dx2 + dy2*dy2) * 69.0
     t   = max(0.0, min(1.0, ((px-ax)*dx + (py-ay)*dy) / (dx*dx + dy*dy)))
-    cx2 = ax + t*dx; cy2 = ay + t*dy
-    ddx = px - cx2;  ddy = py - cy2
+    cx2 = ax + t*dx; cy2 = ay + t*dy  # noqa: E702
+    ddx = px - cx2;  ddy = py - cy2  # noqa: E702
     return math.sqrt(ddx*ddx + ddy*ddy) * 69.0
 
 

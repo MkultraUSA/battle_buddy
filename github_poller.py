@@ -6,12 +6,12 @@ Polls MkultraUSA/battle_buddy and ships:
   - Metrics via textfile → Alloy textfile collector → Grafana Cloud Prometheus
   - Logs directly to Grafana Cloud Loki
 """
+import base64
 import json
 import os
 import time
-import urllib.request
 import urllib.error
-import base64
+import urllib.request
 from datetime import datetime, timezone
 
 GITHUB_TOKEN  = os.environ["GITHUB_TOKEN"]

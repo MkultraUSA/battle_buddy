@@ -7,7 +7,10 @@ Compares CAD ground truth against detected incidents to find:
   - Keyword gap analysis via Gemini on missed calls
 Outputs: console report + Telegram + appends to bugs.md
 """
-import sqlite3, json, time, os, urllib.request, textwrap
+import json
+import sqlite3
+import textwrap
+import urllib.request
 from datetime import datetime, timezone
 
 DB_PATH   = "/opt/battlebuddy/calls.db"
@@ -15,7 +18,7 @@ BUGS_PATH = "/opt/battlebuddy/bugs.md"
 WINDOW    = 7200   # ±2h around CAD response_ts to find nearby calls
 
 env = {l.split("=",1)[0]: l.split("=",1)[1].strip()
-       for l in open("/opt/battlebuddy/.env") if "=" in l}
+       for l in open("/opt/battlebuddy/.env") if "=" in l}  # noqa: E741
 OR_KEY   = env.get("OPENROUTER_API_KEY","")
 TG_TOKEN = env.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT  = env.get("TELEGRAM_CHAT_ID", "")
