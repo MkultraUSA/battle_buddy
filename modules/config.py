@@ -1,4 +1,6 @@
 import os
+import ssl
+import urllib.request
 
 try:
     import anthropic as _anthropic
@@ -8,10 +10,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Paths and deployment defaults
 # ---------------------------------------------------------------------------
-# Keep the existing reference deployment defaults, but allow every deployment-
-# specific value to be overridden through environment variables. This keeps the
-# current install working while making the repository safer to publish and easier
-# for other users to adapt.
+# Keep deployment-specific values in environment variables. Defaults here are
+# safe placeholders or disabled values so the repository can be published
+# without exposing a maintainer's private hostnames, usernames, or service IDs.
 
 BATTLE_BUDDY_HOME = os.environ.get("BATTLE_BUDDY_HOME", "/opt/battlebuddy")
 BATTLE_BUDDY_LOG_DIR = os.environ.get("BATTLE_BUDDY_LOG_DIR", "/var/log/battlebuddy")
@@ -22,6 +23,29 @@ DB_PATH = os.environ.get("DB_PATH", os.path.join(BATTLE_BUDDY_HOME, "calls.db"))
 TIPS_UPLOAD_DIR = os.environ.get("TIPS_UPLOAD_DIR", os.path.join(BATTLE_BUDDY_HOME, "static", "tips"))
 TGID_TSV = os.environ.get("TGID_TSV", os.path.join(BATTLE_BUDDY_HOME, "gatrrs-tags.tsv"))
 PI1_OP25_URL = os.environ.get("PI1_OP25_URL", "http://radio-node.example.local:8080/")
+
+# ---------------------------------------------------------------------------
+# HTTP / TLS behavior
+# ---------------------------------------------------------------------------
+# Keep TLS certificate verification enabled by default. ALLOW_INSECURE_TLS is
+# provided only for isolated lab systems with self-signed certificates and
+# should never be enabled on public networks.
+
+ALLOW_INSECURE_TLS = os.environ.get("ALLOW_INSECURE_TLS", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+if ALLOW_INSECURE_TLS:
+    _ssl_ctx = ssl._create_unverified_context()
+else:
+    _ssl_ctx = ssl.create_default_context()
+
+urllib.request.install_opener(
+    urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ssl_ctx))
+)
 
 # ---------------------------------------------------------------------------
 # LLM providers
@@ -44,30 +68,30 @@ GROQ_ENABLED = bool(GROQ_API_KEY)
 # Nextcloud / Talk / Deck
 # ---------------------------------------------------------------------------
 
-TALK_BASE = os.environ.get("TALK_BASE", "https://kevcloud.ddns.net/ocs/v2.php/apps/spreed/api/v1")
+TALK_BASE = os.environ.get("TALK_BASE", "")
 TALK_USER = os.environ.get("TALK_USER", "battlebuddy")
 TALK_PASS = os.environ.get("TALK_PASS", "")
-TALK_ENABLED = os.environ.get("TALK_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+TALK_ENABLED = os.environ.get("TALK_ENABLED", "false").lower() in ("1", "true", "yes", "on")
 TALK_BOT_SECRET = os.environ.get("TALK_BOT_SECRET", "")
 
-DECK_BASE = os.environ.get("DECK_BASE", "https://kevcloud.ddns.net/index.php/apps/deck/api/v1.0")
-NC_WEBDAV = os.environ.get("NC_WEBDAV", "https://kevcloud.ddns.net/remote.php/dav/files/kevin")
+DECK_BASE = os.environ.get("DECK_BASE", "")
+NC_WEBDAV = os.environ.get("NC_WEBDAV", "")
 NC_USER = os.environ.get("NC_USER", "")
 NC_PASS = os.environ.get("NC_PASS", "")
 NC_REPORT_DIR = os.environ.get("NC_REPORT_DIR", "PresentationNotes/FlaggedIncidents")
 
-DECK_BOARD_ID = int(os.environ.get("DECK_BOARD_ID", "2"))
-DECK_STACK_NEW = int(os.environ.get("DECK_STACK_NEW", "5"))
+DECK_BOARD_ID = int(os.environ.get("DECK_BOARD_ID", "0"))
+DECK_STACK_NEW = int(os.environ.get("DECK_STACK_NEW", "0"))
 DECK_LABELS = {
-    "SHOOTING":               int(os.environ.get("DECK_LABEL_SHOOTING", "10")),
-    "OFFICER DOWN":           int(os.environ.get("DECK_LABEL_OFFICER_DOWN", "11")),
-    "STRUCTURE FIRE":         int(os.environ.get("DECK_LABEL_STRUCTURE_FIRE", "12")),
-    "MASS CASUALTY":          int(os.environ.get("DECK_LABEL_MASS_CASUALTY", "13")),
-    "HAZMAT":                 int(os.environ.get("DECK_LABEL_HAZMAT", "14")),
-    "CRASH/COLLISION":        int(os.environ.get("DECK_LABEL_CRASH_COLLISION", "15")),
-    "MULTI-AGENCY RESPONSE":  int(os.environ.get("DECK_LABEL_MULTI_AGENCY_RESPONSE", "16")),
-    "AIR ASSET ACTIVE":       int(os.environ.get("DECK_LABEL_AIR_ASSET_ACTIVE", "17")),
-    "DPS CAPITOL ACTIVATION": int(os.environ.get("DECK_LABEL_DPS_CAPITOL_ACTIVATION", "18")),
+    "SHOOTING":               int(os.environ.get("DECK_LABEL_SHOOTING", "0")),
+    "OFFICER DOWN":           int(os.environ.get("DECK_LABEL_OFFICER_DOWN", "0")),
+    "STRUCTURE FIRE":         int(os.environ.get("DECK_LABEL_STRUCTURE_FIRE", "0")),
+    "MASS CASUALTY":          int(os.environ.get("DECK_LABEL_MASS_CASUALTY", "0")),
+    "HAZMAT":                 int(os.environ.get("DECK_LABEL_HAZMAT", "0")),
+    "CRASH/COLLISION":        int(os.environ.get("DECK_LABEL_CRASH_COLLISION", "0")),
+    "MULTI-AGENCY RESPONSE":  int(os.environ.get("DECK_LABEL_MULTI_AGENCY_RESPONSE", "0")),
+    "AIR ASSET ACTIVE":       int(os.environ.get("DECK_LABEL_AIR_ASSET_ACTIVE", "0")),
+    "DPS CAPITOL ACTIVATION": int(os.environ.get("DECK_LABEL_DPS_CAPITOL_ACTIVATION", "0")),
 }
 
 TALK_ROOM = os.environ.get("TALK_ROOM", "")
@@ -92,8 +116,10 @@ def _room_for_call(call: dict, priority: str) -> list:
     cat   = call.get("category", "Unknown")
     rooms = set()
     beat  = CATEGORY_ROOM.get(cat, "general")
-    rooms.add(TALK_ROOMS[beat])
-    if priority in ("🔴", "🟡"):
+    room = TALK_ROOMS.get(beat) or TALK_ROOMS.get("general")
+    if room:
+        rooms.add(room)
+    if priority in ("🔴", "🟡") and TALK_ROOMS.get("incidents"):
         rooms.add(TALK_ROOMS["incidents"])
     return list(rooms)
 
@@ -115,7 +141,7 @@ PI_FETCH_URL = os.environ.get("PI_FETCH_URL", "").rstrip("/")
 PI_FETCH_TOKEN = os.environ.get("PI_FETCH_TOKEN", "")
 PI_FETCH_ENABLED = bool(PI_FETCH_URL and PI_FETCH_TOKEN)
 
-FTS_HOST = os.environ.get("FTS_HOST", "radiodesk.ddns.net")
+FTS_HOST = os.environ.get("FTS_HOST", "tak.example.local")
 FTS_REST_PORT = int(os.environ.get("FTS_REST_PORT", "19023"))
 FTS_COT_PORT = int(os.environ.get("FTS_COT_PORT", "8089"))
 FTS_TOKEN = os.environ.get("FTS_TOKEN", "")
