@@ -5,7 +5,7 @@ APD Press Release poller — polls Google News RSS for APD press releases
 (homicides, shootings, stabbings) and Austin traffic fatality news.
 
 NOTE: austintexas.gov/news is behind Incapsula CDN which hard-blocks the
-Contabo VPS IP (147.93.134.105). Do NOT attempt to scrape austintexas.gov
+Some VPS/cloud IP ranges may be blocked. Do NOT attempt to scrape austintexas.gov
 directly from this server — it will always return 403. Google News RSS
 aggregates APD press releases from KXAN, KVUE, AAS, etc. with no bot-detect.
 

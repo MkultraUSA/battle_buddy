@@ -42,7 +42,7 @@ Post the review via `gh pr review` with a body that ends in one of:
 - **APPROVE** — include the exact merge + deploy sequence for Kevin:
   ```
   gh pr merge <url> --squash --delete-branch
-  ssh root@147.93.134.105 "cd /opt/battlebuddy && git pull --ff-only && systemctl restart battlebuddy"
+  ssh root@${VPS_HOST} "cd /opt/battlebuddy && git pull --ff-only && systemctl restart battlebuddy"
   journalctl -u battlebuddy -n 50 --no-pager
   ```
 - **REQUEST CHANGES** — numbered list of issues with file:line refs and exactly what the coder needs to fix. No vague feedback.

@@ -1755,7 +1755,7 @@ footer {
         <li style="font-size:0.82rem;color:#94a3b8;padding:6px 0;border-bottom:1px solid #0f1729;display:flex;align-items:center;gap:10px"><span style="width:6px;height:6px;background:#3b82f6;border-radius:50%;display:inline-block;flex-shrink:0"></span>CoT markers auto-post on incident detection</li>
         <li style="font-size:0.82rem;color:#94a3b8;padding:6px 0;border-bottom:1px solid #0f1729;display:flex;align-items:center;gap:10px"><span style="width:6px;height:6px;background:#3b82f6;border-radius:50%;display:inline-block;flex-shrink:0"></span>Markers auto-clear when incident closes</li>
         <li style="font-size:0.82rem;color:#94a3b8;padding:6px 0;border-bottom:1px solid #0f1729;display:flex;align-items:center;gap:10px"><span style="width:6px;height:6px;background:#3b82f6;border-radius:50%;display:inline-block;flex-shrink:0"></span>Works with WinTAK, ATAK Phone, iTAK</li>
-        <li style="font-size:0.82rem;color:#94a3b8;padding:6px 0;display:flex;align-items:center;gap:10px"><span style="width:6px;height:6px;background:#3b82f6;border-radius:50%;display:inline-block;flex-shrink:0"></span>Connects via FreeTAKServer SSL — radiodesk.ddns.net</li>
+        <li style="font-size:0.82rem;color:#94a3b8;padding:6px 0;display:flex;align-items:center;gap:10px"><span style="width:6px;height:6px;background:#3b82f6;border-radius:50%;display:inline-block;flex-shrink:0"></span>Connects via FreeTAKServer SSL — tak.example.local</li>
       </ul>
     </div>
   </div>
@@ -2592,7 +2592,7 @@ footer a{color:#3b82f6;text-decoration:none}
         <li>CoT markers auto-post on incident detection</li>
         <li>Markers auto-clear when incident closes</li>
         <li>Works with WinTAK, ATAK Phone, iTAK</li>
-        <li>Connects via FreeTAKServer over SSL — radiodesk.ddns.net</li>
+        <li>Connects via FreeTAKServer over SSL — tak.example.local</li>
         <li>Incident type drives marker color and stale time</li>
       </ul>
     </div>
@@ -3844,6 +3844,8 @@ STRIPE_PRICE_TO_TIER = {v["price_id"]: v["tier"] for v in STRIPE_PLANS.values()}
 if STRIPE_SECRET_KEY:
     _stripe.api_key = STRIPE_SECRET_KEY
 
+NEXTCLOUD_WEB_BASE = os.environ.get("NEXTCLOUD_WEB_BASE", "https://nextcloud.example.com")
+
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -3851,7 +3853,7 @@ if STRIPE_SECRET_KEY:
 def _nc_validate_user(username, password):
     """Validate Nextcloud credentials via OCS API. Returns True/False."""
     import urllib.parse
-    url = "https://kevcloud.ddns.net/ocs/v2.php/cloud/user"
+    url = os.environ.get("NEXTCLOUD_OCS_USER_URL", "https://nextcloud.example.com/ocs/v2.php/cloud/user")
     auth_b64 = base64.b64encode(f"{username}:{password}".encode()).decode()
     req = urllib.request.Request(url, headers={
         "Authorization": f"Basic {auth_b64}",
@@ -3961,7 +3963,7 @@ TALK_ROOMS = {
 def _nc_create_user(username, password, email, display_name, tier="premium"):
     """Create Nextcloud user and add to the appropriate membership group."""
     nc_group = "Premium Members" if tier == "premium" else "Basic Members"
-    nc_base = "https://kevcloud.ddns.net/ocs/v2.php/cloud"
+    nc_base = os.environ.get("NEXTCLOUD_OCS_BASE", "https://nextcloud.example.com/ocs/v2.php/cloud")
     auth_b64 = base64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
     headers = {
         "Authorization": f"Basic {auth_b64}",
@@ -4038,7 +4040,7 @@ def _add_to_talk_rooms(username):
         "Accept": "application/json",
     }
     for room_name, token in TALK_ROOMS.items():
-        url = f"https://kevcloud.ddns.net/ocs/v2.php/apps/spreed/api/v4/room/{token}/participants"
+        url = f"{os.environ.get('NEXTCLOUD_SPREED_API_BASE', 'https://nextcloud.example.com/ocs/v2.php/apps/spreed/api/v4')}/room/{token}/participants"
         data = urllib.parse.urlencode({"newParticipant": username}).encode()
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
         try:
@@ -4089,7 +4091,7 @@ def _send_welcome_email(email, username, setup_token, tier="premium"):
         f"  iPhone/iPad: https://apps.apple.com/us/app/nextcloud-talk/id1296825574\n\n"
         f"=== STEP 2 — INCIDENT ALERTS (TALK) ===\n"
         f"You have been added to all Battle Buddy alert rooms in Nextcloud Talk.\n"
-        f"  Web: https://kevcloud.ddns.net/apps/talk\n"
+        f"  Web: {NEXTCLOUD_WEB_BASE}/apps/talk\n"
         f"  Rooms you are in:\n"
         f"    - Incidents  (all detected incidents)\n"
         f"    - APD        (Austin Police press releases and scanner intel)\n"
@@ -4098,7 +4100,7 @@ def _send_welcome_email(email, username, setup_token, tier="premium"):
         f"Enable push notifications in the Talk app so alerts reach you immediately.\n\n"
         f"=== STEP 3 — INTEL NEWS FEED ===\n"
         f"You are auto-subscribed to the Battle Buddy Intel Feed in Nextcloud News.\n"
-        f"  Web: https://kevcloud.ddns.net/apps/news\n"
+        f"  Web: {NEXTCLOUD_WEB_BASE}/apps/news\n"
         f"The feed updates continuously with every confirmed incident, APD press release,\n"
         f"and homicide update — one scrollable stream of verified Austin intelligence.\n\n"
         f"You can also subscribe any RSS reader to the feed directly:\n"
@@ -4203,7 +4205,7 @@ def _send_welcome_email(email, username, setup_token, tier="premium"):
     </ul>
     <p style="margin-top:12px;font-size:0.8rem;color:#64748b">Enable push notifications in the Talk app so critical incident alerts wake your phone immediately.</p>
     <div class="app-links" style="margin-top:10px">
-      <a class="app-link" href="https://kevcloud.ddns.net/apps/talk">Open Talk on Web</a>
+      <a class="app-link" href="{NEXTCLOUD_WEB_BASE}/apps/talk">Open Talk on Web</a>
     </div>
   </div>
 
@@ -4212,7 +4214,7 @@ def _send_welcome_email(email, username, setup_token, tier="premium"):
     <h2>Intel News Feed</h2>
     <p>You are auto-subscribed to the <strong style="color:#cbd5e1">Battle Buddy Intel Feed</strong> in Nextcloud News. Open it from the News app on the web or inside the Nextcloud mobile app — it updates continuously with every confirmed incident, APD press release, and homicide update.</p>
     <div class="app-links">
-      <a class="app-link" href="https://kevcloud.ddns.net/apps/news">Open News on Web</a>
+      <a class="app-link" href="{NEXTCLOUD_WEB_BASE}/apps/news">Open News on Web</a>
     </div>
     <p style="margin-top:12px;font-size:0.8rem;color:#64748b">You can also subscribe any RSS reader (Feedly, Reeder, etc.) to the feed directly:</p>
     <div class="feed-url">https://battlebuddy.news/public/feed.rss</div>
@@ -5185,7 +5187,7 @@ def premium_welcome():
     <li>ATAK data package for field situational awareness</li>
     <li>Intel News Feed in Nextcloud News — auto-subscribed, live incident and press release updates</li>
   </ul>
-  <p><a href="https://kevcloud.ddns.net" target="_blank">Open Nextcloud →</a></p>
+  <p><a href="{NEXTCLOUD_WEB_BASE}" target="_blank">Open Nextcloud →</a></p>
 </div>
 <script>
 async function doLogin() {{
@@ -5320,7 +5322,7 @@ def api_premium_setpassword():
         return jsonify({"error": "Setup link has expired"}), 400
 
     # Change password via NC admin API
-    nc_base   = "https://kevcloud.ddns.net/ocs/v2.php/cloud"
+    nc_base   = os.environ.get("NEXTCLOUD_OCS_BASE", "https://nextcloud.example.com/ocs/v2.php/cloud")
     auth_b64  = base64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
     headers   = {"Authorization": f"Basic {auth_b64}", "OCS-APIREQUEST": "true",
                  "Content-Type": "application/x-www-form-urlencoded",
@@ -5647,7 +5649,7 @@ def premium_display():
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
       <div class="top-links">
         <a href="/premium/">Dashboard</a>
-        <a href="https://kevcloud.ddns.net" target="_blank">Nextcloud</a>
+        <a href="{NEXTCLOUD_WEB_BASE}" target="_blank">Nextcloud</a>
         <a href="#" onclick="toggleFullscreen()" id="fs-btn">⛶ Full Screen</a>
         <a href="#" onclick="doLogout()" style="color:#ef4444">Sign out</a>
       </div>
@@ -6106,7 +6108,7 @@ def premium_index():
 <div class="card">
   <h3>Live Alerts</h3>
   <p>You are enrolled in priority incident alerts via Nextcloud Talk.</p>
-  <p><a href="https://kevcloud.ddns.net" target="_blank" style="color:#f90">Open Nextcloud Talk →</a></p>
+  <p><a href="{NEXTCLOUD_WEB_BASE}" target="_blank" style="color:#f90">Open Nextcloud Talk →</a></p>
 </div>
 
 <div class="card">
@@ -6135,7 +6137,7 @@ def premium_index():
 <div class="card">
   <h3>Intel News Feed</h3>
   <p>You are auto-subscribed to the <strong style="color:#f90">Battle Buddy Intel Feed</strong> in Nextcloud News. Every confirmed incident, APD press release, and homicide update — one scrollable feed, updates continuously.</p>
-  <p><a href="https://kevcloud.ddns.net/apps/news" target="_blank" style="color:#f90">Open Nextcloud News →</a></p>
+  <p><a href="{NEXTCLOUD_WEB_BASE}/apps/news" target="_blank" style="color:#f90">Open Nextcloud News →</a></p>
   <p style="margin-top:10px;font-size:12px;color:#666">You can also subscribe any RSS reader to the feed directly:<br>
   <code style="color:#aaa;font-size:11px">https://battlebuddy.news/public/feed.rss</code></p>
 </div>

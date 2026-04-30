@@ -10,7 +10,7 @@ When OP25 grants a voice channel it logs:
 We parse that to know exactly which talkgroup the audio belongs to.
 
 Environment:
-    BB_VM_URL    POST endpoint   (default: http://147.93.134.105:9001/receive)
+    BB_VM_URL    POST endpoint   (default: http://battlebuddy.example.local:9001/receive)
     AUDIO_PORT   UDP audio port  (default: 23456)
     TAGS_FILE    talkgroup TSV   (default: /home/pi/op25_data/gatrrs-tags.tsv)
 """
@@ -27,7 +27,7 @@ import time
 import urllib.request
 import wave
 
-VM_URL     = os.environ.get("BB_VM_URL",  "http://147.93.134.105:9001/receive")
+VM_URL     = os.environ.get("BB_VM_URL",  "http://battlebuddy.example.local:9001/receive")
 AUDIO_PORT = int(os.environ.get("AUDIO_PORT", "23456"))
 TAGS_FILE  = os.environ.get("TAGS_FILE",  "/home/pi/op25_data/gatrrs-tags.tsv")
 
