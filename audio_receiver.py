@@ -3443,7 +3443,7 @@ def _notify_new_tip(tip_id: int, location_text: str, description: str,
     """DM kevin when a new tip arrives. Runs in a thread."""
     token = _get_or_create_dm_room("kevin")
     if not token:
-        print(f"[tip] could not get DM room for kevin", flush=True)
+        print("[tip] could not get DM room for kevin", flush=True)
         return
 
     time_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %I:%M %p")
@@ -3451,7 +3451,7 @@ def _notify_new_tip(tip_id: int, location_text: str, description: str,
 
     lines = [
         f"📍 NEW TIP #{tip_id} — review needed",
-        f"",
+        "",
         f"Location: {location_text}",
         f"Coords: {coords_str}",
         f"Time: {time_str}",
@@ -3462,7 +3462,7 @@ def _notify_new_tip(tip_id: int, location_text: str, description: str,
         lines += ["", f"📷 https://battlebuddy.news/static/tips/{photo_path}"]
     lines += [
         "",
-        f"Review: https://battlebuddy.news/admin/tips",
+        "Review: https://battlebuddy.news/admin/tips",
         f"To investigate: ask me to look into tip #{tip_id}",
     ]
 
@@ -4278,7 +4278,7 @@ def _provision_premium_user(session_obj):
     tier         = metadata.get("tier", "premium")
 
     if not username or not customer_email:
-        print(f"[stripe] provision skipped — missing username or email in session", flush=True)
+        print("[stripe] provision skipped — missing username or email in session", flush=True)
         return
 
     # 1. Nextcloud user
@@ -6511,7 +6511,7 @@ if __name__ == "__main__":
     _atak_resync_on_startup()
 
     print(f"[brain] Battle Buddy v2.0 starting on port {args.port}", flush=True)
-    print(f"[brain] Transcription: faster-whisper large-v3-turbo INT8 (local, offline-ready)", flush=True)
+    print("[brain] Transcription: faster-whisper large-v3-turbo INT8 (local, offline-ready)", flush=True)
     print(f"[brain] DB: {DB_PATH}", flush=True)
 
     threading.Thread(target=_get_fw_model,            daemon=True).start()  # warm model at startup

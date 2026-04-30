@@ -130,7 +130,7 @@ def main():
             })
 
     print("=" * 72)
-    print(f"Battle Buddy nightly classification review")
+    print("Battle Buddy nightly classification review")
     print(f"Window: last {LOOKBACK_SECS // 3600}h  (since {time.ctime(cutoff)})")
     print(f"Incidents scanned: {len(incidents)}   flagged: {len(flagged)}")
     print("=" * 72)
