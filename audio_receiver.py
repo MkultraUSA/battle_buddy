@@ -57,13 +57,18 @@ from modules.config import *  # noqa: E402
 from modules.config import _state  # noqa: E402
 from modules.database import *  # noqa: E402
 from modules.geocoding import *  # noqa: E402
-from modules.incident_engine import *  # noqa: E402
-from modules.incident_engine import (  # noqa: E402
-    _active_incidents,
+from modules import atak as _atak_mod  # noqa: E402
+from modules.atak import (  # noqa: E402
     _atak_post_marker,
+    _atak_resync_on_startup,
     _atak_resync_thread,
     _fts_connect,
     _fts_keepalive_thread,
+    _fts_lock,
+)
+from modules.incident_engine import *  # noqa: E402
+from modules.incident_engine import (  # noqa: E402
+    _active_incidents,
     _incident_lock,
 )
 from modules.llm import *  # noqa: E402
@@ -3285,33 +3290,6 @@ def _load_active_incidents_from_db():
     if loaded:
         print(f"[incident] startup: loaded {loaded} active incident(s) into memory for timeout tracking", flush=True)
 
-def _atak_resync_on_startup():
-    """Re-post ATAK markers for any incidents still active in the DB at startup."""
-    if not FTS_ENABLED:
-        return
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cutoff = time.time() - 30 * 60
-    rows = conn.execute(
-        "SELECT * FROM incidents WHERE status='active' AND ts_updated > ?"
-        " AND location IS NOT NULL AND location != ''"
-        "AND lat IS NOT NULL AND lon IS NOT NULL AND is_test=0",
-        (cutoff,)
-    ).fetchall()
-    conn.close()
-    count = 0
-    for row in rows:
-        inc = dict(row)
-        threading.Thread(
-            target=_atak_post_marker,
-            args=(inc['id'], inc['lat'], inc['lon'], inc['itype'], inc['location'], inc.get('description')),
-            daemon=True
-        ).start()
-        count += 1
-    if count:
-        print(f"[atak] startup resync: re-posted {count} active incident marker(s)", flush=True)
-
-
 # ---------------------------------------------------------------------------
 # Incident flagging — capture a full snapshot for demo/presentation use
 # ---------------------------------------------------------------------------
@@ -5508,7 +5486,7 @@ def api_premium_atak_status():
     if not sess or not sess.get("is_premium"):
         return jsonify({"error": "premium required"}), 403
     with _fts_lock:
-        connected = _fts_socket is not None
+        connected = _atak_mod._fts_socket is not None
     return jsonify({"connected": connected, "fts_enabled": FTS_ENABLED})
 
 
