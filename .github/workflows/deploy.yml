@@ -24,3 +24,17 @@ jobs:
             systemctl restart battlebuddy
             sleep 5
             systemctl is-active battlebuddy || (git revert HEAD --no-edit && systemctl restart battlebuddy && exit 1)
+
+      - name: Notify Telegram — success
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="✅ Battle Buddy deployed successfully%0A${{ github.event.head_commit.message }}"
+
+      - name: Notify Telegram — failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="❌ Battle Buddy deploy FAILED%0A${{ github.event.head_commit.message }}%0ASee: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
