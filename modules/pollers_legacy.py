@@ -812,6 +812,9 @@ _adsb_orbit_seen : dict[str, float] = {}   # icao24 → last orbit-alert timesta
 _REDDIT_INTERVAL = 300   # 5 minutes
 _REDDIT_FEEDS = [
     "https://www.reddit.com/r/Austin/new.rss",
+    "https://www.reddit.com/r/AustinPolice/new.rss",
+    "https://www.reddit.com/r/Austin_Texas/new.rss",
+    "https://www.reddit.com/r/ATX/new.rss",
 ]
 _REDDIT_HIGH_KW = {
     "standoff", "barricade", "swat", "shooter", "shooting", "shots fired",
