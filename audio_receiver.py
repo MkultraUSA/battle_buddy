@@ -5549,7 +5549,6 @@ def api_premium_weather():
 # ---------------------------------------------------------------------------
 @app.route("/premium/display")
 def premium_display():
-    sess = _get_session(request)  # noqa: F841
     html = """<!DOCTYPE html>
 <html><head>
 <title>Battle Buddy Display</title>
@@ -6052,7 +6051,6 @@ def api_premium_citizen_intel():
 @app.route("/premium/")
 def premium_index():
     sess = _get_session(request)
-    logged_in = sess is not None  # noqa: F841
     is_premium = sess["is_premium"] if sess else False
     is_admin   = sess["is_admin"]   if sess else False
     username = sess["username"] if sess else ""

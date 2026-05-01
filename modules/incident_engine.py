@@ -26,6 +26,7 @@ from modules.config import (
     TALK_USER,
 )
 from modules.database import calls_since
+from modules.alerts import _check_commute_alerts
 from modules.talkgroups import (
     ABIA_OPS_TGIDS,
     AIR_ASSET_TGIDS,
@@ -728,7 +729,7 @@ def _create_incident(itype: str, desc: str, call: dict, ts: float):
                          args=(inc_id, call["lat"], call["lon"], itype, call.get("location"), desc),
                          daemon=True).start()
     if call.get("lat") is not None and call.get("lon") is not None:
-        threading.Thread(target=_check_commute_alerts,  # noqa: F821
+        threading.Thread(target=_check_commute_alerts,
                          args=(inc_id, itype, call["lat"], call["lon"], desc),
                          daemon=True).start()
 
