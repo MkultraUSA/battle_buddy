@@ -232,6 +232,22 @@ def _atak_clear_marker(incident_id: int):
         print(f"[atak] clear_marker error: {exc}", flush=True)
 
 
+def get_connection_status() -> dict:
+    """Public API: report whether the persistent FTS socket is currently up."""
+    with _fts_lock:
+        connected = _fts_socket is not None
+    return {"connected": connected, "fts_enabled": FTS_ENABLED}
+
+
+def startup():
+    """Public API: connect to FTS and launch keepalive + resync threads if enabled."""
+    if not FTS_ENABLED:
+        return
+    _fts_connect()
+    threading.Thread(target=_fts_keepalive_thread, daemon=True).start()
+    threading.Thread(target=_atak_resync_thread, daemon=True).start()
+
+
 def _atak_resync_on_startup():
     """Re-post ATAK markers for any incidents still active in the DB at startup."""
     if not FTS_ENABLED:

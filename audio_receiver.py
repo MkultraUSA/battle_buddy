@@ -61,10 +61,6 @@ from modules import atak as _atak_mod  # noqa: E402
 from modules.atak import (  # noqa: E402
     _atak_post_marker,
     _atak_resync_on_startup,
-    _atak_resync_thread,
-    _fts_connect,
-    _fts_keepalive_thread,
-    _fts_lock,
 )
 from modules.incident_engine import *  # noqa: E402
 from modules.incident_engine import (  # noqa: E402
@@ -5485,9 +5481,7 @@ def api_premium_atak_status():
     sess = _get_session(request)
     if not sess or not sess.get("is_premium"):
         return jsonify({"error": "premium required"}), 403
-    with _fts_lock:
-        connected = _atak_mod._fts_socket is not None
-    return jsonify({"connected": connected, "fts_enabled": FTS_ENABLED})
+    return jsonify(_atak_mod.get_connection_status())
 
 
 @app.route("/api/premium/weather")
@@ -6514,10 +6508,7 @@ if __name__ == "__main__":
     print(f"[brain] DB: {DB_PATH}", flush=True)
 
     threading.Thread(target=_get_fw_model,            daemon=True).start()  # warm model at startup
-    if FTS_ENABLED:
-        _fts_connect()
-        threading.Thread(target=_fts_keepalive_thread, daemon=True).start()
-        threading.Thread(target=_atak_resync_thread,   daemon=True).start()
+    _atak_mod.startup()
     threading.Thread(target=incident_cleanup_thread,  daemon=True).start()
     threading.Thread(target=hold_watchdog_thread,     daemon=True).start()
     threading.Thread(target=pi_watchdog_thread,       daemon=True).start()
