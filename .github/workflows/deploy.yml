@@ -20,6 +20,7 @@ jobs:
             set -e
             cd /opt/battlebuddy
             git pull --ff-only
+            /opt/battlebuddy/venv/bin/pip install -r requirements.txt -q
             systemctl restart battlebuddy
             sleep 5
             systemctl is-active battlebuddy || (git revert HEAD --no-edit && systemctl restart battlebuddy && exit 1)
