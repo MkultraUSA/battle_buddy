@@ -52,7 +52,7 @@ jobs:
       - name: Run smoke tests
         id: smoke
         run: |
-          pytest tests/test_smoke.py -v --tb=short 2>&1 | tee /tmp/smoke_results.txt
+          pytest tests/test_smoke.py -v --tb=short --override-ini="addopts=" 2>&1 | tee /tmp/smoke_results.txt
           echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
         env:
           SMOKE_TEST_BASE_URL: https://battlebuddy.new
