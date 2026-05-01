@@ -70,7 +70,7 @@ from modules.llm import *  # noqa: E402
 from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
 from modules.pollers import *  # noqa: E402
 from modules.pollers import _pi_command_queue  # noqa: E402
-from modules.talk import _bot_reply
+from modules.talk import _bot_reply, _get_or_create_dm_room
 from modules.talkgroups import *  # noqa: E402
 from modules.transcription import *  # noqa: E402
 from modules.transcription import (  # noqa: E402
