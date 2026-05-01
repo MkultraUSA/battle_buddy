@@ -70,6 +70,7 @@ from modules.llm import *  # noqa: E402
 from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
 from modules.pollers import *  # noqa: E402
 from modules.pollers import _pi_command_queue  # noqa: E402
+from modules.talk import _bot_reply
 from modules.talkgroups import *  # noqa: E402
 from modules.transcription import *  # noqa: E402
 from modules.transcription import (  # noqa: E402
@@ -861,25 +862,7 @@ def _verify_bot_signature(raw_body: bytes, random_header: str, sig_header: str) 
     return hmac.compare_digest(expected, sig_header.lower())
 
 
-def _bot_reply(room_token: str, message: str):
-    """Post a reply back to the Talk room that triggered the command."""
-    url     = f"{TALK_BASE}/chat/{room_token}"
-    payload = json.dumps({"message": message}).encode()
-    creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-    req     = urllib.request.Request(
-        url, data=payload,
-        headers={
-            "Authorization":  f"Basic {creds}",
-            "OCS-APIRequest": "true",
-            "Content-Type":   "application/json",
-        },
-        method="POST",
-    )
-    try:
-        urllib.request.urlopen(req, timeout=10)
-        print(f"[bot] reply sent to {room_token} ({len(message)} chars)", flush=True)
-    except Exception as e:
-        print(f"[bot] reply FAILED to {room_token}: {e}", flush=True)
+
 
 
 @app.route("/bot/talk", methods=["POST"])
