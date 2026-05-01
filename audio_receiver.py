@@ -28,6 +28,8 @@ import time
 import urllib.request
 import uuid
 
+import modules.weather as weather_mod
+
 try:
     import anthropic
 except ImportError:
@@ -5362,65 +5364,6 @@ def api_subscription_status():
 # ---------------------------------------------------------------------------
 # Weather API (NWS — no key required)
 # ---------------------------------------------------------------------------
-_nws_cache = {}        # keyed by (lat_rounded, lon_rounded)
-_NWS_CACHE_TTL = 900  # 15 min
-
-def _get_nws_weather(lat=30.2672, lon=-97.7431):
-    import time as _time
-    now  = _time.time()
-    key  = (round(lat, 2), round(lon, 2))
-    cached = _nws_cache.get(key)
-    if cached and now - cached["ts"] < _NWS_CACHE_TTL:
-        return cached["data"]
-    try:
-        headers = {"User-Agent": "BattleBuddy/2.0 (ops@battlebuddy.news)"}
-        req = urllib.request.Request(
-            f"https://api.weather.gov/points/{lat:.4f},{lon:.4f}", headers=headers)
-        with urllib.request.urlopen(req, timeout=8) as r:
-            pts = json.loads(r.read())
-        forecast_url = pts["properties"]["forecast"]
-        hourly_url   = pts["properties"]["forecastHourly"]
-
-        req2 = urllib.request.Request(forecast_url, headers=headers)
-        with urllib.request.urlopen(req2, timeout=8) as r:
-            fc = json.loads(r.read())
-
-        req3 = urllib.request.Request(hourly_url, headers=headers)
-        with urllib.request.urlopen(req3, timeout=8) as r:
-            hr = json.loads(r.read())
-
-        periods  = fc["properties"]["periods"]
-        current  = hr["properties"]["periods"][0]
-
-        # Build 5-day forecast (daytime periods only)
-        days = []
-        for p in periods:
-            if p["isDaytime"] and len(days) < 5:
-                days.append({
-                    "name":      p["name"],
-                    "temp":      p["temperature"],
-                    "unit":      p["temperatureUnit"],
-                    "icon":      p.get("icon", ""),
-                    "short":     p["shortForecast"],
-                    "precip":    p.get("probabilityOfPrecipitation", {}).get("value") or 0,
-                })
-
-        result = {
-            "current": {
-                "temp":    current["temperature"],
-                "unit":    current["temperatureUnit"],
-                "wind":    current.get("windSpeed", ""),
-                "desc":    current["shortForecast"],
-                "icon":    current.get("icon", ""),
-            },
-            "forecast": days,
-        }
-        _nws_cache[key] = {"data": result, "ts": now}
-        return result
-    except Exception as e:
-        print(f"[weather] NWS fetch error: {e}", flush=True)
-        return None
-
 
 @app.route("/api/premium/homicides/summary")
 def api_premium_homicides_summary():
@@ -5508,7 +5451,7 @@ def api_premium_weather():
                 location_label = raw
     except Exception as e:
         print(f"[weather] DB lookup error: {e}", flush=True)
-    data = _get_nws_weather(lat, lon)
+    data = weather_mod.get_nws_weather(lat, lon)
     if not data:
         return jsonify({"error": "weather unavailable"}), 503
     data["location"] = location_label
