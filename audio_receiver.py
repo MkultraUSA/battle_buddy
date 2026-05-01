@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Battle Buddy — Audio Receiver / Brain  v2.0
+"Battle Buddy — Audio Receiver / Brain  v2.0
 
 Receives call audio from call_recorder.py on Pi 1,
 transcribes with Whisper, categorizes by talkgroup,
@@ -9,8 +8,7 @@ stores in SQLite, and serves a map + sitrep web UI.
 
 Usage:
     python3 audio_receiver.py [--port 9001] [--model base] [--enable-hold]
-"""
-
+"
 import argparse
 import base64
 import hashlib
@@ -51,6 +49,8 @@ from modules.atak import (  # noqa: E402
     _atak_resync_on_startup,
 )
 from modules.audio_dedup import is_duplicate_and_mark  # noqa: E402
+from modules.commute import (_check_commute_alerts, _commute_route_info, # noqa: E402
+                         _point_to_segment_distance_miles, _routes_travel_time) # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -175,8 +175,7 @@ def receive():
 
 @app.route("/watchdog_event", methods=["POST"])
 def watchdog_event():
-    """Receive Pi watchdog events and forward as Talk DM alerts."""
-    data  = request.get_json(force=True)
+    """Receive Pi watchdog events and forward as Talk DM alerts."    data  = request.get_json(force=True)
     event = data.get("event", "unknown")
     msg   = data.get("msg", "")
     icons = {"op25_down": "⚠️", "op25_recovered": "✅", "op25_failed": "🚨"}
@@ -189,16 +188,14 @@ def watchdog_event():
 
 @app.route("/pi/commands", methods=["GET"])
 def pi_commands():
-    """Pi polls this endpoint for pending commands (restart_op25, etc.)."""
-    cmds = list(_pi_command_queue)
+    """Pi polls this endpoint for pending commands (restart_op25, etc.)."    cmds = list(_pi_command_queue)
     _pi_command_queue.clear()
     return jsonify({"commands": cmds}), 200
 
 
 @app.route("/test_call", methods=["POST"])
 def test_call():
-    """Inject a synthetic call for pipeline testing — bypasses Whisper."""
-    data = request.get_json(force=True)
+    """Inject a synthetic call for pipeline testing — bypasses Whisper."    data = request.get_json(force=True)
     tgid       = int(data.get("tgid", 1315))
     transcript = data.get("transcript", "")
     tag        = data.get("tag") or TGID_META.get(tgid, {}).get("tag") or f"TGID {tgid}"
@@ -453,8 +450,7 @@ def api_sitrep():
 
 @app.route("/api/voice_sitrep")
 def api_voice_sitrep():
-    """Returns a clean, natural-language spoken sitrep for TTS."""
-    minutes = int(request.args.get("minutes", 60))
+    """Returns a clean, natural-language spoken sitrep for TTS."    minutes = int(request.args.get("minutes", 60))
     calls     = calls_for_sitrep(minutes)
     incidents = [i for i in active_incidents() if not i.get("is_test")]
 
@@ -466,8 +462,7 @@ def api_voice_sitrep():
         parts.append(f"{count} active {'incident' if count == 1 else 'incidents'}.")
         for inc in incidents:
             age = int((time.time() - inc["ts_start"]) / 60)
-            loc = f" at {inc['location']}" if inc.get("location") else ""
-            agencies = json.loads(inc.get("agencies") or "[]")
+            loc = f" at {inc['location']}" if inc.get("location") else             agencies = json.loads(inc.get("agencies") or "[]")
             agency_str = ", ".join(agencies[:3]) if agencies else "unknown agencies"
             age_str = f"{age} minutes ago" if age < 60 else f"{age // 60} hours ago"
             parts.append(
@@ -506,8 +501,7 @@ def api_incidents_active():
 
 @app.route("/api/stats")
 def api_stats():
-    """24-hour summary stats for the splash page."""
-    since = time.time() - 86400
+    """24-hour summary stats for the splash page."    since = time.time() - 86400
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     calls_24h = conn.execute(
@@ -533,12 +527,10 @@ def api_stats():
 
 @app.route("/api/shooting_intel")
 def api_shooting_intel():
-    """
-    Public endpoint: shooting incidents with transcript evidence, last 30 days.
+    "    Public endpoint: shooting incidents with transcript evidence, last 30 days.
     Returns only incidents corroborated by known (non-encrypted) agencies.
     Excludes APD press releases (those are in the verified homicide/press tracker).
-    """
-    import json as _json
+    "    import json as _json
     since = time.time() - (30 * 86400)
     CORROBORATING = {"AFD", "TCEMS", "TCSO", "TCFD"}
     conn = sqlite3.connect(DB_PATH)
@@ -630,16 +622,14 @@ def api_shooting_intel():
 
 @app.route("/api/daily_summary")
 def api_daily_summary():
-    """
-    Public daily summary of incidents bucketed by confidence tier.
+    "    Public daily summary of incidents bucketed by confidence tier.
 
     Confidence tiers:
       confirmed     — corroborated by AFD, TCEMS, TCSO, or TCFD radio traffic
       radio_signal  — detected on known (non-Unknown) agency talkgroup, single source
       press_release — APD press release (verified, but lagging and APD-selected)
       unconfirmed   — Unknown agency / scanner gateway only (low confidence)
-    """
-    import json as _json
+    "    import json as _json
     since = time.time() - 86400
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -660,8 +650,7 @@ def api_daily_summary():
     unconfirmed = []
 
     for row in rows:
-        desc = row["description"] or ""
-        itype = row["itype"] or "UNKNOWN"
+        desc = row["description"] or         itype = row["itype"] or "UNKNOWN"
         try:
             agencies = set(_json.loads(row["agencies"] or "[]"))
         except Exception:
@@ -697,8 +686,7 @@ def api_daily_summary():
 
 @app.route("/api/tgid_guesses")
 def api_tgid_guesses():
-    """Return all TGID identification guesses, grouped by tgid."""
-    conn = sqlite3.connect(DB_PATH)
+    """Return all TGID identification guesses, grouped by tgid."    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM tgid_guesses ORDER BY ts DESC LIMIT 500"
@@ -729,8 +717,7 @@ def api_tgid_guesses():
 
 @app.route("/api/tgid_guesses/confirm", methods=["POST"])
 def api_tgid_confirm():
-    """Manually confirm a TGID name and write it to the tags TSV."""
-    data  = request.get_json(force=True)
+    """Manually confirm a TGID name and write it to the tags TSV."    data  = request.get_json(force=True)
     tgid  = int(data.get("tgid", 0))
     name  = (data.get("name") or "").strip()
     if not tgid or not name:
@@ -754,8 +741,7 @@ def api_tgid_confirm():
 
 @app.route("/api/drone_sighting", methods=["POST"])
 def api_drone_sighting():
-    """Receive a drone sighting from the DroneRID Android app."""
-    data = request.get_json(silent=True)
+    """Receive a drone sighting from the DroneRID Android app."    data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "no JSON body"}), 400
     serial = data.get("serial", "").strip()
@@ -788,8 +774,7 @@ def api_drone_sighting():
 
 @app.route("/api/drone_sightings")
 def api_drone_sightings():
-    """Return recent drone sightings (last 24h by default, ?hours=N to override)."""
-    hours = min(int(request.args.get("hours", 24)), 168)
+    """Return recent drone sightings (last 24h by default, ?hours=N to override)."    hours = min(int(request.args.get("hours", 24)), 168)
     since = time.time() - (hours * 3600)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -803,8 +788,7 @@ def api_drone_sightings():
 
 @app.route("/api/adsb")
 def api_adsb():
-    """Return current aircraft positions + 30-min trails grouped by icao24."""
-    cutoff = time.time() - ADSB_TRAIL_SECS
+    """Return current aircraft positions + 30-min trails grouped by icao24."    cutoff = time.time() - ADSB_TRAIL_SECS
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
@@ -854,8 +838,7 @@ def index():
 # ---------------------------------------------------------------------------
 
 def _verify_bot_signature(raw_body: bytes, random_header: str, sig_header: str) -> bool:
-    """Verify Nextcloud Talk bot HMAC-SHA256 signature."""
-    expected = hmac.new(
+    """Verify Nextcloud Talk bot HMAC-SHA256 signature."    expected = hmac.new(
         TALK_BOT_SECRET.encode(),
         (random_header + raw_body.decode()).encode(),
         hashlib.sha256
@@ -921,8 +904,7 @@ def bot_talk():
             for inc in incs:
                 age     = int((time.time() - inc["ts_start"]) / 60)
                 updated = int((time.time() - inc["ts_updated"]) / 60)
-                loc     = f" @ {inc['location']}" if inc.get("location") else ""
-                agencies = ", ".join(json.loads(inc.get("agencies") or "[]"))
+                loc     = f" @ {inc['location']}" if inc.get("location") else                 agencies = ", ".join(json.loads(inc.get("agencies") or "[]"))
                 lines.append(
                     f"• {inc['itype']}{loc} — started {age}m ago, "
                     f"last update {updated}m ago — {agencies}"
@@ -1009,8 +991,7 @@ def bot_talk():
                 respond(f"Error saving tag: {e}")
 
     elif command == "!query":
-        question = " ".join(parts[1:]).strip() if len(parts) > 1 else ""
-        if not question:
+        question = " ".join(parts[1:]).strip() if len(parts) > 1 else         if not question:
             respond(
                 "Usage: !query <your question>\n\nExamples:\n"
                 "• !query how many shootings this week\n"
@@ -1486,8 +1467,7 @@ setInterval(pollAdsb, 30000);
 </script>
 </body>
 </html>
-"""
-
+"
 # ---------------------------------------------------------------------------
 # Public-facing pages
 # ---------------------------------------------------------------------------
@@ -1788,8 +1768,7 @@ setInterval(loadStats, 60000);
 </script>
 </body>
 </html>
-"""
-
+"
 PUBLIC_MAP_HTML = r"""<!DOCTYPE html>
 <html>
 <head>
@@ -2115,8 +2094,7 @@ setInterval(loadMapStats, 60000);
 </script>
 </body>
 </html>
-"""
-
+"
 PUBLIC_FEED_HTML = r"""<!DOCTYPE html>
 <html>
 <head>
@@ -2272,8 +2250,7 @@ setInterval(refresh, 8000);
 </script>
 </body>
 </html>
-"""
-
+"
 PUBLIC_ABOUT_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2649,8 +2626,7 @@ setInterval(loadStats, 60000);
 </script>
 </body>
 </html>
-"""
-
+"
 
 @app.route("/splash")
 def public_splash():
@@ -2663,8 +2639,7 @@ def public_map():
 
 @app.route("/api/homicides")
 def api_homicides():
-    """Return 2026 homicide data for the heat map — static seed + live DB incidents."""
-    import os
+    """Return 2026 homicide data for the heat map — static seed + live DB incidents."    import os
     seed_path = "/opt/battlebuddy/homicides_2026.json"
     seed = []
     if os.path.exists(seed_path):
@@ -2682,8 +2657,7 @@ def api_homicides():
            WHERE itype = 'HOMICIDE'
              AND lat IS NOT NULL AND lon IS NOT NULL
              AND ts_start > strftime('%s','2026-01-01')
-             AND is_test = 0"""
-    ).fetchall()
+             AND is_test = 0"    ).fetchall()
     conn.close()
 
     live = []
@@ -2696,8 +2670,7 @@ def api_homicides():
             "address": r[4] or "",
             "lat": r[5],
             "lon": r[6],
-            "url": ""
-        })
+            "url":         })
 
     return jsonify({"homicides": seed, "live": live})
 
@@ -2709,8 +2682,7 @@ def public_feed():
 
 @app.route("/public/feed.rss")
 def public_feed_rss():
-    """RSS 2.0 feed of confirmed Battle Buddy incidents (last 200, 30 days)."""
-    cutoff = time.time() - 86400 * 30
+    """RSS 2.0 feed of confirmed Battle Buddy incidents (last 200, 30 days)."    cutoff = time.time() - 86400 * 30
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         "SELECT id, ts_start, itype, location, description, article_url FROM incidents "
@@ -2722,13 +2694,11 @@ def public_feed_rss():
 
     def _esc(s):
         if not s:
-            return ""
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+            return         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
     def _clean_desc(s):
         if not s:
-            return ""
-        # JS/JSON noise from Google News article scraping starts at patterns like
+            return         # JS/JSON noise from Google News article scraping starts at patterns like
         # ","key":  or  ",true,  or  ",[  — cut everything from that point.
         noise = re.search(r'\\["\']', s)
         if noise:
@@ -2742,8 +2712,7 @@ def public_feed_rss():
     for inc_id, ts, itype, location, description, article_url in rows:
         dt = datetime.utcfromtimestamp(ts)
         pub_date = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
-        title_loc = f" — {location}" if location else ""
-        # For press releases, pull title from description for a cleaner feed title
+        title_loc = f" — {location}" if location else         # For press releases, pull title from description for a cleaner feed title
         if description and description.startswith("[APD Press Release]"):
             pr_title = description[len("[APD Press Release] "):].split(".")[0].strip()
             title = _esc(f"[{itype}] {pr_title[:80]}" if pr_title else f"[{itype}]{title_loc}")
@@ -3027,8 +2996,7 @@ async function load() {
 load();
 </script>
 </body>
-</html>"""
-
+</html>"
 
 @app.route("/public/homicides")
 def public_homicides():
@@ -3208,8 +3176,7 @@ setInterval(poll, 30000);
 </script>
 </body>
 </html>
-"""
-
+"
 
 @app.route("/public/aircraft")
 def public_aircraft():
@@ -3225,8 +3192,7 @@ def public_aircraft():
 
 def _load_active_incidents_from_db():
     """On startup, reload active incidents into _active_incidents so _release_stale can close them.
-    Any incident older than 4 hours is closed immediately as stale."""
-    MAX_AGE = 4 * 3600  # close anything untouched for >4 hours
+    Any incident older than 4 hours is closed immediately as stale."    MAX_AGE = 4 * 3600  # close anything untouched for >4 hours
     now = time.time()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -3274,8 +3240,7 @@ def _load_active_incidents_from_db():
 # ---------------------------------------------------------------------------
 
 def _nc_upload(path: str, data: bytes, content_type: str = "text/markdown"):
-    """Upload a file to Nextcloud via WebDAV."""
-    import base64 as _b64
+    """Upload a file to Nextcloud via WebDAV."    import base64 as _b64
     import urllib.request as _ur
     creds = _b64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
     url   = f"{NC_WEBDAV}/{path}"
@@ -3292,8 +3257,7 @@ def _nc_upload(path: str, data: bytes, content_type: str = "text/markdown"):
 
 
 def _export_incident_snapshot(inc_id: int):
-    """Build a markdown snapshot of a flagged incident and push to Nextcloud."""
-    conn = sqlite3.connect(DB_PATH)
+    """Build a markdown snapshot of a flagged incident and push to Nextcloud."    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     inc = conn.execute("SELECT * FROM incidents WHERE id=?", (inc_id,)).fetchone()
     if not inc:
@@ -3344,8 +3308,7 @@ def _export_incident_snapshot(inc_id: int):
         ts_str = _dt.fromtimestamp(c["ts"]).strftime("%H:%M:%S")
         tag    = c["category"] or f"TGID {c['tgid']}"
         xscr   = (c["transcript"] or "*(no transcript)*").strip()
-        dur    = f"{c['duration']:.1f}s" if c["duration"] else ""
-        lines.append(f"**{ts_str}** `{tag}` {dur}  ")
+        dur    = f"{c['duration']:.1f}s" if c["duration"] else         lines.append(f"**{ts_str}** `{tag}` {dur}  ")
         lines.append(f"> {xscr}")
         lines.append("")
 
@@ -3377,8 +3340,7 @@ def _export_incident_snapshot(inc_id: int):
 
 @app.route("/api/incidents/<int:inc_id>/flag", methods=["POST"])
 def api_flag_incident(inc_id):
-    """Flag an incident and export a snapshot to Nextcloud."""
-    conn = sqlite3.connect(DB_PATH)
+    """Flag an incident and export a snapshot to Nextcloud."    conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE incidents SET flagged=1 WHERE id=?", (inc_id,))
     conn.commit()
     conn.close()
@@ -3388,8 +3350,7 @@ def api_flag_incident(inc_id):
 
 @app.route("/api/incidents/flagged")
 def api_flagged_incidents():
-    """Return all flagged incidents."""
-    conn = sqlite3.connect(DB_PATH)
+    """Return all flagged incidents."    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM incidents WHERE flagged=1 ORDER BY ts_start DESC"
@@ -3538,8 +3499,7 @@ document.getElementById('tip-form').addEventListener('submit', async function(e)
 });
 </script>
 </body>
-</html>"""
-
+</html>"
 TIPS_ADMIN_HTML = r"""<!DOCTYPE html>
 <html>
 <head>
@@ -3623,8 +3583,7 @@ async function act(id, action) {
 loadTips();
 </script>
 </body>
-</html>"""
-
+</html>"
 
 @app.route("/tip", methods=["GET"])
 def tip_form():
@@ -3642,8 +3601,7 @@ def tip_submit():
         return jsonify({"error": "location required"}), 400
 
     description = (request.form.get("description") or "").strip()
-    observed_at  = request.form.get("observed_at") or ""
-
+    observed_at  = request.form.get("observed_at") or 
     # Parse observed time or use now
     try:
         ts = datetime.fromisoformat(observed_at).timestamp() if observed_at else time.time()
@@ -3683,8 +3641,7 @@ def tip_submit():
 def api_reddit_tips():
     cutoff = time.time() - 48 * 3600
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("""
-        SELECT r.ts, r.post_id, r.subreddit, r.title, r.url, r.author,
+    rows = conn.execute("        SELECT r.ts, r.post_id, r.subreddit, r.title, r.url, r.author,
                r.keywords, r.tip_status, r.tip_location, r.tip_lat, r.tip_lon,
                r.tip_summary, r.tip_ts_start, r.tip_ts_cleared,
                r.incident_id, i.itype, i.location as inc_location
@@ -3767,8 +3724,7 @@ NEXTCLOUD_WEB_BASE = os.environ.get("NEXTCLOUD_WEB_BASE", "https://nextcloud.exa
 # ---------------------------------------------------------------------------
 
 def _nc_validate_user(username, password):
-    """Validate Nextcloud credentials via OCS API. Returns True/False."""
-    import urllib.parse
+    """Validate Nextcloud credentials via OCS API. Returns True/False."    import urllib.parse
     url = os.environ.get("NEXTCLOUD_OCS_USER_URL", "https://nextcloud.example.com/ocs/v2.php/cloud/user")
     auth_b64 = base64.b64encode(f"{username}:{password}".encode()).decode()
     req = urllib.request.Request(url, headers={
@@ -3785,8 +3741,7 @@ def _nc_validate_user(username, password):
 
 
 def _is_premium(username):
-    """Check if username has an active premium record."""
-    conn = sqlite3.connect(DB_PATH)
+    """Check if username has an active premium record."    conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
         "SELECT status FROM premium_users WHERE username=?", (username,)
     ).fetchone()
@@ -3795,13 +3750,11 @@ def _is_premium(username):
 
 
 def _is_admin(username):
-    """Simple admin check — kevin is always admin."""
-    return username.lower() in ("kevin", "mrrob")
+    """Simple admin check — kevin is always admin."    return username.lower() in ("kevin", "mrrob")
 
 
 def _issue_session(username):
-    """Create a session token, store in DB, return token string."""
-    token = _secrets.token_hex(32)
+    """Create a session token, store in DB, return token string."    token = _secrets.token_hex(32)
     now = time.time()
     expires = now + 86400 * 30  # 30 days
     premium = _is_premium(username)
@@ -3819,8 +3772,7 @@ def _issue_session(username):
 
 def _get_session(request_obj):
     """Extract and validate session token from cookie or Authorization header.
-    Returns dict {username, is_admin, is_premium} or None."""
-    token = request_obj.cookies.get("bb_session") or \
+    Returns dict {username, is_admin, is_premium} or None."    token = request_obj.cookies.get("bb_session") or \
             request_obj.headers.get("Authorization", "").replace("Bearer ", "").strip()
     if not token:
         return None
@@ -3839,8 +3791,7 @@ def _get_session(request_obj):
 
 
 def _require_premium(f):
-    """Decorator: require valid session with is_premium=True."""
-    from functools import wraps
+    """Decorator: require valid session with is_premium=True."    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
         sess = _get_session(request)
@@ -3853,8 +3804,7 @@ def _require_premium(f):
 
 
 def _require_admin(f):
-    """Decorator: require valid session with is_admin=True."""
-    from functools import wraps
+    """Decorator: require valid session with is_admin=True."    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
         sess = _get_session(request)
@@ -3877,8 +3827,7 @@ TALK_ROOMS = {
 
 
 def _nc_create_user(username, password, email, display_name, tier="premium"):
-    """Create Nextcloud user and add to the appropriate membership group."""
-    nc_group = "Premium Members" if tier == "premium" else "Basic Members"
+    """Create Nextcloud user and add to the appropriate membership group."    nc_group = "Premium Members" if tier == "premium" else "Basic Members"
     nc_base = os.environ.get("NEXTCLOUD_OCS_BASE", "https://nextcloud.example.com/ocs/v2.php/cloud")
     auth_b64 = base64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
     headers = {
@@ -3910,8 +3859,7 @@ def _nc_create_user(username, password, email, display_name, tier="premium"):
 
 
 def _subscribe_news_feed(username):
-    """Subscribe a Nextcloud user to the Battle Buddy RSS feed in Nextcloud News."""
-    try:
+    """Subscribe a Nextcloud user to the Battle Buddy RSS feed in Nextcloud News."    try:
         result = subprocess.run(
             ["sudo", "-u", "www-data", "php", "/var/www/nextcloud/occ",
              "news:feed:add", username, "https://battlebuddy.news/public/feed.rss",
@@ -3926,8 +3874,7 @@ def _subscribe_news_feed(username):
 
 
 def _plant_user_guide(username):
-    """Copy Battle Buddy User Guide.md into a new user's NC files and scan it into the DB."""
-    NC_DATA   = "/var/www/nextcloud-data"
+    """Copy Battle Buddy User Guide.md into a new user's NC files and scan it into the DB."    NC_DATA   = "/var/www/nextcloud-data"
     GUIDE_SRC = "/var/www/nextcloud/core/skeleton/Battle Buddy User Guide.md"
     dest_dir  = os.path.join(NC_DATA, username, "files")
     dest_file = os.path.join(dest_dir, "Battle Buddy User Guide.md")
@@ -3947,8 +3894,7 @@ def _plant_user_guide(username):
         print(f"[provision] guide plant error for '{username}': {e}", flush=True)
 
 def _add_to_talk_rooms(username):
-    """Add Nextcloud user to all 4 Battle Buddy Talk rooms."""
-    auth_b64 = base64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
+    """Add Nextcloud user to all 4 Battle Buddy Talk rooms."    auth_b64 = base64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
     headers = {
         "Authorization": f"Basic {auth_b64}",
         "OCS-APIREQUEST": "true",
@@ -3968,8 +3914,7 @@ def _add_to_talk_rooms(username):
 
 
 def _enroll_subscriptions(username):
-    """Add to subscriptions table for DM incident alerts."""
-    conn = sqlite3.connect(DB_PATH)
+    """Add to subscriptions table for DM incident alerts."    conn = sqlite3.connect(DB_PATH)
     conn.execute(
         "INSERT OR IGNORE INTO subscriptions (username, beat) VALUES (?, 'all')",
         (username,)
@@ -3980,16 +3925,14 @@ def _enroll_subscriptions(username):
 
 
 def _send_welcome_email(email, username, setup_token, tier="premium"):
-    """Send Mailgun welcome email with onboarding instructions, tier-aware."""
-    if not MAILGUN_API_KEY or not MAILGUN_DOMAIN:
+    """Send Mailgun welcome email with onboarding instructions, tier-aware."    if not MAILGUN_API_KEY or not MAILGUN_DOMAIN:
         return
 
     atak_step = (
         "=== STEP 7 — ATAK FIELD PACKAGE ===\n"
         "Battle Buddy pushes live incident markers directly to WinTAK, ATAK, and iTAK.\n"
         "Reply to this email to request your ATAK data package and connection instructions.\n\n"
-    ) if tier == "premium" else ""
-
+    ) if tier == "premium" else 
     plain = (
         f"Welcome to Battle Buddy Premium, {username}!\n\n"
         f"=== SET YOUR PASSWORD ===\n"
@@ -4183,8 +4126,7 @@ def _send_welcome_email(email, username, setup_token, tier="premium"):
 
 </div>
 </body>
-</html>"""
-
+</html>"
     url = f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages"
     auth_b64 = base64.b64encode(f"api:{MAILGUN_API_KEY}".encode()).decode()
     data = urllib.parse.urlencode({
@@ -4205,9 +4147,7 @@ def _send_welcome_email(email, username, setup_token, tier="premium"):
 
 
 def _provision_premium_user(session_obj):
-    """Full provisioning flow after successful Stripe checkout."""
-    customer_email = (session_obj.get("customer_details") or {}).get("email") or                      session_obj.get("customer_email") or ""
-    customer_id    = session_obj.get("customer", "")
+    """Full provisioning flow after successful Stripe checkout."    customer_email = (session_obj.get("customer_details") or {}).get("email") or                      session_obj.get("customer_email") or     customer_id    = session_obj.get("customer", "")
     sub_id         = session_obj.get("subscription", "")
     metadata       = session_obj.get("metadata") or {}
 
@@ -4319,8 +4259,7 @@ def api_me():
 
 @app.route("/api/stripe/create_checkout", methods=["POST"])
 def api_stripe_create_checkout():
-    """Create a Stripe Checkout Session. Client sends username, display_name, plan."""
-    if not STRIPE_SECRET_KEY:
+    """Create a Stripe Checkout Session. Client sends username, display_name, plan."    if not STRIPE_SECRET_KEY:
         return jsonify({"error": "payments not configured"}), 503
     data = request.get_json(silent=True) or {}
     username     = (data.get("username") or "").strip().lower()
@@ -4356,8 +4295,7 @@ def api_stripe_create_checkout():
 
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
-    """Stripe sends signed events here. Verify signature, then provision."""
-    payload = request.get_data()
+    """Stripe sends signed events here. Verify signature, then provision."    payload = request.get_data()
     sig_header = request.headers.get("Stripe-Signature", "")
 
     try:
@@ -4409,153 +4347,8 @@ _COMMUTE_ALERT_ITYPES = {
     "HAZMAT", "WEAPONS", "CRASH/COLLISION", "STABBING", "MASS CASUALTY",
 }
 _COMMUTE_CORRIDOR_MILES = 3.0  # incident must be within this distance of route line
-
-
-def _point_to_segment_distance_miles(px, py, ax, ay, bx, by) -> float:
-    """Perpendicular distance (miles) from point P to line segment A→B."""
-    import math
-    dx, dy = bx - ax, by - ay
-    if dx == 0 and dy == 0:
-        dx2 = px - ax; dy2 = py - ay  # noqa: E702
-        return math.sqrt(dx2*dx2 + dy2*dy2) * 69.0
-    t = max(0.0, min(1.0, ((px-ax)*dx + (py-ay)*dy) / (dx*dx + dy*dy)))
-    cx2 = ax + t*dx; cy2 = ay + t*dy  # noqa: E702
-    ddx = px - cx2; ddy = py - cy2  # noqa: E702
-    deg = math.sqrt(ddx*ddx + ddy*ddy)
-    return deg * 69.0  # rough degrees→miles
-
-
-def _routes_travel_time(origin_lat, origin_lon, dest_lat, dest_lon, traffic=True) -> int | None:
-    """Call Google Routes API; return travel time in minutes or None on error."""
-    import json as _json
-    preference = "TRAFFIC_AWARE" if traffic else "TRAFFIC_UNAWARE"
-    body = _json.dumps({
-        "origin":      {"location": {"latLng": {"latitude": origin_lat, "longitude": origin_lon}}},
-        "destination": {"location": {"latLng": {"latitude": dest_lat,   "longitude": dest_lon}}},
-        "travelMode":  "DRIVE",
-        "routingPreference": preference,
-    }).encode()
-    req = urllib.request.Request(
-        "https://routes.googleapis.com/directions/v2:computeRoutes",
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": GOOGLE_ROUTES_KEY,
-            "X-Goog-FieldMask": "routes.duration,routes.staticDuration",
-        },
-        method="POST",
-    )
-    try:
-        resp  = urllib.request.urlopen(req, timeout=10).read().decode()
-        data  = _json.loads(resp)
-        dur   = data.get("routes", [{}])[0].get("duration", "0s")
-        secs  = int(dur.rstrip("s")) if isinstance(dur, str) else 0
-        return max(1, round(secs / 60))
-    except Exception as e:
-        print(f"[commute] Routes API error: {e}", flush=True)
-        return None
-
-
-def _commute_route_info(origin_addr: str, dest_addr: str, traffic: bool = False):
-    """
-    Call Routes API with raw address strings.
-    Returns dict with keys: origin_lat, origin_lon, dest_lat, dest_lon, mins
-    or None on failure. Google geocodes the addresses natively — no Nominatim needed.
-    """
-    import json as _json
-    preference = "TRAFFIC_AWARE" if traffic else "TRAFFIC_UNAWARE"
-    body = _json.dumps({
-        "origin":      {"address": origin_addr},
-        "destination": {"address": dest_addr},
-        "travelMode":  "DRIVE",
-        "routingPreference": preference,
-    }).encode()
-    req = urllib.request.Request(
-        "https://routes.googleapis.com/directions/v2:computeRoutes",
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": GOOGLE_ROUTES_KEY,
-            "X-Goog-FieldMask": "routes.duration,routes.staticDuration,routes.legs.startLocation,routes.legs.endLocation",
-        },
-        method="POST",
-    )
-    try:
-        resp  = urllib.request.urlopen(req, timeout=10).read().decode()
-        data  = _json.loads(resp)
-        route = data.get("routes", [{}])[0]
-        leg   = route.get("legs", [{}])[0]
-        dur   = route.get("duration", "0s")
-        secs  = int(dur.rstrip("s")) if isinstance(dur, str) else 0
-        sloc  = leg.get("startLocation", {}).get("latLng", {})
-        eloc  = leg.get("endLocation",   {}).get("latLng", {})
-        if not sloc or not eloc:
-            return None
-        return {
-            "origin_lat": sloc["latitude"],
-            "origin_lon": sloc["longitude"],
-            "dest_lat":   eloc["latitude"],
-            "dest_lon":   eloc["longitude"],
-            "mins":       max(1, round(secs / 60)),
-        }
-    except Exception as e:
-        print(f"[commute] Routes API error: {e}", flush=True)
-        return None
-
-
-def _check_commute_alerts(inc_id: int, itype: str, inc_lat: float, inc_lon: float, description: str):
-    """Check all premium users with saved commutes; alert those whose route passes near the incident."""
-    if itype not in _COMMUTE_ALERT_ITYPES:
-        return
-    if inc_lat is None or inc_lon is None:
-        return
-    if not GOOGLE_ROUTES_KEY:
-        return
-
-    conn = sqlite3.connect(DB_PATH)
-    users = conn.execute(
-        "SELECT username, commute_origin, commute_origin_lat, commute_origin_lon, "
-        "commute_dest, commute_dest_lat, commute_dest_lon, commute_baseline_mins "
-        "FROM premium_users WHERE status='active' AND commute_origin_lat IS NOT NULL"
-    ).fetchall()
-    conn.close()
-
-    for (username, origin, olat, olon, dest, dlat, dlon, baseline) in users:
-        dist = _point_to_segment_distance_miles(inc_lat, inc_lon, olat, olon, dlat, dlon)
-        if dist > _COMMUTE_CORRIDOR_MILES:
-            continue
-
-        # Fetch live travel time
-        live_mins = _routes_travel_time(olat, olon, dlat, dlon, traffic=True)
-        if live_mins is None:
-            continue
-
-        delta = live_mins - baseline if baseline else None
-        delta_str = ""
-        if delta is not None:
-            if delta > 0:
-                delta_str = f" (+{delta} min over normal)"
-            elif delta < 0:
-                delta_str = f" ({abs(delta)} min faster than normal)"
-
-        # Trim description for message
-        short_desc = description[:120].rsplit(" ", 1)[0] if len(description) > 120 else description
-
-        msg = (
-            f"\U0001f697 [COMMUTE ALERT] {itype} detected {dist:.1f} mi from your route\n"
-            f"\U0001f552 Current travel time: {live_mins} min{delta_str}\n"
-            f"\U0001f4cd {short_desc}"
-        )
-
-        # Send Talk DM
-        try:
-            token = _get_or_create_dm_room(username)
-            if token: _bot_reply(token, msg)  # noqa: E701
-            print(f"[commute] alert sent to {username}: {itype} {dist:.1f}mi, {live_mins}min", flush=True)
-        except Exception as e:
-            print(f"[commute] DM failed for {username}: {e}", flush=True)
-
-
+"
+"
 @app.route("/api/commute/save", methods=["POST"])
 @_require_premium
 def api_commute_save():
@@ -4620,8 +4413,7 @@ def api_commute_time():
 
 @app.route("/api/commute/polyline", methods=["GET"])
 def api_commute_polyline():
-    """Return encoded polyline for user's commute route. Auth via session or share token."""
-    import json as _json
+    """Return encoded polyline for user's commute route. Auth via session or share token."    import json as _json
     token = request.args.get("token")
     if token:
         conn = sqlite3.connect(DB_PATH)
@@ -4676,8 +4468,7 @@ def api_commute_polyline():
 
 @app.route("/api/commute/incidents", methods=["GET"])
 def api_commute_incidents():
-    """Return active incidents near the user's commute route. Auth via session or share token."""
-    token = request.args.get("token")
+    """Return active incidents near the user's commute route. Auth via session or share token."    token = request.args.get("token")
     if token:
         conn = sqlite3.connect(DB_PATH)
         row = conn.execute(
@@ -4733,8 +4524,7 @@ def api_commute_incidents():
 @app.route("/api/commute/share_token", methods=["POST"])
 @_require_premium
 def api_commute_share_token():
-    """Generate or return existing share token for the user's commute map."""
-    import secrets as _secrets
+    """Generate or return existing share token for the user's commute map."    import secrets as _secrets
     sess = _get_session(request)
     username = sess["username"]
     conn = sqlite3.connect(DB_PATH)
@@ -4756,8 +4546,7 @@ def api_commute_share_token():
 
 @app.route("/premium/commute")
 def premium_commute():
-    """Live commute map — premium-gated or token-gated."""
-    token = request.args.get("token")
+    """Live commute map — premium-gated or token-gated."    token = request.args.get("token")
     if not token:
         sess = _get_session(request)
         if not sess or not sess.get("is_premium"):
@@ -4940,8 +4729,7 @@ async function getShareLink() {{
 }}
 </script>
 <script src="https://maps.googleapis.com/maps/api/js?key={maps_key}&libraries=geometry&callback=initMap" async defer></script>
-</body></html>"""
-    return html
+</body></html>"    return html
 
 # ---------------------------------------------------------------------------
 # Intel Query — premium feature (5/month)
@@ -5070,8 +4858,7 @@ def premium_welcome():
     if sess and sess.get("is_premium"):
         from flask import redirect
         return redirect("/premium/")
-    username = sess["username"] if sess else ""
-    html = f"""<!DOCTYPE html>
+    username = sess["username"] if sess else     html = f"""<!DOCTYPE html>
 <html><head><title>Welcome — Battle Buddy Premium</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
@@ -5131,13 +4918,11 @@ async function doLogin() {{
   }}
 }}
 </script>
-</body></html>"""
-    return html
+</body></html>"    return html
 @app.route("/premium/setup")
 def premium_setup():
     token = request.args.get("token", "").strip()
-    error = ""
-    if not token:
+    error =     if not token:
         error = "Missing or invalid setup link."
     else:
         conn = sqlite3.connect(DB_PATH)
@@ -5214,8 +4999,7 @@ async function doSetup() {{
   }}
 }}
 </script>
-</body></html>"""
-
+</body></html>"
 
 @app.route("/api/premium/setpassword", methods=["POST"])
 def api_premium_setpassword():
@@ -5328,8 +5112,7 @@ def api_premium_homicides_summary():
              AND lat IS NOT NULL AND lon IS NOT NULL
              AND ts_start > strftime('%s','2026-01-01')
              AND is_test = 0
-           ORDER BY ts_start DESC"""
-    ).fetchall()
+           ORDER BY ts_start DESC"    ).fetchall()
     conn.close()
     live_count = len(rows)
     # Derive "last" — prefer live geocoded entry, fall back to seed file
@@ -5828,22 +5611,19 @@ const _zp = new URLSearchParams(location.search).get("zoom");
 if(_zp && parseFloat(_zp) > 0) document.body.style.zoom = (parseFloat(_zp) * 100) + "%";
 checkSession();
 </script>
-</body></html>"""
-    return html
+</body></html>"    return html
 
 
 
 @app.route("/api/premium/headlines")
 def premium_headlines():
-    """Return incident_articles linked in the last 24h for the Headlines panel."""
-    sess = _get_session(request)
+    """Return incident_articles linked in the last 24h for the Headlines panel."    sess = _get_session(request)
     if not sess or (not sess.get("is_admin") and not sess.get("is_premium")):
         return jsonify({"error": "unauthorized"}), 401
     cutoff = time.time() - 24 * 3600
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("""
-        SELECT ia.id, ia.ts, ia.headline, ia.url, ia.source, ia.snippet, ia.match_score,
+    rows = conn.execute("        SELECT ia.id, ia.ts, ia.headline, ia.url, ia.source, ia.snippet, ia.match_score,
                i.id   AS inc_id,    i.itype,    i.location,
                i.ts_start,          i.description
         FROM incident_articles ia
@@ -5879,8 +5659,7 @@ def api_premium_citizen_intel():
         return jsonify({"error": "unauthorized"}), 401
     cutoff = time.time() - 7 * 86400
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("""
-        SELECT r.ts, r.post_id, r.subreddit, r.title, r.url, r.author,
+    rows = conn.execute("        SELECT r.ts, r.post_id, r.subreddit, r.title, r.url, r.author,
                r.keywords, r.incident_id, r.match_score,
                i.ts_start, i.itype, i.location,
                (SELECT COUNT(*) FROM incident_calls ic WHERE ic.incident_id = r.incident_id) as call_count
@@ -5908,8 +5687,7 @@ def premium_index():
     sess = _get_session(request)
     is_premium = sess["is_premium"] if sess else False
     is_admin   = sess["is_admin"]   if sess else False
-    username = sess["username"] if sess else ""
-
+    username = sess["username"] if sess else 
     if is_premium or is_admin:
         # Redirect active premium members to dashboard
         conn = sqlite3.connect(DB_PATH)
@@ -6146,8 +5924,7 @@ async function loadCitizenIntel() {{
 loadCitizenIntel();
 setInterval(loadCitizenIntel, 300000);
 </script>
-</body></html>"""
-        return dashboard
+</body></html>"        return dashboard
 
     # Not premium — show subscribe page
     subscribe = """<!DOCTYPE html>
@@ -6334,8 +6111,7 @@ async function login() {
   }
 }
 </script>
-</body></html>"""
-    return subscribe
+</body></html>"    return subscribe
 
 
 
@@ -6345,13 +6121,11 @@ async function login() {
 
 @app.route("/auth/nc_admin")
 def auth_nc_admin():
-    """nginx auth_request endpoint. Returns 200 if caller is a Nextcloud admin, 401 otherwise."""
-    from flask import make_response
+    """nginx auth_request endpoint. Returns 200 if caller is a Nextcloud admin, 401 otherwise."    from flask import make_response
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.lower().startswith("basic "):
         resp = make_response("", 401)
-        resp.headers["WWW-Authenticate"] = "Basic realm=\"OpenClaw\""
-        return resp
+        resp.headers["WWW-Authenticate"] = "Basic realm=\"OpenClaw\        return resp
     try:
         decoded = base64.b64decode(auth_header[6:]).decode("utf-8", errors="replace")
         username, _, password = decoded.partition(":")
@@ -6361,8 +6135,7 @@ def auth_nc_admin():
         return make_response("", 401)
     if not _nc_validate_user(username, password):
         resp = make_response("", 401)
-        resp.headers["WWW-Authenticate"] = "Basic realm=\"OpenClaw\""
-        return resp
+        resp.headers["WWW-Authenticate"] = "Basic realm=\"OpenClaw\        return resp
     if not _is_admin(username):
         return make_response("", 403)
     return make_response("", 200)
