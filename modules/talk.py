@@ -2,7 +2,9 @@
 import base64
 import json
 import urllib.request
-from .config import TALK_BASE, TALK_USER, TALK_PASS
+
+from .config import TALK_BASE, TALK_PASS, TALK_USER
+
 
 def _bot_reply(room_token: str, message: str):
     """Post a reply back to the Talk room that triggered the command."""
