@@ -45,6 +45,10 @@ urllib.request.install_opener(
 
 from flask import Flask, jsonify, render_template_string, request  # noqa: E402
 
+from modules import atak as _atak_mod  # noqa: E402
+from modules.atak import (  # noqa: E402
+    _atak_resync_on_startup,
+)
 from modules.audio_dedup import is_duplicate_and_mark  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -57,11 +61,6 @@ from modules.config import *  # noqa: E402
 from modules.config import _state  # noqa: E402
 from modules.database import *  # noqa: E402
 from modules.geocoding import *  # noqa: E402
-from modules import atak as _atak_mod  # noqa: E402
-from modules.atak import (  # noqa: E402
-    _atak_post_marker,
-    _atak_resync_on_startup,
-)
 from modules.incident_engine import *  # noqa: E402
 from modules.incident_engine import (  # noqa: E402
     _active_incidents,
