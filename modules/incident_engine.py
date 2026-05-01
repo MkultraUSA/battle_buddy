@@ -5,16 +5,13 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
 
+from modules.alerts import _check_commute_alerts
 from modules.config import (
     _INCIDENT_TIMEOUT_DEFAULT,
     APD_SURGE_THRESHOLD,
     APD_SURGE_WINDOW_MIN,
     DB_PATH,
-    FTS_COT_PORT,
-    FTS_ENABLED,
-    FTS_HOST,
     HOLD_ENABLED,
     HOLD_RELEASE_MINUTES,
     INCIDENT_TIMEOUT_MINUTES,
@@ -26,7 +23,6 @@ from modules.config import (
     TALK_USER,
 )
 from modules.database import calls_since
-from modules.alerts import _check_commute_alerts
 from modules.talkgroups import (
     ABIA_OPS_TGIDS,
     AIR_ASSET_TGIDS,
