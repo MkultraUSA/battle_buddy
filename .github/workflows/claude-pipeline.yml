@@ -1,4 +1,4 @@
-# Claude Pipeline — workflow_dispatch enabled (re-indexed 2026-05-02)
+# Claude Pipeline — workflow_dispatch enabled
 name: Claude Pipeline
 
 on:
