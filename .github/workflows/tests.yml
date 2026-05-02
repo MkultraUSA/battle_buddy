@@ -19,12 +19,89 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt -r requirements-dev.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run tests
+        id: test
         run: |
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short 2>&1 | tee /tmp/pytest_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Parse results and notify Telegram
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.test.outputs.exit_code }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || 'PR check' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 << 'PYEOF'
+          import re, json, os, urllib.request, urllib.parse
+
+          # ── Parse pytest output ─────────────────────────────────────────
+          with open('/tmp/pytest_output.txt') as f:
+              text = f.read()
+
+          # Parse summary line: "14 passed, 2 failed, 1 error in 3.45s"
+          m = re.search(r'(\d+)\s+passed.*?(\d+)\s+failed.*?(\d+)\s+error', text)
+          if m:
+              passed = int(m.group(1))
+              failed = int(m.group(2))
+              errors = int(m.group(3))
+          else:
+              passed = len(re.findall(r'\bPASSED\b', text))
+              failed = len(re.findall(r'\bFAILED\b', text))
+              errors = len(re.findall(r'\bERROR\b', text))
+
+          # Extract failing test names
+          failures = []
+          for match in re.finditer(r'FAILED\s+(tests/[\w/]+\.py::[\w:]+)', text):
+              failures.append(match.group(1))
+          if not failures:
+              for match in re.finditer(r'ERRORS\s+(tests/[\w/]+\.py::[\w:]+)', text):
+                  failures.append(match.group(1))
+
+          total = passed + failed + errors
+          exit_code = os.environ['EXIT_CODE']
+
+          # ── Build Telegram message ─────────────────────────────────────
+          if exit_code == '0':
+              msg = f"✅ All {passed}/{total} tests passed\n{os.environ['COMMIT_MSG'][:200]}\n{os.environ['RUN_URL']}"
+          else:
+              msg = f"❌ Tests failed: {passed} passed, {failed} failed, {errors} errors"
+              if failures:
+                  msg += "\n\nFailures:"
+                  for fname in failures[:8]:
+                      msg += f"\n  • {fname}"
+              msg += f"\n\n{os.environ['RUN_URL']}"
+
+          # ── Send to Telegram ───────────────────────────────────────────
+          token = os.environ['TELEGRAM_BOT_TOKEN']
+          chat_id = os.environ['TELEGRAM_CHAT_ID']
+          if token and chat_id:
+              payload = urllib.parse.urlencode({
+                  'chat_id': chat_id,
+                  'text': msg,
+              }).encode()
+              url = f'https://api.telegram.org/bot{token}/sendMessage'
+              req = urllib.request.Request(url, data=payload, method='POST')
+              try:
+                  with urllib.request.urlopen(req, timeout=10) as r:
+                      resp = json.loads(r.read())
+                      print(f'[telegram] sent: {resp.get("ok", False)}')
+              except Exception as e:
+                  print(f'[telegram] send error: {e}')
+          else:
+              print('[telegram] skipped — TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set')
+
+          # ── Output summary for logging ────────────────────────────────
+          print(f'\n=== TEST SUMMARY ===')
+          print(f'Passed:  {passed}')
+          print(f'Failed:  {failed}')
+          print(f'Errors:  {errors}')
+          print(f'Total:   {total}')
+          PYEOF
 
       - name: Upload coverage XML
         if: always()
