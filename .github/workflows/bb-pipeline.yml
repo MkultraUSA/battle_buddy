@@ -1,21 +1,12 @@
 name: BB Pipeline
 on:
   workflow_dispatch:
-    inputs:
-      task:
-        description: 'Goal'
-        required: false
-        type: string
-        default: 'System Fix'
 
 jobs:
-  system_fix:
-    name: Run Remote Fix Script
+  debug_logs:
+    name: Check Hermes Container Logs
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
       - name: Install SSH key
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -23,10 +14,16 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Run Fix Script on Hostinger
+      - name: Get Docker Logs
         env:
           HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
         run: |
-          scp -i ~/.ssh/id_ed25519 scripts/fix_hermes.py "${HOSTINGER_USER}@${HOSTINGER_HOST}:/tmp/fix_hermes.py"
-          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "python3 /tmp/fix_hermes.py"
+          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "
+            echo '=== CONTAINER STATUS ==='
+            docker ps -a | grep hermes
+            echo '=== RECENT LOGS ==='
+            docker logs --tail 100 hermes
+            echo '=== NETWORK LISTENING ==='
+            docker exec hermes netstat -tulpn || docker exec hermes ss -tulpn || echo 'Neither netstat nor ss found in container'
+          "
