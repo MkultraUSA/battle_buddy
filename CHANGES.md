@@ -1,5 +1,9 @@
 # Changes
 
+- PR #84 (hermes/enhance-tests-telegram): https://github.com/MkultraUSA/battle_buddy/pull/84
+  Enhanced tests.yml: parse pytest output + Telegram notifications with pass/fail counts
+  and specific failing test names. Uses Python urllib for safe payload encoding.
+
 - PR #39 (hermes/refactor-afd-open-data-thread):
   Refactor `afd_open_data_thread` from `modules/pollers.py` to
   `modules/pollers/impl/afd_news.py` as `AFDOpenDataPoller` (BasePoller subclass).
