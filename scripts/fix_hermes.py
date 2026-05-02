@@ -1,49 +1,60 @@
-import os, subprocess
-try:
-    # 1. Find and Fix Docker Compose
-    path = subprocess.check_output("find /opt -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1", shell=True).decode().strip()
+import os, subprocess, sys
+
+def fix():
+    # 1. Find Compose
+    path = subprocess.check_output("find / -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1", shell=True).decode().strip()
     if not path:
-        path = subprocess.check_output("find / -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1", shell=True).decode().strip()
-    
-    if path:
-        with open(path, 'r') as f: lines = f.readlines()
-        new_lines = []
-        in_hermes = False
-        for line in lines:
-            if line.strip().startswith('hermes:'): in_hermes = True
-            elif in_hermes and line.strip() and not line.startswith(' ') and not line.strip().startswith('hermes:'):
-                if not line.startswith('  '): in_hermes = False
-            if in_hermes and 'ports:' in line:
-                new_lines.append(line)
-                new_lines.append('      - "3001:3000"\n')
-                continue
-            if '3001:3000' in line: continue
+        print("Error: No compose found")
+        return
+
+    print(f"Fixing {path}")
+    with open(path, 'r') as f: lines = f.readlines()
+
+    new_lines = []
+    in_hermes = False
+    ports_added = False
+    env_added = False
+
+    for line in lines:
+        if line.strip().startswith('hermes:'):
+            in_hermes = True
             new_lines.append(line)
-        with open(path, 'w') as f: f.writelines(new_lines)
+            continue
+        
+        if in_hermes:
+            # Detect exit from hermes service block
+            if line.strip() and not line.startswith('  ') and not line.startswith(' '):
+                in_hermes = False
+            
+            # Inject Ports
+            if in_hermes and not ports_added and ('image:' in line or 'container_name:' in line):
+                new_lines.append(line)
+                new_lines.append('    ports:\n')
+                new_lines.append('      - "3001:3000"\n')
+                ports_added = True
+                continue
 
-    # 2. WIPE LOCKS AND SESSIONS (Crucial for fixing 'Accepted but no bytes' errors)
-    print("Wiping locks and sessions...")
-    data_dir = "/opt/hermes-data"
-    subprocess.run(["rm", "-rf", os.path.join(data_dir, "sessions")], capture_output=True)
-    subprocess.run(["rm", "-f", os.path.join(data_dir, "gateway.lock")], capture_output=True)
-    subprocess.run(["chown", "-R", "1000:1000", data_dir], capture_output=True)
+            # Inject Environment
+            if in_hermes and not env_added and ('volumes:' in line):
+                new_lines.append('    environment:\n')
+                new_lines.append('      - HOST=0.0.0.0\n')
+                new_lines.append('      - PORT=3000\n')
+                new_lines.append(line)
+                env_added = True
+                continue
 
-    # 3. RESTART
-    print("Restarting Docker...")
+        # Prevent duplicate entries
+        if '3001:3000' in line or 'HOST=0.0.0.0' in line or 'PORT=3000' in line:
+            continue
+        new_lines.append(line)
+
+    with open(path, 'w') as f: f.writelines(new_lines)
+
+    # 2. Restart
     os.chdir(os.path.dirname(path))
-    subprocess.run(["docker", "compose", "down"], capture_output=True)
-    subprocess.run(["docker", "compose", "up", "-d"], capture_output=True)
-    
-    # 4. FIREWALL
+    subprocess.run(["docker", "compose", "up", "-d"])
     subprocess.run(["iptables", "-I", "INPUT", "-p", "tcp", "--dport", "3001", "-j", "ACCEPT"])
-    
-    # 5. POST-START LOG CHECK
-    import time
-    time.sleep(10)
-    logs = subprocess.check_output(["docker", "logs", "--tail", "20", "hermes"]).decode()
-    print("--- CONTAINER LOGS ---")
-    print(logs)
-    
-    print("SUCCESS: State wiped and container restarted.")
-except Exception as e:
-    print(f"FAILED: {e}")
+    print("SUCCESS")
+
+if __name__ == "__main__":
+    fix()
