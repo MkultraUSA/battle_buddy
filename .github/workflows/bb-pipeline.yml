@@ -8,8 +8,8 @@ on:
         type: string
 
 jobs:
-  coder:
-    name: Hermes coder - open PR
+  system_fix:
+    name: System Diagnosis and Force Fix
     runs-on: ubuntu-latest
     steps:
       - name: Install SSH key
@@ -19,26 +19,51 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Execute System Task
+      - name: Diagnosis and Fix
         env:
           HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
-          TASK: ${{ inputs.task }}
         run: |
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "
-            echo 'Searching for docker-compose.yml...'
-            COMPOSE_PATH=\$(find / -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1)
-            if [ -z \"\$COMPOSE_PATH\" ]; then
-              echo 'Error: Could not find docker-compose.yml'
-              exit 1
+            echo '=== DOCKER STATUS ==='
+            docker ps --format '{{.Names}}: {{.Ports}}' | grep hermes || echo 'Hermes not running'
+            
+            echo '=== FINDING COMPOSE ==='
+            COMPOSE_PATH=\$(find /opt -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1)
+            [ -z \"\$COMPOSE_PATH\" ] && COMPOSE_PATH=\$(find / -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1)
+            echo \"Path: \$COMPOSE_PATH\"
+            
+            if [ -n \"\$COMPOSE_PATH\" ]; then
+                echo '=== APPLYING PORT 3001 ==='
+                # Use python to safely inject the port mapping into the hermes service
+                python3 -c \"
+import sys
+path = r'\$COMPOSE_PATH'
+with open(path, 'r') as f: lines = f.readlines()
+new_lines = []
+in_hermes = False
+has_ports = False
+for line in lines:
+    if line.strip().startswith('hermes:'):
+        in_hermes = True
+    elif in_hermes and (not line.startswith(' ') and not line.strip() == '' and not line.strip().startswith('#') and not line.strip().startswith('hermes:')):
+        in_hermes = False
+    
+    if in_hermes and 'ports:' in line:
+        has_ports = True
+        new_lines.append(line)
+        new_lines.append('      - \\\"3001:3000\\\"\\n')
+        continue
+    
+    if '3001:3000' in line: continue
+    new_lines.append(line)
+
+with open(path, 'w') as f: f.writelines(new_lines)
+\"
+                echo '=== RESTARTING ==='
+                cd \$(dirname \"\$COMPOSE_PATH\") && docker compose up -d
             fi
-            echo \"Found compose file at: \$COMPOSE_PATH\"
             
-            # Use sed to ensure 3001:3000 mapping exists for hermes
-            # This looks for the hermes service and adds/updates the ports
-            sed -i '/hermes:/,/ports:/ s/- \"[0-9]*:3000\"/- \"3001:3000\"/' \"\$COMPOSE_PATH\"
-            
-            echo 'Restarting services...'
-            cd \$(dirname \"\$COMPOSE_PATH\") && docker compose up -d
-            echo 'Done.'
+            echo '=== FIREWALL ==='
+            iptables -I INPUT -p tcp --dport 3001 -j ACCEPT || true
           "
