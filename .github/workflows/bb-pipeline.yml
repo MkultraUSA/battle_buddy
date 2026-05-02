@@ -3,8 +3,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  read_compose:
-    name: Read Hostinger Docker Compose
+  apply_persistent_fix:
+    name: Apply Persistent Port and Host Fix
     runs-on: ubuntu-latest
     steps:
       - name: Install SSH key
@@ -14,13 +14,59 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Read File
+      - name: Update Compose and Restart
         env:
           HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
         run: |
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "
             COMPOSE_PATH=\$(find / -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1)
-            echo 'PATH: '\$COMPOSE_PATH
-            cat \"\$COMPOSE_PATH\"
+            [ -z \"\$COMPOSE_PATH\" ] && exit 1
+            
+            # Robust Python script to inject ports and environment safely
+            python3 -c \"
+import sys
+path = '\$COMPOSE_PATH'
+with open(path, 'r') as f: lines = f.readlines()
+new_lines = []
+in_hermes = False
+ports_added = False
+env_added = False
+
+for i, line in enumerate(lines):
+    if line.strip().startswith('hermes:'):
+        in_hermes = True
+        new_lines.append(line)
+        continue
+    
+    if in_hermes:
+        # Check if we exited the hermes block (next service started at same indent)
+        if line.strip() and not line.startswith('  ') and not line.startswith(' '):
+            in_hermes = False
+        
+        # Inject ports if missing
+        if in_hermes and not ports_added and ('image:' in line or 'container_name:' in line):
+            new_lines.append(line)
+            new_lines.append('    ports:\\n')
+            new_lines.append('      - \\\"3001:3000\\\"\\n')
+            ports_added = True
+            continue
+            
+        # Inject environment if missing
+        if in_hermes and not env_added and ('volumes:' in line):
+            new_lines.append('    environment:\\n')
+            new_lines.append('      - HOST=0.0.0.0\\n')
+            new_lines.append('      - PORT=3000\\n')
+            new_lines.append(line)
+            env_added = True
+            continue
+
+    if '3001:3000' in line or 'HOST=0.0.0.0' in line:
+        continue
+    new_lines.append(line)
+
+with open(path, 'w') as f: f.writelines(new_lines)
+\"
+            cd \$(dirname \"\$COMPOSE_PATH\") && docker compose up -d
+            iptables -I INPUT -p tcp --dport 3001 -j ACCEPT || true
           "
