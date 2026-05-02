@@ -1,4 +1,4 @@
-# Battle Buddy Pipeline — workflow_dispatch (freshly registered 2026-05-02)
+# Battle Buddy Pipeline - workflow_dispatch (freshly registered 2026-05-02)
 name: BB Pipeline
 
 on:
