@@ -1,5 +1,30 @@
 import re
+import sqlite3
 import threading
+
+from modules.config import DB_PATH
+
+_GEOCODE_DB_INITIALIZED = False
+
+def init_geocode_db():
+    global _GEOCODE_DB_INITIALIZED
+    if _GEOCODE_DB_INITIALIZED:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            address TEXT PRIMARY KEY,
+            lat REAL,
+            lon REAL,
+            ts REAL
+        )
+    """)
+    conn.commit()
+    conn.close()
+    _GEOCODE_DB_INITIALIZED = True
+
+init_geocode_db()
+
 
 LOCATION_HINTS = [
     ("state capitol",      30.2747, -97.7404),
@@ -36,8 +61,7 @@ LOCATION_HINTS = [
     ("carillon",           30.3566, -97.4930),
 ]
 
-_geocode_cache: dict = {}
-_geocode_lock        = threading.Lock()
+
 _GEO_BOUNDS          = (29.85, -98.25, 30.70, -97.25)
 
 _ADDR_RE = re.compile(
@@ -51,9 +75,12 @@ _ADDR_RE = re.compile(
 
 def _geocode_address(address: str):
     key = address.lower().strip()
-    with _geocode_lock:
-        if key in _geocode_cache:
-            return _geocode_cache[key]
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT lat, lon FROM geocode_cache WHERE address=?", (key,)).fetchone()
+    if row:
+        conn.close()
+        return row["lat"], row["lon"]
     try:
         from geopy.geocoders import Nominatim
         geo = Nominatim(user_agent="battlebuddy/1.0")
@@ -63,16 +90,17 @@ def _geocode_address(address: str):
             if result:
                 lat, lon = result.latitude, result.longitude
                 if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
-                    with _geocode_lock:
-                        _geocode_cache[key] = (lat, lon)
+                    conn.execute("INSERT OR REPLACE INTO geocode_cache (address, lat, lon, ts) VALUES (?, ?, ?, ?)", (key, lat, lon, __import__('time').time()))
+                    conn.commit()
+                    conn.close()
                     print(f"[geocode] '{address}' → {lat:.4f},{lon:.4f}", flush=True)
                     return lat, lon
-        with _geocode_lock:
-            _geocode_cache[key] = None
+        conn.execute("INSERT OR REPLACE INTO geocode_cache (address, lat, lon, ts) VALUES (?, ?, ?, ?)", (key, None, None, __import__('time').time()))
+        conn.commit()
+        conn.close()
     except Exception as exc:
         print(f"[geocode] error for '{address}': {exc}", flush=True)
-        with _geocode_lock:
-            _geocode_cache[key] = None
+        conn.close()
     return None
 
 
