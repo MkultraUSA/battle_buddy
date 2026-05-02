@@ -1702,22 +1702,13 @@ NEXTCLOUD_WEB_BASE = os.environ.get("NEXTCLOUD_WEB_BASE", "https://nextcloud.exa
 # ---------------------------------------------------------------------------
 # Auth helpers and provisioning — imported from modules.premium
 from modules.premium import (  # noqa: E402
-    _nc_validate_user,
-    _is_premium,
+    _get_session,
+    _get_session_by_token,
     _is_admin,
     _issue_session,
-    _get_session,
-    _require_premium,
-    _require_admin,
-    _nc_create_user,
-    _subscribe_news_feed,
-    _plant_user_guide,
-    _add_to_talk_rooms,
-    _enroll_subscriptions,
-    _send_welcome_email,
+    _nc_validate_user,
     _provision_premium_user,
-    _get_session_by_token,
-    TALK_ROOMS,
+    _require_premium,
 )
 # ---------------------------------------------------------------------------
 # Auth routes
