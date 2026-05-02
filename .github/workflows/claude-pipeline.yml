@@ -1,0 +1,160 @@
+name: Claude Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'What to build or change (plain English)'
+        required: true
+        type: string
+      branch:
+        description: 'Feature branch name (auto-generated if blank)'
+        required: false
+        type: string
+
+jobs:
+  coder:
+    runs-on: ubuntu-latest
+    outputs:
+      pr_url: ${{ steps.get_pr.outputs.pr_url }}
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.HOSTINGER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Generate branch name
+        id: branch
+        run: |
+          if [ -n "${{ inputs.branch }}" ]; then
+            echo "name=${{ inputs.branch }}" >> $GITHUB_OUTPUT
+          else
+            slug=$(echo "${{ inputs.task }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 ]//g' | tr ' ' '-' | cut -c1-40 | sed 's/-$//')
+            echo "name=feature/${slug}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Write coder task
+        run: |
+          BRANCH="${{ steps.branch.outputs.name }}"
+          TASK="${{ inputs.task }}"
+          ssh root@${{ secrets.HOSTINGER_HOST }} "cat > /opt/hermes-data/hermes_task.txt << 'EOF'
+          You are making code changes to the Battle Buddy codebase.
+          Workspace: /opt/data/workspace/battle_buddy/
+
+          STEP 1 - Sync workspace:
+          cd /opt/data/workspace/battle_buddy && git checkout main && git fetch origin && git reset --hard origin/main
+          git checkout -b ${BRANCH}
+
+          STEP 2 - Make changes:
+          ${TASK}
+
+          STEP 3 - Verify:
+          Run py_compile on any changed .py files.
+          Run /opt/hermes/.venv/bin/ruff check on changed .py files --select E,F,I
+          Fix all errors before continuing.
+
+          STEP 4 - Commit and push:
+          git add -A
+          git commit -m \"implement: ${TASK:0:60}\"
+          git push origin ${BRANCH}
+
+          STEP 5 - Open PR:
+          gh pr create --title \"${TASK:0:70}\" --body \"Automated via Claude Pipeline workflow_dispatch.\" --base main --head ${BRANCH}
+          Print the PR URL on its own line starting with https://github.com/
+
+          RULES:
+          - Never add Co-Authored-By lines. Check git log -1 and amend if present.
+          - gh is already authenticated via GITHUB_TOKEN env var — never run gh auth commands
+          - ruff path: /opt/hermes/.venv/bin/ruff
+          EOF"
+
+      - name: Run Hermes coder
+        run: |
+          ssh root@${{ secrets.HOSTINGER_HOST }} "tmux send-keys -t hermes-ci 'docker exec -it -u hermes -e HOME=/opt/data/home -e GITHUB_TOKEN=*** secrets.WORKER_GH_TOKEN }} hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"Read /opt/data/hermes_task.txt and follow all instructions exactly.\"' Enter"
+
+      - name: Poll for PR URL
+        id: get_pr
+        run: |
+          for i in $(seq 1 40); do
+            sleep 30
+            output=$(ssh root@${{ secrets.HOSTINGER_HOST }} "tmux capture-pane -t hermes-ci -p | tail -80")
+            pr_url=$(echo "$output" | grep -oP 'https://github\.com/MkultraUSA/battle_buddy/pull/\d+' | tail -1)
+            if [ -n "$pr_url" ]; then
+              echo "pr_url=$pr_url" >> $GITHUB_OUTPUT
+              echo "Found PR: $pr_url"
+              exit 0
+            fi
+            echo "Attempt $i/40 — waiting for Hermes..."
+          done
+          echo "Timeout: Hermes did not produce a PR URL within 20 minutes"
+          exit 1
+
+  reviewer:
+    needs: coder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.HOSTINGER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Write reviewer task
+        run: |
+          PR_URL="${{ needs.coder.outputs.pr_url }}"
+          ssh root@${{ secrets.HOSTINGER_HOST }} "cat > /opt/hermes-data/hermes_task.txt << 'EOF'
+          You are reviewing a GitHub pull request as the Battle Buddy PR reviewer.
+          PR to review: ${PR_URL}
+
+          STEP 1 - Switch to reviewer account:
+          gh auth switch --user Radics
+
+          STEP 2 - Fetch the PR:
+          gh pr view ${PR_URL} --json title,body,headRefName,baseRefName
+          gh pr diff ${PR_URL}
+
+          STEP 3 - Check CI status:
+          gh pr checks ${PR_URL}
+          Wait for all checks to complete. If secrets-scan or python-syntax fail, request changes.
+
+          STEP 4 - Review checklist:
+          - No secrets in diff (api_key, token=, password=, Bearer, sk-)
+          - No .env file changes
+          - Base is main, head is feature/*
+          - DB path is /opt/battlebuddy/calls.db not incidents.db
+          - Scope matches PR title — no unrelated changes
+          - No .bakN files added
+
+          STEP 5 - Post review:
+          If all checks pass:
+            gh pr review ${PR_URL} --approve --body "LGTM — CI green, checklist passed."
+            Then send Telegram notification:
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d text="PR ready to merge: ${PR_URL}"
+          Else:
+            gh pr review ${PR_URL} --request-changes --body "Issues found: <list specific problems with file:line refs>"
+
+          RULES:
+          - Never approve without reading the actual diff
+          - Never approve if CI is still pending
+          EOF"
+
+      - name: Run Hermes reviewer
+        run: |
+          ssh root@${{ secrets.HOSTINGER_HOST }} "tmux send-keys -t hermes-ci 'docker exec -it -u hermes -e HOME=/opt/data/home -e GITHUB_TOKEN=*** secrets.WORKER_GH_TOKEN }} hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"Read /opt/data/hermes_task.txt and follow all instructions exactly.\"' Enter"
+
+      - name: Poll for completion
+        run: |
+          for i in $(seq 1 20); do
+            sleep 30
+            output=$(ssh root@${{ secrets.HOSTINGER_HOST }} "tmux capture-pane -t hermes-ci -p | tail -30")
+            if echo "$output" | grep -qE "(LGTM|approved|request.changes|Changes requested|Telegram)"; then
+              echo "Reviewer completed."
+              exit 0
+            fi
+            echo "Attempt $i/20 — waiting for reviewer..."
+          done
+          echo "Reviewer timeout — check Hostinger manually"
+          exit 0
