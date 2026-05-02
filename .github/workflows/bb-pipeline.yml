@@ -1,8 +1,13 @@
 name: BB Pipeline
 on:
   workflow_dispatch:
+    inputs:
+      task:
+        description: 'Goal'
+        required: true
+        type: string
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Parsed successfully"
+      - run: echo "Inputs recognized"
