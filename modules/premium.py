@@ -7,31 +7,30 @@ audio_receiver.py.
 """
 
 import base64
-import hashlib
-import hmac
 import json
 import os
+import pwd
+import shutil
 import sqlite3
-import threading
-import time
-import urllib.request
-from datetime import datetime, timezone
 
-import stripe as _stripe
-from flask import Blueprint, jsonify, redirect, request
+# Bypass SSL cert verification (Nextcloud snap cert not in system store)
+import ssl as _ssl_mod
+import subprocess
+import time
+import urllib.parse
+import urllib.request
+
+from flask import Blueprint, jsonify, request
 
 from modules.config import (
     DB_PATH,
-    NEXTCLOUD_ADMIN_PASS,
-    NEXTCLOUD_ADMIN_USER,
-    NEXTCLOUD_URL,
-    POSTMARK_API_KEY,
-    STRIPE_SECRET_KEY,
-    STRIPE_WEBHOOK_SECRET,
+    MAILGUN_API_KEY,
+    MAILGUN_DOMAIN,
+    MAILGUN_FROM,
+    NC_PASS,
+    NC_USER,
 )
-from modules.database import get_db
-# Bypass SSL cert verification (Nextcloud snap cert not in system store)
-import ssl as _ssl_mod
+
 _ssl_ctx = _ssl_mod._create_unverified_context()
 
 
@@ -43,8 +42,8 @@ import secrets as _secrets  # noqa: E402
 
 import stripe as _stripe  # noqa: E402
 
-STRIPE_SECRET_KEY      = os.environ.get("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID        = os.environ.get("STRIPE_PRICE_ID", "")  # legacy
 STRIPE_PLANS = {
     "premium_monthly": {"price_id": "price_1TGmOYIkODTTsH8IeoQPtVXf", "tier": "premium"},
@@ -551,7 +550,7 @@ def _provision_premium_user(session_obj):
 # Auth routes
 # ---------------------------------------------------------------------------
 
-@app.route("/api/login", methods=["POST"])
+@premium_bp.route("/api/login", methods=["POST"])
 def api_login():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip().lower()
@@ -586,7 +585,7 @@ def _get_session_by_token(token):
     return {"username": username, "is_admin": bool(is_admin), "is_premium": bool(is_premium)}
 
 
-@app.route("/api/logout", methods=["POST"])
+@premium_bp.route("/api/logout", methods=["POST"])
 def api_logout():
     sess = _get_session(request)
     if sess:
@@ -602,7 +601,7 @@ def api_logout():
     return resp
 
 
-@app.route("/api/me")
+@premium_bp.route("/api/me")
 def api_me():
     sess = _get_session(request)
     if not sess:
@@ -614,7 +613,7 @@ def api_me():
 # Stripe checkout + webhook
 # ---------------------------------------------------------------------------
 
-@app.route("/api/stripe/create_checkout", methods=["POST"])
+@premium_bp.route("/api/stripe/create_checkout", methods=["POST"])
 def api_stripe_create_checkout():
     """Create a Stripe Checkout Session. Client sends username, display_name, plan."""
     if not STRIPE_SECRET_KEY:
@@ -653,35 +652,35 @@ def api_stripe_create_checkout():
 
 @premium_bp.route("/premium/")
 def premium_dashboard_route():
-    return premium_dashboard()
+    return premium_dashboard()  # noqa: F821
 
 @premium_bp.route("/premium/setup", methods=["GET", "POST"])
 def premium_setup_route():
     if request.method == "GET":
-        return premium_setup_page()
+        return premium_setup_page()  # noqa: F821
     else:
-        return premium_set_password()
+        return premium_set_password()  # noqa: F821
 
 @premium_bp.route("/premium/commute", methods=["GET", "POST"])
 def premium_commute_route():
     if request.method == "GET":
-        return commute_map_page()
+        return commute_map_page()  # noqa: F821
     else:
-        return commute_map_save()
+        return commute_map_save()  # noqa: F821
 
 @premium_bp.route("/premium/cancel", methods=["GET"])
 def premium_cancel_route():
-    return premium_cancel_page()
+    return premium_cancel_page()  # noqa: F821
 
 @premium_bp.route("/premium/update_payment", methods=["GET"])
 def premium_update_payment_route():
-    return premium_update_payment_page()
+    return premium_update_payment_page()  # noqa: F821
 
 @premium_bp.route("/api/stripe/create_checkout", methods=["POST"])
 def stripe_create_checkout_route():
-    return stripe_create_checkout()
+    return stripe_create_checkout()  # noqa: F821
 
 @premium_bp.route("/api/stripe/webhook", methods=["POST"])
 def stripe_webhook_route():
-    return stripe_webhook()
+    return stripe_webhook()  # noqa: F821
 
