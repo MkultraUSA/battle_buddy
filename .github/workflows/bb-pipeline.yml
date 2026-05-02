@@ -6,8 +6,13 @@ on:
         description: 'Goal'
         required: true
         type: string
+
 jobs:
-  test:
+  coder:
+    name: Hermes coder - open PR
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Inputs recognized"
+      - name: Work logic placeholder
+        run: |
+          echo "Starting task: ${{ inputs.task }}"
+          echo "This is where the SSH and Scp logic will eventually go."
