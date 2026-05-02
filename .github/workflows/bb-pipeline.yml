@@ -1,24 +1,101 @@
 name: BB Pipeline
 on:
   workflow_dispatch:
+    inputs:
+      task:
+        description: 'Goal'
+        required: true
+        type: string
 
 jobs:
-  fix:
-    name: Persistent Remote Fix
+  coder:
+    name: Hermes coder - open PR
     runs-on: ubuntu-latest
+    outputs:
+      pr_url: ${{ steps.extract.outputs.pr_url }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
       - name: Install SSH key
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Run Fix
+
+      - name: Write task and token to Hostinger
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          WORKER_GH_TOKEN: ${{ secrets.WORKER_GH_TOKEN }}
+          TASK: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          printf 'GITHUB_TOKEN="%s"\n' "${WORKER_GH_TOKEN}" > /tmp/worker.env
+          scp -i ~/.ssh/id_ed25519 /tmp/worker.env "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/.worker.env"
+          printf '%s\n' "${TASK}" > /tmp/hermes_task.txt
+          scp -i ~/.ssh/id_ed25519 /tmp/hermes_task.txt "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/hermes_task.txt"
+
+      - name: Trigger Coder via tmux
         env:
           HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
         run: |
-          scp -i ~/.ssh/id_ed25519 scripts/fix_hermes.py "${HOSTINGER_USER}@${HOSTINGER_HOST}:/tmp/fix_hermes.py"
-          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "python3 /tmp/fix_hermes.py"
+          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
+          sleep 2
+          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
+            "tmux send-keys -t hermes-ci 'docker exec -it -u hermes --env-file /opt/hermes-data/.worker.env -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"I need to work on the Battle Buddy codebase in /opt/data/workspace/battle_buddy/. Please read /opt/data/hermes_task.txt and execute the requested improvement. When finished, open a PR to main and print the PR URL on its own line.\"' Enter"
+
+      - name: Poll tmux for PR URL
+        id: extract
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+        run: |
+          set -euo pipefail
+          # Poll for 20 minutes
+          DEADLINE=$(( $(date +%s) + 20*60 ))
+          while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
+            sleep 30
+            PANE=$(ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux capture-pane -t hermes-ci -p -S -500" || true)
+            PR_URL=$(printf '%s' "${PANE}" | grep -oE 'https://github\.com/MkultraUSA/battle_buddy/pull/[0-9]+' | tail -1 || true)
+            if [ -n "${PR_URL}" ]; then
+              echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          exit 1
+
+  reviewer:
+    name: Hermes reviewer - critique PR
+    runs-on: ubuntu-latest
+    needs: coder
+    steps:
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Write reviewer task to Hostinger
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          PR_URL: ${{ needs.coder.outputs.pr_url }}
+        run: |
+          cat > /tmp/hermes_task.txt <<EOF
+          You are the bb-reviewer. 
+          1. Find the PR: ${PR_URL}
+          2. Inspect the diff and pass/fail checks.
+          3. Approve or request changes.
+          EOF
+          scp -i ~/.ssh/id_ed25519 /tmp/hermes_task.txt "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/hermes_task.txt"
+
+      - name: Trigger Reviewer via tmux
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
+          sleep 2
+          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
+            "tmux send-keys -t hermes-ci 'docker exec -it -u hermes -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"Read /opt/data/hermes_task.txt and perform the PR review now.\" ' Enter"
