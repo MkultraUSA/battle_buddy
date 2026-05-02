@@ -3,8 +3,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  debug_logs:
-    name: Check Hermes Container Logs
+  read_compose:
+    name: Read Hostinger Docker Compose
     runs-on: ubuntu-latest
     steps:
       - name: Install SSH key
@@ -14,16 +14,13 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Get Docker Logs
+      - name: Read File
         env:
           HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
         run: |
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "
-            echo '=== CONTAINER STATUS ==='
-            docker ps -a | grep hermes
-            echo '=== RECENT LOGS ==='
-            docker logs --tail 100 hermes
-            echo '=== NETWORK LISTENING ==='
-            docker exec hermes netstat -tulpn || docker exec hermes ss -tulpn || echo 'Neither netstat nor ss found in container'
+            COMPOSE_PATH=\$(find / -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1)
+            echo 'PATH: '\$COMPOSE_PATH
+            cat \"\$COMPOSE_PATH\"
           "
