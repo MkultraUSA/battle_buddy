@@ -1,0 +1,82 @@
+name: System - Persistent Hermes Workspace Fix
+on:
+  workflow_dispatch:
+
+jobs:
+  workspace_fix:
+    name: Persist Hermes Port 3001
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Surgical Compose Update
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "
+            FILE=\$(find / -name docker-compose.yml 2>/dev/null | xargs grep -l 'hermes' | head -n 1)
+            [ -z \"\$FILE\" ] && echo 'No compose found' && exit 1
+            echo 'Updating \$FILE'
+            
+            # Use python for safe YAML manipulation
+            python3 -c \"
+import sys
+import os
+
+path = r'\$FILE'
+with open(path, 'r') as f:
+    lines = f.readlines()
+
+new_lines = []
+in_hermes = False
+has_ports = False
+has_env = False
+
+for line in lines:
+    stripped = line.strip()
+    
+    if stripped == 'hermes:':
+        in_hermes = True
+        new_lines.append(line)
+        continue
+    
+    # Exit hermes block if we hit a new top-level service
+    if in_hermes and stripped and not line.startswith(' ') and not line.startswith('  '):
+        in_hermes = False
+
+    if in_hermes:
+        # Skip existing port/env mappings to avoid duplicates
+        if '3001:3000' in line or 'HOST=0.0.0.0' in line:
+            continue
+            
+        # Add ports if we hit the image line
+        if 'image:' in line and not ports_added:
+            new_lines.append(line)
+            new_lines.append('    ports:\\n')
+            new_lines.append('      - \\\"3001:3000\\\"\\n')
+            ports_added = True
+            continue
+            
+        # Add environment if we hit volumes
+        if 'volumes:' in line and not env_added:
+            new_lines.append('    environment:\\n')
+            new_lines.append('      - HOST=0.0.0.0\\n')
+            new_lines.append('      - PORT=3000\\n')
+            new_lines.append(line)
+            env_added = True
+            continue
+
+    new_lines.append(line)
+
+with open(path, 'w') as f:
+    f.writelines(new_lines)
+\"
+            cd \$(dirname \"\$FILE\") && docker compose up -d
+            iptables -I INPUT -p tcp --dport 3001 -j ACCEPT || true
+          "
