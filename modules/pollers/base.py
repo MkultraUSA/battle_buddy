@@ -10,6 +10,8 @@ BasePoller manages the thread lifecycle: start/stop and the poll loop.
 import abc
 import threading
 import time
+from modules.talk import _post_to_talk
+from modules.config import _state
 
 
 class BasePoller(abc.ABC):
@@ -32,14 +34,40 @@ class BasePoller(abc.ABC):
     def _loop(self) -> None:
         if self.stop_event.is_set():
             return
-        while True:
+        
+        failure_count = 0
+        while not self.stop_event.is_set():
             try:
                 self.run()
+                failure_count = 0  # Reset on success
             except Exception as e:
-                print("Poller error: " + str(e))
-            time.sleep(self.interval)
-            if self.stop_event.is_set():
-                return
+                failure_count += 1
+                backoff_time = self.interval * (2 ** min(failure_count, 4))  # Exponential backoff up to 16x
+                print(f"Poller error in {self.__class__.__name__}: {e}. Retrying in {backoff_time}s (attempt {failure_count})")
+                
+                if failure_count > 5: # Notify after 5 consecutive failures
+                    self._send_failure_notification(e, failure_count)
+
+                self.stop_event.wait(backoff_time)
+                continue
+
+            self.stop_event.wait(self.interval)
+
+    def _send_failure_notification(self, e: Exception, failure_count: int):
+        if not _state.get("TALK_ENABLED"):
+            return
+        
+        message = f"Poller {self.__class__.__name__} has failed {failure_count} consecutive times. Last error: {e}"
+        
+        for room in _state.get("TALK_ADMIN_ROOMS", []):
+            _post_to_talk(
+                message,
+                [room],
+                _state.get("TALK_BASE_URL"),
+                _state.get("TALK_USER"),
+                _state.get("TALK_PASSWORD"),
+                log_tag="poller-monitor"
+            )
 
     @abc.abstractmethod
     def run(self) -> None:  # pragma: no cover
