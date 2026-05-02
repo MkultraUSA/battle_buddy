@@ -1,8 +1,14 @@
 # Changes
 
+- PR #85 (hermes/extract-stripe-billing): https://github.com/MkultraUSA/battle_buddy/pull/85
+  Extracted Stripe billing: checkout, webhook, plans → modules/stripe_billing.py (-102 lines from monolith)
+
 - PR #84 (hermes/enhance-tests-telegram): https://github.com/MkultraUSA/battle_buddy/pull/84
   Enhanced tests.yml: parse pytest output + Telegram notifications with pass/fail counts
   and specific failing test names. Uses Python urllib for safe payload encoding.
+
+- PR #83 (feature/dedup-auth-premium): refactored auth/provisioning → modules/premium.py
+  Removed 16 duplicated functions from audio_receiver.py (-483 lines)
 
 - PR #39 (hermes/refactor-afd-open-data-thread):
   Refactor `afd_open_data_thread` from `modules/pollers.py` to
