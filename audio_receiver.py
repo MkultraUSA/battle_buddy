@@ -1686,7 +1686,7 @@ app.register_blueprint(stripe_bp)
 
 # ---------------------------------------------------------------------------
 # Auth helpers and provisioning — imported from modules.premium
-from modules.premium import (  # noqa: E402
+from modules.auth import (  # noqa: E402
     _get_session,
     _get_session_by_token,
     _is_admin,
