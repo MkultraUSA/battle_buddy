@@ -42,7 +42,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
           sleep 2
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
-            "tmux send-keys -t hermes-ci 'docker exec -it -u hermes --env-file /opt/hermes-data/.worker.env -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"I need to work on the Battle Buddy codebase in /opt/data/workspace/battle_buddy/. Please read /opt/data/hermes_task.txt and execute the requested improvement. When finished, open a PR to main and print the PR URL on its own line.\"' Enter"
+            "tmux send-keys -t hermes-ci 'docker exec -it -u hermes --env-file /opt/hermes-data/.worker.env -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"I need to work on the Battle Buddy codebase in /opt/data/workspace/battle_buddy/. Please read /opt/data/hermes_task.txt and execute the requested improvement. Before opening a PR, install Ruff if missing, run ruff check . --fix, then run ruff check . and relevant tests. Commit any Ruff fixes with the work. When finished, open a PR to main and print the PR URL on its own line.\"' Enter"
 
       - name: Poll tmux for PR URL
         id: extract
@@ -86,7 +86,8 @@ jobs:
           You are the bb-reviewer. 
           1. Find the PR: ${PR_URL}
           2. Inspect the diff and pass/fail checks.
-          3. Approve or request changes.
+          3. If Ruff failed, fix the branch with ruff check . --fix, rerun ruff check ., and push the fix.
+          4. Approve or request changes.
           EOF
           scp -i ~/.ssh/id_ed25519 /tmp/hermes_task.txt "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/hermes_task.txt"
 
