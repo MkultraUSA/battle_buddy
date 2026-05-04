@@ -1,5 +1,5 @@
-
 from .base import BasePoller
+
 
 class ApdNewsPoller(BasePoller):
     async def poll(self):
