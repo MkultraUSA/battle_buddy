@@ -235,7 +235,10 @@ class AFDOpenDataPoller(BasePoller):
             "OCS-APIRequest": "true",
             "Content-Type": "application/json",
         }
-        room_token = talk_rooms["fire-ems"]
+        room_token = talk_rooms.get("fire-ems")
+        if not talk_base or not room_token:
+            logger.warning("[afd] Talk post skipped: TALK_BASE or fire-ems room token missing")
+            return
         url = f"{talk_base}/chat/{room_token}"
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         try:

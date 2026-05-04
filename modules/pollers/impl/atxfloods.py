@@ -183,7 +183,10 @@ class ATXFloodsPoller(BasePoller):
             "OCS-APIRequest": "true",
             "Content-Type": "application/json",
         }
-        room_token = talk_rooms["incidents"]
+        room_token = talk_rooms.get("incidents")
+        if not talk_base or not room_token:
+            logger.warning("[atxfloods] Talk post skipped: TALK_BASE or incidents room token missing")
+            return
         url = f"{talk_base}/chat/{room_token}"
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         try:
@@ -191,4 +194,3 @@ class ATXFloodsPoller(BasePoller):
             logger.info("[atxfloods] posted: %s %s", verb, name)
         except Exception as exc:
             logger.warning("[atxfloods] Talk post failed: %s", exc)
-

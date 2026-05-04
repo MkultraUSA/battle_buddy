@@ -158,9 +158,15 @@ class AustinEventsPollerTests(unittest.TestCase):
             with mock.patch.object(poller, "_today", return_value=date(2026, 5, 4)):
                 poller.run()
 
-            self.assertFalse(mock_urlopen.called)
+        self.assertFalse(mock_urlopen.called)
+
+    @mock.patch.object(austin_events.urllib.request, "urlopen")
+    def test_post_to_talk_skips_missing_config(self, mock_urlopen):
+        AustinEventsPoller._post_to_talk("summary", "", "user", "pass", {"incidents": "room"})
+        AustinEventsPoller._post_to_talk("summary", "http://talk.test", "user", "pass", {})
+
+        mock_urlopen.assert_not_called()
 
 
 if __name__ == "__main__":
     unittest.main()
-

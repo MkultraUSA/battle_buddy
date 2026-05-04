@@ -784,6 +784,16 @@ class TestPostToTalk(unittest.TestCase):
         _post_to_talk("msg", [], "http://talk.test", "u", "p")
         mock_urlopen.assert_not_called()
 
+    @mock.patch("urllib.request.urlopen")
+    def test_missing_talk_base_makes_no_requests(self, mock_urlopen):
+        _post_to_talk("msg", ["roomA"], "", "u", "p")
+        mock_urlopen.assert_not_called()
+
+    @mock.patch("urllib.request.urlopen")
+    def test_empty_room_token_is_skipped(self, mock_urlopen):
+        _post_to_talk("msg", ["", "roomA"], "http://talk.test", "u", "p")
+        self.assertEqual(mock_urlopen.call_count, 1)
+
 
 # ===========================================================================
 # 11. APDNewsPoller._poll_apd_press_releases() — integration (mocked I/O)

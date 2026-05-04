@@ -487,7 +487,13 @@ def _post_to_talk(
         "OCS-APIRequest": "true",
         "Content-Type":   "application/json",
     }
+    if not talk_base:
+        logger.warning("[%s] Talk post skipped: TALK_BASE missing", log_tag)
+        return
     for room in room_tokens:
+        if not room:
+            logger.warning("[%s] Talk post skipped: room token missing", log_tag)
+            continue
         req = urllib.request.Request(
             f"{talk_base}/chat/{room}",
             data=payload,
