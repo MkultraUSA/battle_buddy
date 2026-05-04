@@ -42,7 +42,7 @@ _stub_leaf(
     _haversine_km=lambda *a, **kw: 999,
     _incident_lock=threading.Lock(),
 )
-_stub_leaf("modules.pollers", _pi_command_queue=[])
+_stub_leaf("modules.pollers", _pi_command_queue=[], send_dm_alert=lambda *a, **kw: None)
 
 import importlib.util as _ilu  # noqa: E402
 

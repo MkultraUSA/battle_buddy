@@ -35,7 +35,7 @@ _stub_leaf(
     TALK_PASS="pass",
     TALK_ROOMS={"incidents": "room_incidents"},
 )
-_stub_leaf("modules.pollers", _pi_command_queue=[])
+_stub_leaf("modules.pollers", _pi_command_queue=[], send_dm_alert=lambda *a, **kw: None)
 
 import importlib.util as _ilu  # noqa: E402
 

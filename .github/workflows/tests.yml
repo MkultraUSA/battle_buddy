@@ -24,8 +24,11 @@ jobs:
       - name: Run tests
         id: test
         run: |
+          set +e
           pytest tests/ -v --tb=short 2>&1 | tee /tmp/pytest_output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          exit_code=${PIPESTATUS[0]}
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit "${exit_code}"
 
       - name: Parse results and notify Telegram
         if: always()
@@ -43,12 +46,26 @@ jobs:
           with open('/tmp/pytest_output.txt') as f:
               text = f.read()
 
-          # Parse summary line: "14 passed, 2 failed, 1 error in 3.45s"
-          m = re.search(r'(\d+)\s+passed.*?(\d+)\s+failed.*?(\d+)\s+error', text)
-          if m:
-              passed = int(m.group(1))
-              failed = int(m.group(2))
-              errors = int(m.group(3))
+          # Parse the final pytest summary line regardless of count order:
+          # "11 failed, 138 passed, 11 skipped in 6.25s"
+          summary_lines = [
+              line for line in text.splitlines()
+              if re.search(r'\b(failed|passed|errors?|skipped)\b', line)
+              and ' in ' in line
+              and '=' in line
+          ]
+          counts = {'passed': 0, 'failed': 0, 'errors': 0}
+          if summary_lines:
+              for number, label in re.findall(
+                  r'(\d+)\s+(failed|passed|errors?|skipped)',
+                  summary_lines[-1],
+              ):
+                  key = 'errors' if label.startswith('error') else label
+                  if key in counts:
+                      counts[key] = int(number)
+              passed = counts['passed']
+              failed = counts['failed']
+              errors = counts['errors']
           else:
               passed = len(re.findall(r'\bPASSED\b', text))
               failed = len(re.findall(r'\bFAILED\b', text))
@@ -56,10 +73,10 @@ jobs:
 
           # Extract failing test names
           failures = []
-          for match in re.finditer(r'FAILED\s+(tests/[\w/]+\.py::[\w:]+)', text):
+          for match in re.finditer(r'FAILED\s+(tests[\\/][\w/\\.-]+\.py::[^\s]+)', text):
               failures.append(match.group(1))
           if not failures:
-              for match in re.finditer(r'ERRORS\s+(tests/[\w/]+\.py::[\w:]+)', text):
+              for match in re.finditer(r'ERROR\s+(tests[\\/][\w/\\.-]+\.py::[^\s]+)', text):
                   failures.append(match.group(1))
 
           total = passed + failed + errors

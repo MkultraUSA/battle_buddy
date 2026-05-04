@@ -1,4 +1,14 @@
 import importlib
+import sys
+
+
+def _fresh_config_module():
+    sys.modules.pop("modules.config", None)
+    import modules
+
+    if hasattr(modules, "config"):
+        delattr(modules, "config")
+    return importlib.import_module("modules.config")
 
 
 def test_config_imports_without_required_secrets(monkeypatch):
@@ -13,8 +23,7 @@ def test_config_imports_without_required_secrets(monkeypatch):
     ):
         monkeypatch.delenv(key, raising=False)
 
-    import modules.config as _config
-    config = importlib.reload(_config)
+    config = _fresh_config_module()
 
     assert config.OPENROUTER_API_KEY == ""
     assert config.ANTHROPIC_API_KEY == ""
@@ -27,9 +36,7 @@ def test_config_paths_can_be_overridden(monkeypatch):
     monkeypatch.setenv("BATTLE_BUDDY_HOME", "/tmp/battlebuddy-test")
     monkeypatch.setenv("DB_PATH", "/tmp/battlebuddy-test/test.db")
 
-    import modules.config as config
-
-    config = importlib.reload(config)
+    config = _fresh_config_module()
 
     assert config.BATTLE_BUDDY_HOME == "/tmp/battlebuddy-test"
     assert config.DB_PATH == "/tmp/battlebuddy-test/test.db"
