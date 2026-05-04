@@ -155,6 +155,29 @@ class ATXFloodsPollerTests(unittest.TestCase):
         self.assertFalse(post_marker.called)
         self.assertTrue(mock_urlopen.called)
 
+    @mock.patch.object(atxfloods.urllib.request, "urlopen")
+    def test_post_to_talk_skips_missing_config(self, mock_urlopen):
+        ATXFloodsPoller._post_to_talk(
+            self._crossing("closed"),
+            "closed",
+            "open",
+            "",
+            "user",
+            "pass",
+            {"incidents": "room"},
+        )
+        ATXFloodsPoller._post_to_talk(
+            self._crossing("closed"),
+            "closed",
+            "open",
+            "http://talk.test",
+            "user",
+            "pass",
+            {},
+        )
+
+        mock_urlopen.assert_not_called()
+
     def test_run_fetches_payload_and_processes_crossings(self):
         poller = ATXFloodsPoller()
         payload = {"attributes": [self._crossing("open")]}
@@ -171,4 +194,3 @@ class ATXFloodsPollerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -233,7 +233,10 @@ class TrafficOpenDataPoller(BasePoller):
             "OCS-APIRequest": "true",
             "Content-Type": "application/json",
         }
-        room_token = talk_rooms["incidents"]
+        room_token = talk_rooms.get("incidents")
+        if not talk_base or not room_token:
+            logger.warning("[traffic] Talk post skipped: TALK_BASE or incidents room token missing")
+            return
         url = f"{talk_base}/chat/{room_token}"
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         try:
@@ -241,4 +244,3 @@ class TrafficOpenDataPoller(BasePoller):
             logger.info("[traffic] posted to incidents: %s @ %s", issue, address)
         except Exception as exc:
             logger.warning("[traffic] Talk post failed: %s", exc)
-

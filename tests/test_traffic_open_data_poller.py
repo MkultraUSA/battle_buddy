@@ -148,6 +148,29 @@ class TrafficOpenDataPollerTests(unittest.TestCase):
         self.assertFalse(post_marker.called)
         self.assertTrue(mock_urlopen.called)
 
+    @mock.patch.object(traffic_open_data.urllib.request, "urlopen")
+    def test_post_to_talk_skips_missing_config(self, mock_urlopen):
+        TrafficOpenDataPoller._post_to_talk(
+            self._incident("T3"),
+            "CRASH/COLLISION",
+            None,
+            "",
+            "user",
+            "pass",
+            {"incidents": "room"},
+        )
+        TrafficOpenDataPoller._post_to_talk(
+            self._incident("T4"),
+            "CRASH/COLLISION",
+            None,
+            "http://talk.test",
+            "user",
+            "pass",
+            {},
+        )
+
+        mock_urlopen.assert_not_called()
+
     def test_duplicate_incident_is_ignored(self):
         poller = TrafficOpenDataPoller()
         poller._active_ids["T1"] = self._incident("T1")
