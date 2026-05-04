@@ -63,7 +63,27 @@ def _stub_leaf(name: str, **attrs):
     for k, v in attrs.items():
         setattr(mod, k, v)
     sys.modules[name] = mod
+    _attach_to_parent(name, mod)
     return mod
+
+
+def _attach_to_parent(dotted_name: str, mod):
+    """Expose a directly loaded/stubbed module on its parent package.
+
+    importlib normally does this wiring for standard imports. These tests load
+    a few modules from file to avoid the heavy pollers package import chain, so
+    we need to add the same parent attribute for mock.patch dotted lookups.
+    """
+    if "." not in dotted_name:
+        return
+    parent_name, attr = dotted_name.rsplit(".", 1)
+    parent = sys.modules.get(parent_name)
+    if parent is None:
+        try:
+            parent = __import__(parent_name, fromlist=[attr])
+        except ImportError:
+            return
+    setattr(parent, attr, mod)
 
 
 # Pre-register stubs for modules that apd_news.py imports *lazily* inside
@@ -129,6 +149,7 @@ def _load_from_file(dotted_name: str, rel_path: str):
     mod  = _ilu.module_from_spec(spec)
     sys.modules[dotted_name] = mod
     spec.loader.exec_module(mod)
+    _attach_to_parent(dotted_name, mod)
     return mod
 
 # Load BasePoller first (apd_news imports it at module level)

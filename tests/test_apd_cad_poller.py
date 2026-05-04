@@ -30,7 +30,7 @@ def _stub_leaf(name: str, **attrs):
 
 
 _stub_leaf("modules.config", DB_PATH="unused.db")
-_stub_leaf("modules.pollers", _pi_command_queue=[])
+_stub_leaf("modules.pollers", _pi_command_queue=[], send_dm_alert=lambda *a, **kw: None)
 _stub_leaf("modules.talkgroups", TGID_META={}, IGNORE_TGIDS=set())
 
 import importlib.util as _ilu  # noqa: E402

@@ -40,7 +40,7 @@ from modules.pollers.impl.atxfloods import ATXFloodsPoller  # noqa: F401
 from modules.pollers.impl.austin_events import AustinEventsPoller  # noqa: F401
 from modules.pollers.impl.traffic_open_data import TrafficOpenDataPoller  # noqa: F401
 from modules.pollers_legacy import *  # noqa: F401, F403
-from modules.pollers_legacy import _pi_command_queue  # noqa: F401
+from modules.pollers_legacy import _pi_command_queue, send_dm_alert  # noqa: F401
 
 
 def afd_open_data_thread() -> None:  # noqa: D401
