@@ -12,17 +12,33 @@ Also exports concrete BasePoller subclasses:
                          (modules/pollers/impl/afd_news.py)
   - APDNewsPoller      — replacement for apd_news_thread
                          (modules/pollers/impl/apd_news.py)
+  - APDCADPoller       — replacement for apd_cad_thread
+                         (modules/pollers/impl/apd_cad.py)
+  - ATXFloodsPoller    — replacement for atxfloods_thread
+                         (modules/pollers/impl/atxfloods.py)
+  - AustinEventsPoller — replacement for austin_events_thread
+                         (modules/pollers/impl/austin_events.py)
+  - TrafficOpenDataPoller — replacement for traffic_open_data_thread
+                            (modules/pollers/impl/traffic_open_data.py)
 
 And backward-compatibility shims:
   - afd_open_data_thread — deprecated; prefer AFDOpenDataPoller().start()
   - apd_news_thread      — deprecated; prefer APDNewsPoller().start()
+  - apd_cad_thread       — deprecated; prefer APDCADPoller().start()
+  - atxfloods_thread     — deprecated; prefer ATXFloodsPoller().start()
+  - austin_events_thread — deprecated; prefer AustinEventsPoller().start()
+  - traffic_open_data_thread — deprecated; prefer TrafficOpenDataPoller().start()
 """
 
 # Re-export everything from the legacy monolith (all remaining poller threads,
 # helpers, and shared state that hasn't been extracted yet)
 # Concrete BasePoller subclasses
 from modules.pollers.impl.afd_news import AFDOpenDataPoller  # noqa: F401
+from modules.pollers.impl.apd_cad import APDCADPoller  # noqa: F401
 from modules.pollers.impl.apd_news import APDNewsPoller  # noqa: F401
+from modules.pollers.impl.atxfloods import ATXFloodsPoller  # noqa: F401
+from modules.pollers.impl.austin_events import AustinEventsPoller  # noqa: F401
+from modules.pollers.impl.traffic_open_data import TrafficOpenDataPoller  # noqa: F401
 from modules.pollers_legacy import *  # noqa: F401, F403
 from modules.pollers_legacy import _pi_command_queue  # noqa: F401
 
@@ -70,3 +86,86 @@ def apd_news_thread() -> None:  # noqa: D401
     while not poller.stop_event.is_set():
         time.sleep(60)
 
+
+def apd_cad_thread() -> None:  # noqa: D401
+    """Backward-compat shim — starts APDCADPoller and blocks forever.
+
+    .. deprecated::
+        Call ``APDCADPoller().start()`` directly instead of wrapping this
+        function in a ``threading.Thread``.  This shim exists only to avoid
+        breaking callers that still use the old thread-function pattern.
+    """
+    import warnings
+    warnings.warn(
+        "apd_cad_thread() is deprecated; use APDCADPoller().start() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    import time
+    poller = APDCADPoller()
+    poller.start()
+    while not poller.stop_event.is_set():
+        time.sleep(60)
+
+
+def atxfloods_thread() -> None:  # noqa: D401
+    """Backward-compat shim — starts ATXFloodsPoller and blocks forever.
+
+    .. deprecated::
+        Call ``ATXFloodsPoller().start()`` directly instead of wrapping this
+        function in a ``threading.Thread``.  This shim exists only to avoid
+        breaking callers that still use the old thread-function pattern.
+    """
+    import warnings
+    warnings.warn(
+        "atxfloods_thread() is deprecated; use ATXFloodsPoller().start() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    import time
+    poller = ATXFloodsPoller()
+    poller.start()
+    while not poller.stop_event.is_set():
+        time.sleep(60)
+
+
+def austin_events_thread() -> None:  # noqa: D401
+    """Backward-compat shim — starts AustinEventsPoller and blocks forever.
+
+    .. deprecated::
+        Call ``AustinEventsPoller().start()`` directly instead of wrapping this
+        function in a ``threading.Thread``.  This shim exists only to avoid
+        breaking callers that still use the old thread-function pattern.
+    """
+    import warnings
+    warnings.warn(
+        "austin_events_thread() is deprecated; use AustinEventsPoller().start() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    import time
+    poller = AustinEventsPoller()
+    poller.start()
+    while not poller.stop_event.is_set():
+        time.sleep(60)
+
+
+def traffic_open_data_thread() -> None:  # noqa: D401
+    """Backward-compat shim — starts TrafficOpenDataPoller and blocks forever.
+
+    .. deprecated::
+        Call ``TrafficOpenDataPoller().start()`` directly instead of wrapping
+        this function in a ``threading.Thread``.  This shim exists only to
+        avoid breaking callers that still use the old thread-function pattern.
+    """
+    import warnings
+    warnings.warn(
+        "traffic_open_data_thread() is deprecated; use TrafficOpenDataPoller().start() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    import time
+    poller = TrafficOpenDataPoller()
+    poller.start()
+    while not poller.stop_event.is_set():
+        time.sleep(60)
