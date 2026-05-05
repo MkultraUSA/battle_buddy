@@ -29,6 +29,25 @@ ADSB_INTERVAL: float = 30.0
 ADSB_MAX_ALT_FT = 5000
 ADSB_TRAIL_SECS = 1800
 ADSB_REFRACTORY = 1800
+ADSB_ORBIT_WINDOW_SECS = 600
+ADSB_ORBIT_MIN_DURATION_SECS = 300
+ADSB_ORBIT_MIN_POINTS = 8
+ADSB_ORBIT_MAX_RADIUS_KM = 1.5
+ADSB_ORBIT_MAX_CENTER_RADIUS_KM = 1.1
+ADSB_ORBIT_MIN_HEADING_CHANGE_DEG = 240
+ADSB_ORBIT_MIN_TURN_EVENTS = 4
+ADSB_ORBIT_MIN_PATH_RATIO = 2.5
+ADSB_ORBIT_MAX_NET_DISPLACEMENT_KM = 2.0
+ADSB_ORBIT_MIN_ALT_FT = 300
+ADSB_ORBIT_MAX_ALT_FT = 4500
+ADSB_ORBIT_MIN_SPEED_KTS = 15
+ADSB_ORBIT_MAX_SPEED_KTS = 135
+ADSB_ORBIT_MAX_SPEED_SPREAD_KTS = 95
+
+KNOWN_AIRPORTS = (
+    (30.1945, -97.6699),  # Austin-Bergstrom International
+    (30.3975, -97.5664),  # Austin Executive
+)
 
 KNOWN_AIR_ASSETS = {
     "a820f8": ("APD Air1 (N6227)", True),
@@ -427,34 +446,82 @@ class ADSBAirAssetPoller(BasePoller):
 
 
 def check_orbit(db_path: str, icao24: str, now: float) -> bool:
-    """Return True if icao24 has been orbiting in the last 5 minutes."""
+    """Return True when recent ADS-B trail geometry looks like tactical orbiting."""
     try:
         conn = sqlite3.connect(db_path)
         rows = conn.execute(
-            "SELECT lat, lon, heading FROM aircraft_positions "
+            "SELECT ts, lat, lon, alt_ft, heading, speed_kts FROM aircraft_positions "
             "WHERE icao24=? AND ts >= ? ORDER BY ts",
-            (icao24, now - 300),
+            (icao24, now - ADSB_ORBIT_WINDOW_SECS),
         ).fetchall()
         conn.close()
     except Exception:
         return False
 
-    if len(rows) < 6:
+    points = [
+        {
+            "ts": row[0],
+            "lat": row[1],
+            "lon": row[2],
+            "alt_ft": row[3],
+            "heading": row[4],
+            "speed_kts": row[5],
+        }
+        for row in rows
+        if row[1] is not None and row[2] is not None
+    ]
+    if len(points) < ADSB_ORBIT_MIN_POINTS:
         return False
 
-    lats = [row[0] for row in rows]
-    lons = [row[1] for row in rows]
-    headings = [row[2] for row in rows if row[2] is not None]
+    duration = points[-1]["ts"] - points[0]["ts"]
+    if duration < ADSB_ORBIT_MIN_DURATION_SECS:
+        return False
+
+    lats = [point["lat"] for point in points]
+    lons = [point["lon"] for point in points]
     center_lat = sum(lats) / len(lats)
     center_lon = sum(lons) / len(lons)
-
-    max_dist = max(_km(center_lat, center_lon, lat, lon) for lat, lon in zip(lats, lons))
-    if max_dist > 1.2:
+    center_distances = [_km(center_lat, center_lon, point["lat"], point["lon"]) for point in points]
+    max_center_dist = max(center_distances)
+    avg_center_dist = sum(center_distances) / len(center_distances)
+    if max_center_dist > ADSB_ORBIT_MAX_RADIUS_KM or avg_center_dist > ADSB_ORBIT_MAX_CENTER_RADIUS_KM:
         return False
 
-    if len(headings) < 5:
+    if _near_known_airport(center_lat, center_lon):
         return False
-    return max(headings) - min(headings) >= 180
+
+    altitudes = [float(point["alt_ft"]) for point in points if point["alt_ft"] is not None]
+    if len(altitudes) < len(points) * 0.75:
+        return False
+    median_alt = _median(altitudes)
+    if not ADSB_ORBIT_MIN_ALT_FT <= median_alt <= ADSB_ORBIT_MAX_ALT_FT:
+        return False
+
+    speeds = [float(point["speed_kts"]) for point in points if point["speed_kts"] is not None]
+    if len(speeds) < len(points) * 0.75:
+        return False
+    median_speed = _median(speeds)
+    if not ADSB_ORBIT_MIN_SPEED_KTS <= median_speed <= ADSB_ORBIT_MAX_SPEED_KTS:
+        return False
+    if max(speeds) - min(speeds) > ADSB_ORBIT_MAX_SPEED_SPREAD_KTS:
+        return False
+
+    path_km = sum(
+        _km(prev["lat"], prev["lon"], cur["lat"], cur["lon"])
+        for prev, cur in zip(points, points[1:])
+    )
+    displacement_km = _km(points[0]["lat"], points[0]["lon"], points[-1]["lat"], points[-1]["lon"])
+    if displacement_km > ADSB_ORBIT_MAX_NET_DISPLACEMENT_KM:
+        return False
+    if path_km < max(displacement_km * ADSB_ORBIT_MIN_PATH_RATIO, 2.0):
+        return False
+
+    headings = [float(point["heading"]) % 360 for point in points if point["heading"] is not None]
+    if len(headings) < len(points) * 0.75:
+        return False
+    heading_change = sum(abs(_heading_delta(prev, cur)) for prev, cur in zip(headings, headings[1:]))
+    turn_events = sum(1 for prev, cur in zip(headings, headings[1:]) if abs(_heading_delta(prev, cur)) >= 25)
+    return heading_change >= ADSB_ORBIT_MIN_HEADING_CHANGE_DEG and turn_events >= ADSB_ORBIT_MIN_TURN_EVENTS
 
 
 def _km(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> float:
@@ -466,3 +533,19 @@ def _km(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> float:
         + math.cos(math.radians(lat_a)) * math.cos(math.radians(lat_b)) * math.sin(dlon / 2) ** 2
     )
     return radius * 2 * math.asin(math.sqrt(a))
+
+
+def _heading_delta(prev: float, cur: float) -> float:
+    return (cur - prev + 180) % 360 - 180
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _near_known_airport(lat: float, lon: float) -> bool:
+    return any(_km(lat, lon, airport_lat, airport_lon) <= 2.5 for airport_lat, airport_lon in KNOWN_AIRPORTS)
