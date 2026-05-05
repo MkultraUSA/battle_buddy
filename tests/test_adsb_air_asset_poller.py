@@ -101,6 +101,25 @@ class ADSBAirAssetPollerTests(unittest.TestCase):
         ac["category"] = "A1"
         return ac
 
+    def _insert_adsb_point(
+        self,
+        conn,
+        ts,
+        lat,
+        lon,
+        heading,
+        speed=70,
+        alt=1200,
+        icao="a820f8",
+        is_leo=1,
+    ):
+        conn.execute(
+            "INSERT INTO aircraft_positions "
+            "(ts,icao24,callsign,lat,lon,alt_ft,heading,speed_kts,is_leo,label) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (ts, icao, "AIR1", lat, lon, alt, heading, speed, is_leo, "APD Air1"),
+        )
+
     def test_is_base_poller_with_expected_interval(self):
         poller = ADSBAirAssetPoller()
         self.assertIsInstance(poller, BasePoller)
@@ -204,21 +223,81 @@ class ADSBAirAssetPollerTests(unittest.TestCase):
         self.assertEqual(row, ("AIR ASSET ACTIVE", "Austin airspace"))
         self.assertEqual(pos, ("a820f8", 1, "APD Air1 (N6227)"))
 
-    def test_check_orbit_requires_tight_track_and_heading_span(self):
+    def test_check_orbit_detects_sustained_tight_turning_track(self):
         now = 10_000.0
         conn = sqlite3.connect(self.db_path)
-        headings = [0, 45, 90, 180, 225, 270]
-        for idx, heading in enumerate(headings):
-            conn.execute(
-                "INSERT INTO aircraft_positions "
-                "(ts,icao24,callsign,lat,lon,alt_ft,heading,speed_kts,is_leo,label) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (now - 60 + idx, "a820f8", "AIR1", 30.25 + idx * 0.0001, -97.75, 1000, heading, 80, 1, "APD Air1"),
-            )
+        points = [
+            (now - 360, 30.2500, -97.7500, 0),
+            (now - 315, 30.2540, -97.7475, 45),
+            (now - 270, 30.2550, -97.7425, 90),
+            (now - 225, 30.2525, -97.7385, 135),
+            (now - 180, 30.2485, -97.7380, 180),
+            (now - 135, 30.2455, -97.7415, 225),
+            (now - 90, 30.2450, -97.7465, 270),
+            (now - 45, 30.2475, -97.7505, 315),
+            (now, 30.2505, -97.7510, 20),
+        ]
+        for point in points:
+            self._insert_adsb_point(conn, *point)
         conn.commit()
         conn.close()
 
         self.assertTrue(check_orbit(self.db_path, "a820f8", now))
+
+    def test_check_orbit_rejects_straight_pass(self):
+        now = 10_000.0
+        conn = sqlite3.connect(self.db_path)
+        for idx in range(9):
+            self._insert_adsb_point(
+                conn,
+                now - 360 + idx * 45,
+                30.2200 + idx * 0.01,
+                -97.8000 + idx * 0.01,
+                45,
+                speed=95,
+            )
+        conn.commit()
+        conn.close()
+
+        self.assertFalse(check_orbit(self.db_path, "a820f8", now))
+
+    def test_check_orbit_rejects_short_hover_sample(self):
+        now = 10_000.0
+        conn = sqlite3.connect(self.db_path)
+        for idx, heading in enumerate([0, 45, 90, 135, 180, 225, 270, 315]):
+            self._insert_adsb_point(
+                conn,
+                now - 140 + idx * 20,
+                30.2500 + idx * 0.0001,
+                -97.7500 - idx * 0.0001,
+                heading,
+                speed=45,
+            )
+        conn.commit()
+        conn.close()
+
+        self.assertFalse(check_orbit(self.db_path, "a820f8", now))
+
+    def test_check_orbit_rejects_airport_pattern(self):
+        now = 10_000.0
+        conn = sqlite3.connect(self.db_path)
+        points = [
+            (now - 360, 30.1910, -97.6730, 0),
+            (now - 315, 30.1960, -97.6725, 45),
+            (now - 270, 30.1985, -97.6675, 90),
+            (now - 225, 30.1965, -97.6635, 135),
+            (now - 180, 30.1920, -97.6630, 180),
+            (now - 135, 30.1890, -97.6665, 225),
+            (now - 90, 30.1885, -97.6710, 270),
+            (now - 45, 30.1905, -97.6740, 315),
+            (now, 30.1930, -97.6745, 20),
+        ]
+        for point in points:
+            self._insert_adsb_point(conn, *point)
+        conn.commit()
+        conn.close()
+
+        self.assertFalse(check_orbit(self.db_path, "a820f8", now))
 
     @mock.patch.object(adsb.urllib.request, "urlopen")
     def test_detect_orbits_creates_orbit_incident_and_notifications(self, mock_urlopen):
@@ -227,13 +306,19 @@ class ADSBAirAssetPollerTests(unittest.TestCase):
         send_alert = mock.Mock()
         now = 10_000.0
         conn = sqlite3.connect(self.db_path)
-        for idx, heading in enumerate([0, 60, 120, 180, 240, 300]):
-            conn.execute(
-                "INSERT INTO aircraft_positions "
-                "(ts,icao24,callsign,lat,lon,alt_ft,heading,speed_kts,is_leo,label) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (now - 60 + idx, "a820f8", "AIR1", 30.25, -97.75 + idx * 0.0001, 1000, heading, 80, 1, "APD Air1"),
-            )
+        points = [
+            (now - 360, 30.2500, -97.7500, 0),
+            (now - 315, 30.2540, -97.7475, 45),
+            (now - 270, 30.2550, -97.7425, 90),
+            (now - 225, 30.2525, -97.7385, 135),
+            (now - 180, 30.2485, -97.7380, 180),
+            (now - 135, 30.2455, -97.7415, 225),
+            (now - 90, 30.2450, -97.7465, 270),
+            (now - 45, 30.2475, -97.7505, 315),
+            (now, 30.2505, -97.7510, 20),
+        ]
+        for point in points:
+            self._insert_adsb_point(conn, *point)
         conn.commit()
         conn.close()
 
