@@ -52,12 +52,11 @@ jobs:
               line for line in text.splitlines()
               if re.search(r'\b(failed|passed|errors?|skipped)\b', line)
               and ' in ' in line
-              and '=' in line
           ]
-          counts = {'passed': 0, 'failed': 0, 'errors': 0}
+          counts = {'passed': 0, 'failed': 0, 'errors': 0, 'skipped': 0, 'xfailed': 0, 'xpassed': 0}
           if summary_lines:
               for number, label in re.findall(
-                  r'(\d+)\s+(failed|passed|errors?|skipped)',
+                  r'(\d+)\s+(failed|passed|errors?|skipped|xfailed|xpassed)',
                   summary_lines[-1],
               ):
                   key = 'errors' if label.startswith('error') else label
@@ -66,10 +65,16 @@ jobs:
               passed = counts['passed']
               failed = counts['failed']
               errors = counts['errors']
+              skipped = counts['skipped']
+              xfailed = counts['xfailed']
+              xpassed = counts['xpassed']
           else:
               passed = len(re.findall(r'\bPASSED\b', text))
               failed = len(re.findall(r'\bFAILED\b', text))
               errors = len(re.findall(r'\bERROR\b', text))
+              skipped = len(re.findall(r'\bSKIPPED\b', text))
+              xfailed = len(re.findall(r'\bXFAILED\b', text))
+              xpassed = len(re.findall(r'\bXPASSED\b', text))
 
           # Extract failing test names
           failures = []
@@ -79,18 +84,26 @@ jobs:
               for match in re.finditer(r'ERROR\s+(tests[\\/][\w/\\.-]+\.py::[^\s]+)', text):
                   failures.append(match.group(1))
 
-          total = passed + failed + errors
+          total = passed + failed + errors + skipped + xfailed + xpassed
           exit_code = os.environ['EXIT_CODE']
 
           # ── Build Telegram message ─────────────────────────────────────
           if exit_code == '0':
-              msg = f"✅ All {passed}/{total} tests passed\n{os.environ['COMMIT_MSG'][:200]}\n{os.environ['RUN_URL']}"
+              extra = []
+              if skipped:
+                  extra.append(f"{skipped} skipped")
+              if xfailed:
+                  extra.append(f"{xfailed} xfailed")
+              if xpassed:
+                  extra.append(f"{xpassed} xpassed")
+              extra_text = f" ({', '.join(extra)})" if extra else ""
+              msg = f"✅ Tests ok: {passed}/{total} passed{extra_text}\n{os.environ['COMMIT_MSG'][:200]}\n{os.environ['RUN_URL']}"
           else:
               msg = f"❌ Tests failed: {passed} passed, {failed} failed, {errors} errors"
               if failures:
                   msg += "\n\nFailures:"
                   for fname in failures[:8]:
-                      msg += f"\n  • {fname}"
+                      msg += f"\n  - {fname}"
               msg += f"\n\n{os.environ['RUN_URL']}"
 
           # ── Send to Telegram ───────────────────────────────────────────
@@ -110,13 +123,14 @@ jobs:
               except Exception as e:
                   print(f'[telegram] send error: {e}')
           else:
-              print('[telegram] skipped — TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set')
+              print('[telegram] skipped - TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set')
 
           # ── Output summary for logging ────────────────────────────────
           print(f'\n=== TEST SUMMARY ===')
           print(f'Passed:  {passed}')
           print(f'Failed:  {failed}')
           print(f'Errors:  {errors}')
+          print(f'Skipped: {skipped}')
           print(f'Total:   {total}')
           PYEOF
 
