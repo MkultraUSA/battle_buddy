@@ -1060,144 +1060,22 @@ def _reddit_tip_recheck(db_path):
                 print(f"[reddit] tip_recheck update error: {e}", flush=True)
 
 
+
 def reddit_intel_thread():
-    import html as _html
-    import xml.etree.ElementTree as _ET
-    print("[reddit] citizen intel poller started", flush=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""CREATE TABLE IF NOT EXISTS reddit_intel (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts REAL NOT NULL,
-        post_id TEXT UNIQUE,
-        subreddit TEXT,
-        title TEXT,
-        url TEXT,
-        author TEXT,
-        body TEXT,
-        keywords TEXT,
-        notified INTEGER DEFAULT 0
-    )""")
-    for _col_sql in [
-        "ALTER TABLE reddit_intel ADD COLUMN incident_id INTEGER",
-        "ALTER TABLE reddit_intel ADD COLUMN match_score REAL DEFAULT 0",
-        "ALTER TABLE reddit_intel ADD COLUMN tip_lat REAL",
-        "ALTER TABLE reddit_intel ADD COLUMN tip_lon REAL",
-        "ALTER TABLE reddit_intel ADD COLUMN tip_location TEXT",
-        "ALTER TABLE reddit_intel ADD COLUMN tip_status TEXT DEFAULT 'new'",
-        "ALTER TABLE reddit_intel ADD COLUMN tip_ts_start REAL",
-        "ALTER TABLE reddit_intel ADD COLUMN tip_ts_cleared REAL",
-        "ALTER TABLE reddit_intel ADD COLUMN tip_summary TEXT",
-    ]:
-        try: conn.execute(_col_sql)  # noqa: E701
-        except Exception: pass  # noqa: E701
-    conn.commit()
-    conn.close()
+    """Deprecated compatibility wrapper for the extracted Reddit intel poller."""
+    import warnings
 
-    while True:
-        for feed_url in _REDDIT_FEEDS:
-            try:
-                req = urllib.request.Request(
-                    feed_url,
-                    headers={"User-Agent": "BattleBuddy/2.0 (contact: admin@battlebuddy.news)"}
-                )
-                xml_bytes = urllib.request.urlopen(req, timeout=15).read()
-                root = _ET.fromstring(xml_bytes.decode("utf-8", errors="replace"))
-            except Exception as e:
-                print(f"[reddit] fetch error {feed_url}: {e}", flush=True)
-                continue
+    from modules.pollers.impl.reddit_intel import RedditIntelPoller
 
-            ns = {"atom": "http://www.w3.org/2005/Atom"}
-            entries = root.findall("atom:entry", ns)
-            subreddit = feed_url.split("/r/")[1].split("/")[0]
-
-            for entry in entries:
-                post_id_raw = (entry.findtext("atom:id", default="", namespaces=ns) or "").strip()
-                post_id = post_id_raw.split("_")[-1] if "_" in post_id_raw else post_id_raw
-                title   = _html.unescape((entry.findtext("atom:title", default="", namespaces=ns) or "").strip())
-                link_el = entry.find("atom:link[@rel='alternate']", ns)
-                url     = link_el.attrib.get("href", "") if link_el is not None else ""
-                if not url:
-                    # Fallback: some Reddit Atom entries omit rel=alternate or use a bare <link href=...>.
-                    any_link = entry.find("atom:link", ns)
-                    if any_link is not None:
-                        url = any_link.attrib.get("href", "") or ""
-                if not url and post_id:
-                    url = f"https://www.reddit.com/r/{subreddit}/comments/{post_id}/"
-                author_el = entry.find("atom:author/atom:name", ns)
-                author  = author_el.text.strip() if author_el is not None else ""
-                content_el = entry.find("atom:content", ns)
-                body_html  = (content_el.text or "") if content_el is not None else ""
-                body = re.sub(r"<[^>]+>", " ", body_html)
-                body = _html.unescape(body).strip()[:800]
-
-                if not post_id or not title:
-                    continue
-
-                hi, matched, keywords = _reddit_matches(title, body)
-                if not matched:
-                    continue
-
-                conn = sqlite3.connect(DB_PATH)
-                existing = conn.execute(
-                    "SELECT notified FROM reddit_intel WHERE post_id=?", (post_id,)
-                ).fetchone()
-
-                if existing is None:
-                    _now_ts = time.time()
-                    conn.execute(
-                        "INSERT INTO reddit_intel (ts,post_id,subreddit,title,url,author,body,keywords,notified,tip_status,tip_ts_start) "
-                        "VALUES (?,?,?,?,?,?,?,?,0,'investigating',?)",
-                        (_now_ts, post_id, subreddit, title, url, author, body[:500], keywords, _now_ts)
-                    )
-                    conn.commit()
-                    conn.close()
-                    print(f"[reddit] NEW {'HI' if hi else 'med'}: {title[:80]}", flush=True)
-                    # Extract + geocode tip location
-                    try:
-                        _loc, _lat, _lon = _extract_tip_location(title, body)
-                        if _loc:
-                            _gc = sqlite3.connect(DB_PATH)
-                            _gc.execute(
-                                "UPDATE reddit_intel SET tip_location=?, tip_lat=?, tip_lon=? WHERE post_id=?",
-                                (_loc, _lat, _lon, post_id)
-                            )
-                            _gc.commit(); _gc.close()  # noqa: E702
-                            print(f"[reddit] tip {post_id} geocoded -> {_loc} ({_lat},{_lon})", flush=True)
-                    except Exception as _e:
-                        print(f"[reddit] geocode error for {post_id}: {_e}", flush=True)
-                    # cross-reference against incidents
-                    inc_id, inc_score = _reddit_match_incident(title, body, time.time())
-                    if inc_id:
-                        _c = sqlite3.connect(DB_PATH)
-                        _c.execute("UPDATE reddit_intel SET incident_id=?,match_score=? WHERE post_id=?",
-                                   (inc_id, inc_score, post_id))
-                        _c.commit(); _c.close()  # noqa: E702
-                        print(f"[reddit] matched post {post_id} → incident #{inc_id} (score {inc_score})", flush=True)
-
-                    if hi:
-                        msg = (
-                            f"Reddit Citizen Report — r/{subreddit}\n"
-                            f"{title}\n"
-                            f"Keywords: {keywords}\n"
-                            f"{url}"
-                        )
-                        threading.Thread(
-                            target=send_dm_alert,
-                            args=("CITIZEN REPORT", msg, title, "Reddit", "general"),
-                            daemon=True
-                        ).start()
-                        conn2 = sqlite3.connect(DB_PATH)
-                        conn2.execute("UPDATE reddit_intel SET notified=1 WHERE post_id=?", (post_id,))
-                        conn2.commit()
-                        conn2.close()
-                else:
-                    conn.close()
-
-        try:
-            _reddit_tip_recheck(DB_PATH)
-        except Exception as _e:
-            print(f"[reddit] tip_recheck loop error: {_e}", flush=True)
-        time.sleep(_REDDIT_INTERVAL)
+    warnings.warn(
+        "reddit_intel_thread() is deprecated; use RedditIntelPoller().start() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    poller = RedditIntelPoller()
+    poller.start()
+    while not poller.stop_event.is_set():
+        time.sleep(60)
 
 
 _adsb_lock       = threading.Lock()
