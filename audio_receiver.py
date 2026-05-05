@@ -3606,7 +3606,7 @@ if __name__ == "__main__":
     AustinEventsPoller().start()
     APDCADPoller().start()
     APDNewsPoller().start()
-    threading.Thread(target=reddit_intel_thread,      daemon=True).start()
+    RedditIntelPoller().start()
     threading.Thread(target=adsb_air_asset_thread,    daemon=True).start()
 
     app.run(host="0.0.0.0", port=args.port, threaded=True)

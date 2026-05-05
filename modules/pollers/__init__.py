@@ -18,6 +18,8 @@ Also exports concrete BasePoller subclasses:
                          (modules/pollers/impl/atxfloods.py)
   - AustinEventsPoller — replacement for austin_events_thread
                          (modules/pollers/impl/austin_events.py)
+  - RedditIntelPoller  — replacement for reddit_intel_thread
+                         (modules/pollers/impl/reddit_intel.py)
   - TrafficOpenDataPoller — replacement for traffic_open_data_thread
                             (modules/pollers/impl/traffic_open_data.py)
 
@@ -27,6 +29,7 @@ And backward-compatibility shims:
   - apd_cad_thread       — deprecated; prefer APDCADPoller().start()
   - atxfloods_thread     — deprecated; prefer ATXFloodsPoller().start()
   - austin_events_thread — deprecated; prefer AustinEventsPoller().start()
+  - reddit_intel_thread  — deprecated; prefer RedditIntelPoller().start()
   - traffic_open_data_thread — deprecated; prefer TrafficOpenDataPoller().start()
 """
 
@@ -38,6 +41,7 @@ from modules.pollers.impl.apd_cad import APDCADPoller  # noqa: F401
 from modules.pollers.impl.apd_news import APDNewsPoller  # noqa: F401
 from modules.pollers.impl.atxfloods import ATXFloodsPoller  # noqa: F401
 from modules.pollers.impl.austin_events import AustinEventsPoller  # noqa: F401
+from modules.pollers.impl.reddit_intel import RedditIntelPoller  # noqa: F401
 from modules.pollers.impl.traffic_open_data import TrafficOpenDataPoller  # noqa: F401
 from modules.pollers_legacy import *  # noqa: F401, F403
 from modules.pollers_legacy import _pi_command_queue, send_dm_alert  # noqa: F401
@@ -166,6 +170,27 @@ def traffic_open_data_thread() -> None:  # noqa: D401
     )
     import time
     poller = TrafficOpenDataPoller()
+    poller.start()
+    while not poller.stop_event.is_set():
+        time.sleep(60)
+
+
+def reddit_intel_thread() -> None:  # noqa: D401
+    """Backward-compat shim — starts RedditIntelPoller and blocks forever.
+
+    .. deprecated::
+        Call ``RedditIntelPoller().start()`` directly instead of wrapping this
+        function in a ``threading.Thread``.  This shim exists only to avoid
+        breaking callers that still use the old thread-function pattern.
+    """
+    import warnings
+    warnings.warn(
+        "reddit_intel_thread() is deprecated; use RedditIntelPoller().start() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    import time
+    poller = RedditIntelPoller()
     poller.start()
     while not poller.stop_event.is_set():
         time.sleep(60)
