@@ -5,6 +5,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import random
 from collections import Counter
 
 from modules.config import (
@@ -46,9 +47,22 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str) -> dict:
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=12) as resp:
-        data = json.loads(resp.read())
-    return json.loads(data["choices"][0]["message"]["content"])
+    
+    # Retry logic with exponential backoff
+    max_retries = 3
+    base_delay = 1  # Start with 1 second
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read())
+            return json.loads(data["choices"][0]["message"]["content"])
+        except Exception as e:
+            if attempt == max_retries - 1:  # Last attempt
+                print(f"[llm] Failed after {max_retries} attempts: {e}", flush=True)
+                raise
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 1)  # Exponential backoff with jitter
+            print(f"[llm] Attempt {attempt + 1} failed: {e}. Retrying in {delay:.2f}s...", flush=True)
+            time.sleep(delay)
 
 
 _GROQ_SYSTEM = """You are the incident detection brain for Battle Buddy, a real-time P25 radio monitoring system covering Austin/Travis County emergency services on the GATRRS trunked system.
