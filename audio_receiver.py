@@ -67,8 +67,12 @@ from modules.incident_engine import (  # noqa: E402
 )
 from modules.llm import *  # noqa: E402
 from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
+from modules.pi_watchdog import (  # noqa: E402
+    PiWatchdogService,
+    _pi_command_queue,
+    _pi_watchdog_alert,
+)
 from modules.pollers import *  # noqa: E402
-from modules.pollers import _pi_command_queue  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talkgroups import *  # noqa: E402
 from modules.transcription import *  # noqa: E402
@@ -3599,7 +3603,7 @@ if __name__ == "__main__":
     _atak_mod.startup()
     threading.Thread(target=incident_cleanup_thread,  daemon=True).start()
     threading.Thread(target=hold_watchdog_thread,     daemon=True).start()
-    threading.Thread(target=pi_watchdog_thread,       daemon=True).start()
+    PiWatchdogService().start()
     AFDOpenDataPoller().start()
     TrafficOpenDataPoller().start()
     ATXFloodsPoller().start()
