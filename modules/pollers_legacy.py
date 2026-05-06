@@ -28,7 +28,7 @@ from modules.config import (
     TALK_USER,
     _room_for_call,
 )
-from modules.database import active_incidents, calls_for_sitrep, get_subscribers
+from modules.database import get_subscribers
 from modules.geocoding import _geocode_address
 from modules.incident_engine import (
     _active_incidents,
@@ -51,6 +51,7 @@ from modules.pi_watchdog import (  # noqa: F401
     _pi_watchdog_alert,
     pi_watchdog_thread,
 )
+from modules.sitrep import build_sitrep  # noqa: F401
 from modules.talkgroups import (
     IGNORE_TGIDS,
     TGID_META,
@@ -1702,94 +1703,6 @@ def apd_cad_thread():
 
 
 
-# ---------------------------------------------------------------------------
-# Sitrep generator
-# ---------------------------------------------------------------------------
-
-def build_sitrep(minutes=60) -> str:
-    calls     = calls_for_sitrep(minutes)
-    incidents = [i for i in active_incidents() if not i.get("is_test")]
-
-    lines = [
-        f"SITUATION REPORT — last {minutes} min — {datetime.now(_CDT).strftime('%Y-%m-%d %H:%M %Z')}",
-        f"Total calls: {len(calls)}",
-    ]
-
-    # --- Active incidents (real only) ---
-    if incidents:
-        lines.append("")
-        lines.append("*** ACTIVE INCIDENTS ***")
-        for inc in incidents:
-            age     = int((time.time() - inc["ts_start"]) / 60)
-            updated = int((time.time() - inc["ts_updated"]) / 60)
-            agencies = ", ".join(json.loads(inc["agencies"] or "[]"))
-            loc = f" @ {inc['location']}" if inc.get("location") else ""
-            lines.append(
-                f"  [{inc['itype']}]{loc} — started {age}m ago, "
-                f"last activity {updated}m ago — agencies: {agencies}"
-            )
-            lines.append(f"  {inc['description']}")
-        lines.append("*** END ACTIVE INCIDENTS ***")
-    else:
-        lines.append("  No active incidents.")
-
-    if not calls:
-        lines.append(f"\nNo calls in the last {minutes} minutes.")
-        return "\n".join(lines)
-
-    # --- HIGH priority calls ---
-    high_calls = [
-        c for c in calls
-        if (c.get("groq") or {}).get("priority") == "HIGH"
-        or any(k in (c.get("transcript") or "").lower() for k in _HIGH_KW)
-    ]
-    if high_calls:
-        lines.append("")
-        lines.append("*** HIGH PRIORITY ***")
-        for c in high_calls[:10]:
-            ts  = datetime.fromtimestamp(c["ts"]).strftime("%H:%M")
-            loc = f" @ {c['location']}" if c.get("location") else ""
-            txt = (c.get("transcript") or "(no transcript)")[:150]
-            groq_desc = (c.get("groq") or {}).get("description", "")
-            lines.append(f"  🔴 {ts} {c['tag'] or c['tgid']}{loc}: {txt}")
-            if groq_desc:
-                lines.append(f"     → {groq_desc}")
-        lines.append("")
-
-    # --- MED priority calls ---
-    med_calls = [
-        c for c in calls
-        if c not in high_calls
-        and (
-            (c.get("groq") or {}).get("priority") == "MED"
-            or any(k in (c.get("transcript") or "").lower() for k in _MED_KW)
-        )
-    ]
-    if med_calls:
-        lines.append("*** NOTABLE ***")
-        for c in med_calls[:10]:
-            ts  = datetime.fromtimestamp(c["ts"]).strftime("%H:%M")
-            loc = f" @ {c['location']}" if c.get("location") else ""
-            txt = (c.get("transcript") or "(no transcript)")[:120]
-            lines.append(f"  🟡 {ts} {c['tag'] or c['tgid']}{loc}: {txt}")
-        lines.append("")
-
-    # --- Call volume by agency ---
-    by_cat: dict[str, int] = {}
-    for c in calls:
-        cat = c["category"] or "Unknown"
-        by_cat[cat] = by_cat.get(cat, 0) + 1
-
-    lines.append("*** CALL VOLUME ***")
-    for cat, count in sorted(by_cat.items(), key=lambda x: -x[1]):
-        lines.append(f"  {cat}: {count}")
-
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Nextcloud Talk poster
-# ---------------------------------------------------------------------------
 
 # Unit/callsign patterns common in P25 traffic
 _UNIT_PATTERNS = [
