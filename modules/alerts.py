@@ -3,6 +3,8 @@
 Moved here from modules/pollers_legacy.py and audio_receiver.py.
 No imports from audio_receiver — zero circular deps.
 """
+from __future__ import annotations
+
 import base64
 import json
 import math
@@ -21,6 +23,7 @@ from modules.config import (
     TALK_PASS,
     TALK_USER,
 )
+from modules.database import get_subscribers
 from modules.talk import _bot_reply, _get_or_create_dm_room
 
 # ---------------------------------------------------------------------------
@@ -92,6 +95,42 @@ def clear_banner(itype: str):
                 _active_banner_id = None
             except Exception as e:
                 print(f"[banner] clear failed: {e}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# DM alerts — push breaking incidents directly to subscribed users
+# ---------------------------------------------------------------------------
+
+def send_dm_alert(
+    itype: str,
+    description: str,
+    location: str | None,
+    agencies: str,
+    category: str,
+    subscribers_provider=get_subscribers,
+    room_provider=_get_or_create_dm_room,
+    reply_func=_bot_reply,
+    thread_factory=threading.Thread,
+) -> int:
+    """Send a breaking incident DM alert to subscribed users."""
+    subscribers = subscribers_provider(itype, category)
+    if not subscribers:
+        return 0
+
+    loc_str = f" @ {location}" if location else ""
+    message = (
+        f"🔴 BREAKING — {itype}{loc_str}\n"
+        f"Agencies: {agencies}\n"
+        f"{description}"
+    )
+    sent = 0
+    for username in subscribers:
+        token = room_provider(username)
+        if token:
+            thread_factory(target=reply_func, args=(token, message), daemon=True).start()
+            print(f"[dm] alerted {username}: {itype}", flush=True)
+            sent += 1
+    return sent
 
 
 # ---------------------------------------------------------------------------

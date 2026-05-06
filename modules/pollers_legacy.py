@@ -10,6 +10,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from modules.alerts import send_dm_alert  # noqa: F401
 from modules.config import (
     DB_PATH,
     DECK_BASE,
@@ -28,7 +29,6 @@ from modules.config import (
     TALK_USER,
     _room_for_call,
 )
-from modules.database import get_subscribers
 from modules.geocoding import _geocode_address
 from modules.incident_engine import (
     _active_incidents,
@@ -1892,66 +1892,6 @@ def clear_banner(itype: str):
                 print(f"[banner] clear failed: {e}", flush=True)
 
 
-# ---------------------------------------------------------------------------
-# DM alerts — push 🔴 incidents directly to subscribed users
-# ---------------------------------------------------------------------------
-
-_dm_room_cache: dict[str, str] = {}   # username → 1:1 room token
-
-
-def _get_or_create_dm_room(username: str) -> str | None:
-    """Return the Talk 1:1 room token for a user, creating it if needed."""
-    if username in _dm_room_cache:
-        return _dm_room_cache[username]
-    creds = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-    # Room creation requires API v4; chat posting uses v1 (TALK_BASE)
-    room_url = TALK_BASE.replace("/api/v1", "/api/v4") + "/room"
-    payload = urllib.parse.urlencode({"roomType": 1, "invite": username}).encode()
-    req = urllib.request.Request(
-        room_url,
-        data=payload,
-        headers={"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
-                 "Content-Type": "application/x-www-form-urlencoded"},
-        method="POST"
-    )
-    try:
-        raw = urllib.request.urlopen(req, timeout=10).read().decode()
-        # Response is XML — extract <token> element
-        import xml.etree.ElementTree as ET
-        root = ET.fromstring(raw)
-        token = root.findtext(".//token")
-        if token:
-            _dm_room_cache[username] = token
-        return token
-    except Exception as e:
-        print(f"[dm] failed to get room for {username}: {e}", flush=True)
-        return None
-
-
-def send_dm_alert(itype: str, description: str, location: str | None,
-                  agencies: str, category: str):
-    """Send a 🔴 DM alert to all subscribed users."""
-    from audio_receiver import _bot_reply
-    subscribers = get_subscribers(itype, category)
-    if not subscribers:
-        return
-    loc_str = f" @ {location}" if location else ""
-    message = (
-        f"🔴 BREAKING — {itype}{loc_str}\n"
-        f"Agencies: {agencies}\n"
-        f"{description}"
-    )
-    for username in subscribers:
-        token = _get_or_create_dm_room(username)
-        if token:
-            threading.Thread(target=_bot_reply, args=(token, message),
-                             daemon=True).start()
-            print(f"[dm] alerted {username}: {itype}", flush=True)
-
-
-# ---------------------------------------------------------------------------
-# Deck integration — auto-create incident cards
-# ---------------------------------------------------------------------------
 
 def create_deck_card(incident: dict):
     """Create a Deck card in the 🆕 New column when a new incident is detected."""
