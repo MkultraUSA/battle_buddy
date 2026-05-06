@@ -14,6 +14,15 @@
 #   NEXTCLOUD_DATA_DIR=/srv/nextcloud-data
 #   GROQ_ENV_FILE=/opt/battlebuddy/.env
 
+GROQ_ENV_FILE="${GROQ_ENV_FILE:-/opt/battlebuddy/.env}"
+if [ -f "$GROQ_ENV_FILE" ]; then
+  set -a
+  # Load private deployment overrides such as PI_HOST without printing secrets.
+  # shellcheck disable=SC1090
+  . "$GROQ_ENV_FILE"
+  set +a
+fi
+
 set -u
 
 RED='\033[0;31m'
@@ -37,7 +46,6 @@ PI_USER="${PI_USER:-pi}"
 NC_HOST="${NEXTCLOUD_HOST:-nextcloud.example.com}"
 NC_OCC="${NEXTCLOUD_OCC:-/var/www/nextcloud/occ}"
 NC_DATA_DIR="${NEXTCLOUD_DATA_DIR:-/srv/nextcloud-data}"
-GROQ_ENV_FILE="${GROQ_ENV_FILE:-/opt/battlebuddy/.env}"
 
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
