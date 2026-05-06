@@ -3,7 +3,6 @@ import json
 import os
 import re
 import sqlite3
-import subprocess
 import threading
 import time
 import urllib.parse
@@ -12,7 +11,6 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from modules.config import (
-    ALERT_EMAIL,
     DB_PATH,
     DECK_BASE,
     DECK_BOARD_ID,
@@ -20,10 +18,6 @@ from modules.config import (
     DECK_STACK_NEW,
     GOOGLE_CSE_API_KEY,
     GOOGLE_CSE_ID,
-    MAILGUN_API_KEY,
-    MAILGUN_DOMAIN,
-    MAILGUN_FROM,
-    PI1_OP25_URL,
     PI_FETCH_ENABLED,
     PI_FETCH_TOKEN,
     PI_FETCH_URL,
@@ -33,7 +27,6 @@ from modules.config import (
     TALK_ROOMS,
     TALK_USER,
     _room_for_call,
-    _state,
 )
 from modules.database import active_incidents, calls_for_sitrep, get_subscribers
 from modules.geocoding import _geocode_address
@@ -43,6 +36,20 @@ from modules.incident_engine import (
     _atak_post_marker,
     _haversine_km,
     _incident_lock,
+)
+from modules.pi_watchdog import (  # noqa: F401
+    PI1_OP25_CMD_URL,
+    PI1_SSH_HOST,
+    PI1_SSH_KEY,
+    PI1_SSH_USER,
+    PI_ALERT_REPEAT_MINS,
+    PI_ALERT_USERS,
+    PI_AUTORESTART_MINS,
+    PI_CALL_SILENCE_MINS,
+    PI_WATCHDOG_INTERVAL,
+    _pi_command_queue,
+    _pi_watchdog_alert,
+    pi_watchdog_thread,
 )
 from modules.talkgroups import (
     IGNORE_TGIDS,
@@ -55,207 +62,6 @@ from modules.talkgroups import (
 
 _CDT = ZoneInfo("America/Chicago")
 
-PI_WATCHDOG_INTERVAL  = 60
-PI_CALL_SILENCE_MINS  = 20
-PI_ALERT_REPEAT_MINS  = 20
-PI_AUTORESTART_MINS   = 30
-PI_ALERT_USERS        = ["kevin"]
-PI1_OP25_CMD_URL      = os.environ.get("PI1_OP25_CMD_URL", "http://radio-node.example.local:8080/")
-PI1_SSH_HOST          = os.environ.get("PI1_SSH_HOST", "radio-node.example.local")
-PI1_SSH_USER          = "pi"
-PI1_SSH_KEY           = "/root/.ssh/id_ed25519"
-
-_pi_was_down         = False
-_op25_was_dead       = False
-_op25_fail_count     = 0
-_pi_fail_count       = 0
-_calls_were_silent   = False
-# _last_call_ts moved to modules.config._state["last_call_ts"]
-_last_silence_alert  = 0.0
-_silence_alert_count = 0
-_last_autorestart_ts = 0.0
-_pi_command_queue    = []
-
-
-def _send_email_alert(subject: str, body: str):
-    try:
-        creds = base64.b64encode(f"api:{MAILGUN_API_KEY}".encode()).decode()
-        payload = urllib.parse.urlencode({
-            "from":    MAILGUN_FROM,
-            "to":      ALERT_EMAIL,
-            "subject": subject,
-            "text":    body,
-        }).encode()
-        req = urllib.request.Request(
-            f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
-            data=payload,
-            headers={"Authorization": f"Basic {creds}"},
-            method="POST"
-        )
-        urllib.request.urlopen(req, timeout=15)
-        print(f"[email] sent to {ALERT_EMAIL}: {subject}", flush=True)
-    except Exception as e:
-        print(f"[email] failed: {e}", flush=True)
-
-def _pi_watchdog_alert(msg: str):
-    """Send a DM alert to watchdog users. Retries up to 5 times with backoff.
-    Also sends email as a parallel channel."""
-    print(f"[watchdog] ALERT: {msg}", flush=True)
-    # Email runs in parallel — doesn't block Talk retries
-    threading.Thread(target=_send_email_alert, args=(f"Battle Buddy: {msg[:60]}", msg), daemon=True).start()
-    for username in PI_ALERT_USERS:
-        sent = False
-        for attempt in range(5):
-            token = _get_or_create_dm_room(username)
-            if not token:
-                time.sleep(5)
-                continue
-            creds = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-            payload = urllib.parse.urlencode({"message": msg}).encode()
-            req = urllib.request.Request(
-                f"{TALK_BASE}/chat/{token}",
-                data=payload,
-                headers={"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
-                         "Content-Type": "application/x-www-form-urlencoded"},
-                method="POST"
-            )
-            try:
-                urllib.request.urlopen(req, timeout=10)
-                print(f"[watchdog] DM sent to {username}: {msg}", flush=True)
-                sent = True
-                break
-            except Exception as e:
-                print(f"[watchdog] DM attempt {attempt+1} failed for {username}: {e}", flush=True)
-                time.sleep(10 * (attempt + 1))
-        if not sent:
-            print(f"[watchdog] CRITICAL: could not deliver alert to {username} after 5 attempts", flush=True)
-
-
-def _pi_autorestart_op25():
-    """Restart OP25 (op25-multi_rx) and call_recorder on Pi via SSH, with command queue fallback."""
-    global _last_autorestart_ts
-    now = time.time()
-    if now - _last_autorestart_ts < 300:  # don't restart more than once per 5 min
-        return
-    _last_autorestart_ts = now
-    print("[watchdog] AUTO-RESTART: SSHing to Pi to restart op25-multi_rx + call_recorder...", flush=True)
-    cmd = (
-        "sudo systemctl restart op25-multi_rx && sleep 5 && "
-        "systemctl --user restart call_recorder && "
-        "echo restarted"
-    )
-    try:
-        result = subprocess.run(
-            ["ssh", "-i", PI1_SSH_KEY,
-             "-o", "StrictHostKeyChecking=no",
-             "-o", "ConnectTimeout=10",
-             "-o", "BatchMode=yes",
-             f"{PI1_SSH_USER}@{PI1_SSH_HOST}", cmd],
-            capture_output=True, text=True, timeout=60
-        )
-        if result.returncode == 0 and "restarted" in result.stdout:
-            print("[watchdog] AUTO-RESTART: SSH success — op25-multi_rx + call_recorder restarted", flush=True)
-            _pi_watchdog_alert("🔄 BATTLE BUDDY: Auto-restarted OP25 + call_recorder via SSH — monitoring for recovery.")
-        else:
-            raise RuntimeError(result.stderr.strip() or f"rc={result.returncode}")
-    except Exception as e:
-        print(f"[watchdog] AUTO-RESTART: SSH failed ({e}), queuing command for Pi poller", flush=True)
-        _pi_command_queue.append({"cmd": "restart_op25", "ts": now})
-        _pi_watchdog_alert("🔄 BATTLE BUDDY: Queued OP25 restart — Pi will execute within 60s.")
-
-
-def _poll_op25_trunk() -> bool:
-    """Return True if OP25 responds with a trunk_update — confirms active decoding."""
-    try:
-        cmd = json.dumps([{"command": "update", "arg1": 0, "arg2": 0}]).encode()
-        req = urllib.request.Request(
-            PI1_OP25_CMD_URL, data=cmd,
-            headers={"Content-Type": "application/json"}, method="POST"
-        )
-        resp = json.loads(urllib.request.urlopen(req, timeout=5).read())
-        return any(m.get("json_type") == "trunk_update" for m in resp)
-    except Exception:
-        return False
-
-
-def pi_watchdog_thread():
-    global _pi_was_down, _op25_was_dead, _calls_were_silent
-    global _op25_fail_count, _pi_fail_count
-    global _last_silence_alert, _silence_alert_count, _last_autorestart_ts
-    while True:
-        time.sleep(PI_WATCHDOG_INTERVAL)
-
-        # --- Check 1: Pi HTTP reachable ---
-        pi_up = False
-        try:
-            urllib.request.urlopen(PI1_OP25_URL, timeout=10)
-            pi_up = True
-        except Exception:
-            pass
-
-        if not pi_up:
-            _pi_fail_count += 1
-            if _pi_fail_count >= 2 and not _pi_was_down:
-                _pi_was_down = True
-                _pi_watchdog_alert(
-                    f"⚠️ BATTLE BUDDY ALERT: Pi 1 (OP25) is UNREACHABLE at {PI1_OP25_URL} — radio feed is down."
-                )
-        else:
-            _pi_fail_count = 0
-            if _pi_was_down:
-                _pi_was_down = False
-                _pi_watchdog_alert("✅ Pi 1 (OP25) is back online — radio feed restored.")
-
-        # --- Check 2: OP25 actively decoding (trunk_update) ---
-        if pi_up:
-            op25_active = _poll_op25_trunk()
-            if not op25_active:
-                _op25_fail_count += 1
-                if _op25_fail_count >= 3 and not _op25_was_dead:
-                    _op25_was_dead = True
-                    _pi_watchdog_alert(
-                        "⚠️ BATTLE BUDDY ALERT: Pi is up but OP25 is NOT returning trunk data — decoder may have crashed or lost the control channel."
-                    )
-            else:
-                _op25_fail_count = 0
-                if _op25_was_dead:
-                    _op25_was_dead = False
-                    _pi_watchdog_alert("✅ OP25 trunk decoder is active again — feed restored.")
-
-        # --- Check 3: Calls received recently (repeat alerts + auto-restart) ---
-        silence_secs = time.time() - _state['last_call_ts']
-        if silence_secs > PI_CALL_SILENCE_MINS * 60:
-            now = time.time()
-            since_last_alert = now - _last_silence_alert
-            # First alert immediately; repeat every PI_ALERT_REPEAT_MINS
-            if not _calls_were_silent or since_last_alert >= PI_ALERT_REPEAT_MINS * 60:
-                _calls_were_silent = True
-                _silence_alert_count += 1
-                _last_silence_alert = now
-                mins = int(silence_secs // 60)
-                suffix = f" (reminder #{_silence_alert_count})" if _silence_alert_count > 1 else ""
-                _pi_watchdog_alert(
-                    f"⚠️ BATTLE BUDDY ALERT: No audio from OP25 for {mins} minutes{suffix} — check SDR or collector."
-                )
-            # Auto-restart if silent long enough and Pi is reachable
-            if silence_secs > PI_AUTORESTART_MINS * 60 and pi_up:
-                threading.Thread(target=_pi_autorestart_op25, daemon=True).start()
-        elif _calls_were_silent:
-            _calls_were_silent = False
-            _silence_alert_count = 0
-            _last_silence_alert = 0.0
-            _pi_watchdog_alert("✅ Audio feed is active again — calls resuming.")
-
-
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# APD Press Release poller — Google News RSS
-# NOTE: austintexas.gov/news is behind Incapsula CDN which hard-blocks the
-# Some VPS/cloud IP ranges may be blocked. Do NOT attempt to scrape austintexas.gov
-# directly from this server — it will always return 403. Google News RSS
-# aggregates APD press releases from KXAN, KVUE, AAS, etc. with no bot-detect.
-# ---------------------------------------------------------------------------
 
 APD_NEWS_URL      = (
     "https://news.google.com/rss/search"
@@ -2274,5 +2080,3 @@ def create_deck_card(incident: dict):
             urllib.request.urlopen(req, timeout=10)
     except Exception as e:
         print(f"[deck] card creation failed: {e}", flush=True)
-
-
