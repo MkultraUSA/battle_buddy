@@ -1791,9 +1791,9 @@ def post_to_talk(call: dict):
     # Only post to Talk for genuinely high-danger calls — officer down, shots fired, etc.
     # Incident-level alerts are handled by send_dm_alert when an incident is created.
     # This prevents routine chatter from flooding the Talk room.
-    groq_pri_early = (call.get("groq") or {}).get("priority", "NONE")
+    llm_pri_early = (call.get("llm") or {}).get("priority", "NONE")
     has_high_kw = any(k in text_lower for k in _HIGH_KW)
-    if groq_pri_early != "HIGH" and not has_high_kw:
+    if llm_pri_early != "HIGH" and not has_high_kw:
         return
 
     # --- Incident linkage ---

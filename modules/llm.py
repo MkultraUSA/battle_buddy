@@ -1,5 +1,7 @@
 import base64
 import json
+import os
+import re
 import sqlite3
 import threading
 import time
@@ -13,6 +15,8 @@ from modules.config import (
     OPENROUTER_API_KEY,
     OPENROUTER_ENABLED,
     OPENROUTER_MODEL,
+    OPENROUTER_MODEL_CACHE_SECS,
+    OPENROUTER_RECOMMENDATIONS_URL,
     TALK_BASE,
     TALK_PASS,
     TALK_ROOMS,
@@ -25,33 +29,146 @@ except ImportError:
     _anthropic_mod = None
 
 
-def _call_openrouter_llm(system_prompt: str, user_msg: str) -> dict:
-    req = urllib.request.Request(
-        f"{OPENROUTER_API_BASE}/chat/completions",
-        data=json.dumps({
-            "model":           OPENROUTER_MODEL,
-            "messages":        [
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_msg},
-            ],
-            "max_tokens":      300,
-            "temperature":     0.1,
-            "response_format": {"type": "json_object"},
-        }).encode(),
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type":  "application/json",
-            "User-Agent":    "Mozilla/5.0",
-            "HTTP-Referer":  "https://battlebuddy.news",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=12) as resp:
-        data = json.loads(resp.read())
-    return json.loads(data["choices"][0]["message"]["content"])
+# ---------------------------------------------------------------------------
+# OpenRouter model auto-switching via recommendations.json
+# ---------------------------------------------------------------------------
+# The recommendations endpoint is updated every 15 minutes.  We cache the
+# result locally to avoid hammering it on every LLM call.
+# ---------------------------------------------------------------------------
+
+_recommendations_cache: dict = {}
+_recommendations_cache_ts: float = 0.0
+_recommendations_lock = threading.Lock()
+
+# Models that are known to be unreliable even if they appear in the list
+_MODEL_DENYLIST = {
+    "openrouter/free",  # meta-router, unpredictable routing
+}
 
 
-_GROQ_SYSTEM = """You are the incident detection brain for Battle Buddy, a real-time P25 radio monitoring system covering Austin/Travis County emergency services on the GATRRS trunked system.
+def _fetch_recommendations() -> dict:
+    """Fetch and cache the OpenRouter free-model recommendations JSON.
+    Returns the parsed JSON dict (the full response, including 'recommendations' list).
+    On failure, returns the stale cache or an empty dict.
+    """
+    global _recommendations_cache, _recommendations_cache_ts
+    now = time.time()
+    with _recommendations_lock:
+        if now - _recommendations_cache_ts < OPENROUTER_MODEL_CACHE_SECS and _recommendations_cache:
+            return _recommendations_cache
+    try:
+        req = urllib.request.Request(
+            OPENROUTER_RECOMMENDATIONS_URL,
+            headers={"User-Agent": "BattleBuddy/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        with _recommendations_lock:
+            _recommendations_cache = data
+            _recommendations_cache_ts = time.time()
+        return data
+    except Exception as exc:
+        print(f"[llm] WARN failed to fetch recommendations: {exc}", flush=True)
+        with _recommendations_lock:
+            return _recommendations_cache
+
+
+def _pick_best_model(recommendations: dict) -> str | None:
+    """Pick the best available free model from the recommendations list.
+    Filters out denylisted models and those with status != 'online'.
+    Returns the model_id string or None if nothing suitable found.
+    """
+    recs = recommendations.get("recommendations") or []
+    for rec in recs:
+        model_id = rec.get("model_id") or ""
+        status = rec.get("status") or ""
+        if model_id in _MODEL_DENYLIST:
+            continue
+        if status != "online":
+            continue
+        # Must support JSON output for our structured prompts
+        if not rec.get("supports_json"):
+            continue
+        return model_id
+    return None
+
+
+def _get_effective_model() -> str:
+    """Return the model ID to use for LLM calls.
+    Priority:
+      1. OPENROUTER_MODEL env var if explicitly set (non-default value)
+      2. Best model from recommendations.json (auto-switching)
+      3. Fallback to OPENROUTER_MODEL default
+    """
+    env_model = os.environ.get("OPENROUTER_MODEL", "")
+    if env_model and env_model != "google/gemini-2.5-flash":
+        # User explicitly overrode the default — respect it
+        return env_model
+    recs = _fetch_recommendations()
+    best = _pick_best_model(recs)
+    if best and best != OPENROUTER_MODEL:
+        print(f"[llm] auto-switching model: {OPENROUTER_MODEL} → {best}", flush=True)
+        return best
+    return OPENROUTER_MODEL
+
+
+# ---------------------------------------------------------------------------
+# Core LLM call with retry
+# ---------------------------------------------------------------------------
+
+def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3) -> dict:
+    """Call OpenRouter chat/completions with exponential-backoff retry.
+    Uses the auto-selected model from recommendations.json.
+    """
+    model = _get_effective_model()
+    payload = json.dumps({
+        "model":           model,
+        "messages":        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_msg},
+        ],
+        "max_tokens":      300,
+        "temperature":     0.1,
+        "response_format": {"type": "json_object"},
+    }).encode()
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type":  "application/json",
+        "User-Agent":    "Mozilla/5.0",
+        "HTTP-Referer":  "https://battlebuddy.news",
+    }
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(
+                f"{OPENROUTER_API_BASE}/chat/completions",
+                data=payload,
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read())
+            return json.loads(data["choices"][0]["message"]["content"])
+        except Exception as exc:
+            last_exc = exc
+            if "429" in str(exc):
+                wait = (2 ** attempt) * 5
+                print(f"[llm] 429 rate limited (attempt {attempt+1}/{max_retries}), waiting {wait}s", flush=True)
+                time.sleep(wait)
+            elif attempt < max_retries - 1:
+                wait = (2 ** attempt) * 2
+                print(f"[llm] error (attempt {attempt+1}/{max_retries}): {exc}, retrying in {wait}s", flush=True)
+                time.sleep(wait)
+            else:
+                raise
+    raise last_exc  # should not reach here, but just in case
+
+
+# ---------------------------------------------------------------------------
+# Incident detection system prompt
+# ---------------------------------------------------------------------------
+
+_LLM_SYSTEM = """You are the incident detection brain for Battle Buddy, a real-time P25 radio monitoring system covering Austin/Travis County emergency services on the GATRRS trunked system.
 
 Austin agencies: APD (police), AFD (Austin Fire Dept), TCEMS (Travis County EMS), TCFD (Travis County Fire), ABIA (Austin-Bergstrom Airport), TCSO (Travis County Sheriff), DPS (Texas Dept of Public Safety), UTPD (UT Police).
 
@@ -87,26 +204,24 @@ Be conservative. Most radio traffic is routine. Only flag genuine emergencies.""
 _llm_call_times: list      = []
 _llm_rate_lock             = threading.Lock()
 _llm_backoff_until         = 0.0
-_LLM_RATE_LIMIT            = 10
-_GROQ_MIN_TRANSCRIPT       = 50
-_GROQ_MIN_DURATION         = 2.5
+_LLM_MIN_TRANSCRIPT        = 50
+_LLM_MIN_DURATION          = 2.5
 _LLM_BACKOFF_SECS          = 600
-_GROQ_ROUTINE_STREAK       = 3
-_GROQ_ROUTINE_WINDOW       = 600
-_GROQ_ROUTINE_COOLDOWN     = 300
-_GROQ_SAFETY_RE            = __import__('re').compile(
+_LLM_ROUTINE_STREAK        = 3
+_LLM_ROUTINE_WINDOW        = 600
+_LLM_ROUTINE_COOLDOWN      = 300
+_LLM_SAFETY_RE             = re.compile(
     r"shoot|shot|weapon|gun|stab|assault|pursuit|chase|crash|fire|smoke|explosion|"
     r"officer down|man down|unconscious|not breathing|overdose|hostage|threat|bomb",
-    __import__('re').IGNORECASE
+    re.IGNORECASE,
 )
 _llm_routine_tracker: dict = {}
 
 
 # --- Classification config (self-improving constraints) ---------------------
-import os as _os  # noqa: E402
 
-_CLASSIFICATION_CONFIG_PATH = _os.path.join(
-    _os.path.dirname(_os.path.abspath(__file__)), "classification_config.json"
+_CLASSIFICATION_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "classification_config.json"
 )
 try:
     with open(_CLASSIFICATION_CONFIG_PATH, "r") as _f:
@@ -118,7 +233,7 @@ except Exception as _exc:
 
 def build_classification_rules_text() -> str:
     """Render CLASSIFICATION_CONFIG into a constraints block appended to the
-    base system prompt at call time. Never mutates _GROQ_SYSTEM."""
+    base system prompt at call time. Never mutates _LLM_SYSTEM."""
     if not CLASSIFICATION_CONFIG:
         return ""
     lines = ["", "ADDITIONAL CLASSIFICATION CONSTRAINTS (per-incident-type rules):"]
@@ -169,20 +284,27 @@ def _per_call_tgid_restrictions(tgid: int) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
-def groq_analyze(call: dict, recent_calls_list: list):
+def llm_analyze(call: dict, recent_calls_list: list):
+    """Analyze a radio call for incident detection using OpenRouter LLM.
+    Returns a dict with incident_type, priority, should_hold, description,
+    escalation_stage, reasoning — or None if skipped/error.
+    """
     global _llm_backoff_until, _llm_call_times
     if not OPENROUTER_ENABLED:
         return None
     if call.get("tgid", 0) == 0:
         return None
     transcript = call.get("transcript") or ""
-    if not transcript or len(transcript) < _GROQ_MIN_TRANSCRIPT:
+    if not transcript or len(transcript) < _LLM_MIN_TRANSCRIPT:
         return None
-    if call.get("duration", 99.0) < _GROQ_MIN_DURATION:
+    if call.get("duration", 99.0) < _LLM_MIN_DURATION:
         return None
     tgid = call.get("tgid", 0)
-    if not _GROQ_SAFETY_RE.search(transcript):
+    if not _LLM_SAFETY_RE.search(transcript):
         now_pre = time.time()
         tracker = _llm_routine_tracker.get(tgid)
         if tracker and now_pre < tracker.get("cooldown_until", 0):
@@ -192,8 +314,6 @@ def groq_analyze(call: dict, recent_calls_list: list):
         if now < _llm_backoff_until:
             return None
         _llm_call_times[:] = [t for t in _llm_call_times if now - t < 60]
-        if len(_llm_call_times) >= _LLM_RATE_LIMIT:
-            return None
         _llm_call_times.append(now)
 
     ctx_lines = []
@@ -212,7 +332,7 @@ def groq_analyze(call: dict, recent_calls_list: list):
         f"Recent calls (last 15 min):\n{context_block}"
     )
     rules_text = build_classification_rules_text()
-    system_prompt = _GROQ_SYSTEM + ("\n" + rules_text if rules_text else "")
+    system_prompt = _LLM_SYSTEM + ("\n" + rules_text if rules_text else "")
     user_msg = user_msg + _per_call_tgid_restrictions(tgid)
     try:
         result = _call_openrouter_llm(system_prompt, user_msg)
@@ -224,13 +344,13 @@ def groq_analyze(call: dict, recent_calls_list: list):
         now_post = time.time()
         if itype in (None, "ROUTINE"):
             tr = _llm_routine_tracker.setdefault(tgid, {"streak": 0, "cooldown_until": 0.0, "last_ts": 0.0})
-            if now_post - tr["last_ts"] < _GROQ_ROUTINE_WINDOW:
+            if now_post - tr["last_ts"] < _LLM_ROUTINE_WINDOW:
                 tr["streak"] += 1
             else:
                 tr["streak"] = 1
             tr["last_ts"] = now_post
-            if tr["streak"] >= _GROQ_ROUTINE_STREAK:
-                tr["cooldown_until"] = now_post + _GROQ_ROUTINE_COOLDOWN
+            if tr["streak"] >= _LLM_ROUTINE_STREAK:
+                tr["cooldown_until"] = now_post + _LLM_ROUTINE_COOLDOWN
                 tr["streak"] = 0
         else:
             _llm_routine_tracker.pop(tgid, None)
@@ -274,7 +394,10 @@ _TGID_ID_MIN_LEN           = 15
 _TGID_ID_CONFIRM_THRESHOLD = 3
 
 
-def groq_identify_tgid(tgid: int, transcript: str):
+def llm_identify_tgid(tgid: int, transcript: str):
+    """Identify an unknown talkgroup using OpenRouter LLM.
+    Returns the raw LLM response dict or None.
+    """
     if not OPENROUTER_ENABLED or not transcript or len(transcript) < _TGID_ID_MIN_LEN:
         return None
     try:

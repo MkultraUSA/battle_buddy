@@ -42,7 +42,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
           sleep 2
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
-            "tmux send-keys -t hermes-ci 'docker exec -it -u hermes --env-file /opt/hermes-data/.worker.env -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"I need to work on the Battle Buddy codebase in /opt/data/workspace/battle_buddy/. Please read /opt/data/hermes_task.txt and execute the requested improvement. Before opening a PR, install dev requirements from requirements-dev.txt, run python -m ruff check . --fix, then run python -m ruff check . and relevant tests. Commit any Ruff fixes with the work. When finished, open a PR to main and print the PR URL on its own line.\"' Enter"
+            "tmux send-keys -t hermes-ci 'docker exec -it -u hermes --env-file /opt/hermes-data/.worker.env -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"I need to work on the Battle Buddy codebase in /opt/data/workspace/battle_buddy/. Please read /opt/data/hermes_task.txt and execute the requested improvement. This task requires the Coder -> Reviewer -> PR -> Merge -> Deploy -> Post-Deploy Tests pipeline. Steps: 1) Plan the change 2) Implement in a feature branch 3) Open a PR 4) Perform adversarial code review (delegate to independent reviewer) 5) Fix any issues found 6) Re-review until approved 7) Merge the PR 8) Deploy to production (ssh root@kevcloud.ddns.net cd /opt/battlebuddy && git pull --ff-only && systemctl restart battlebuddy) 9) Verify health (systemctl is-active battlebuddy) 10) Run post-deploy tests. Do NOT skip the review step. Do NOT skip post-deploy tests. Before opening a PR, install dev requirements from requirements-dev.txt, run python -m ruff check . --fix, then run python -m ruff check . and relevant tests. Commit any Ruff fixes with the work. When finished, print the PR URL and deploy status.\"' Enter"
 
       - name: Poll tmux for PR URL
         id: extract
@@ -51,8 +51,8 @@ jobs:
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
         run: |
           set -euo pipefail
-          # Poll for 20 minutes
-          DEADLINE=$(( $(date +%s) + 20*60 ))
+          # Poll for 30 minutes
+          DEADLINE=$(( $(date +%s) + 30*60 ))
           while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
             sleep 30
             PANE=$(ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux capture-pane -t hermes-ci -p -S -500" || true)
@@ -65,9 +65,11 @@ jobs:
           exit 1
 
   reviewer:
-    name: Hermes reviewer - critique PR
+    name: Hermes reviewer - critique and approve PR
     runs-on: ubuntu-latest
     needs: coder
+    outputs:
+      approved: ${{ steps.review.outputs.approved }}
     steps:
       - name: Install SSH key
         run: |
@@ -80,16 +82,22 @@ jobs:
         env:
           HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          WORKER_GH_TOKEN: ${{ secrets.WORKER_GH_TOKEN }}
           PR_URL: ${{ needs.coder.outputs.pr_url }}
         run: |
           cat > /tmp/hermes_task.txt <<EOF
-          You are the bb-reviewer. 
+          You are the adversarial code reviewer for Battle Buddy.
           1. Find the PR: ${PR_URL}
-          2. Inspect the diff and pass/fail checks.
-          3. If Ruff failed, install dev requirements from requirements-dev.txt, fix the branch with python -m ruff check . --fix, rerun python -m ruff check ., and push the fix.
-          4. Approve or request changes.
+          2. Inspect the diff thoroughly — check correctness, edge cases, regressions, production safety, code style
+          3. If Ruff failed, install dev requirements from requirements-dev.txt, fix the branch with python -m ruff check . --fix, rerun python -m ruff check ., and push the fix
+          4. If you find issues, request changes with specific fix instructions
+          5. If the PR passes review, approve it and then MERGE it (squash merge)
+          6. After merging, verify the merge was successful
+          7. Print REVIEW_APPROVED on its own line when done
           EOF
           scp -i ~/.ssh/id_ed25519 /tmp/hermes_task.txt "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/hermes_task.txt"
+          printf 'GITHUB_TOKEN="%s"\n' "${WORKER_GH_TOKEN}" > /tmp/worker.env
+          scp -i ~/.ssh/id_ed25519 /tmp/worker.env "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/.worker.env"
 
       - name: Trigger Reviewer via tmux
         env:
@@ -99,4 +107,26 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
           sleep 2
           ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
-            "tmux send-keys -t hermes-ci 'docker exec -it -u hermes -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"Read /opt/data/hermes_task.txt and perform the PR review now.\" ' Enter"
+            "tmux send-keys -t hermes-ci 'docker exec -it -u hermes --env-file /opt/hermes-data/.worker.env -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"Read /opt/data/hermes_task.txt and perform the PR review, merge, and verification now.\" ' Enter"
+
+      - name: Poll for review result
+        id: review
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+        run: |
+          set -euo pipefail
+          DEADLINE=$(( $(date +%s) + 20*60 ))
+          while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
+            sleep 30
+            PANE=$(ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux capture-pane -t hermes-ci -p -S -500" || true)
+            if printf '%s' "${PANE}" | grep -q "REVIEW_APPROVED"; then
+              echo "approved=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if printf '%s' "${PANE}" | grep -q "REVIEW_REJECTED"; then
+              echo "approved=false" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+          done
+          exit 1

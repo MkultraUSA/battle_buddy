@@ -297,14 +297,14 @@ def analyze_for_incident(call: dict):
 
     flags = []   # list of (priority, itype, description)
 
-    # --- Groq LLM result (primary signal — overrides keyword rules if present) ---
-    groq = call.get("groq") or {}
-    groq_itype = groq.get("incident_type")
-    groq_pri   = groq.get("priority", "NONE")
-    if groq_itype and groq_itype not in (None, "ROUTINE"):
-        pri_score = {"HIGH": 5, "MED": 15, "NONE": 30}.get(groq_pri, 20)
-        flags.append((pri_score, groq_itype,
-                      groq.get("description") or f"{groq_itype} detected by LLM"))
+    # --- LLM result (primary signal — overrides keyword rules if present) ---
+    llm = call.get("llm") or {}
+    llm_itype = llm.get("incident_type")
+    llm_pri   = llm.get("priority", "NONE")
+    if llm_itype and llm_itype not in (None, "ROUTINE"):
+        pri_score = {"HIGH": 5, "MED": 15, "NONE": 30}.get(llm_pri, 20)
+        flags.append((pri_score, llm_itype,
+                      llm.get("description") or f"{llm_itype} detected by LLM"))
 
     # --- Rule 1: Transit channels active (APD Metro 1-10) ---
     if tgid in TRANSIT_TGIDS:
@@ -404,7 +404,7 @@ def analyze_for_incident(call: dict):
     # --- Escalation check on ALL calls (even routine ones) ---
     # A welfare check that turns into a SWAT standoff must be linked.
     call_id = call.get("id")
-    stage = _detect_escalation_stage(call.get("transcript") or "") or groq.get("escalation_stage")
+    stage = _detect_escalation_stage(call.get("transcript") or "") or llm.get("escalation_stage")
     loc_match = _find_incident_by_location(call.get("lat"), call.get("lon"), ts)
     if loc_match is not None:
         # Link this call to the nearby incident
@@ -457,7 +457,7 @@ def analyze_for_incident(call: dict):
         conn.close()
 
     if HOLD_ENABLED:
-        _consider_hold(tgid, itype, escalation_stage=stage or groq.get("escalation_stage"))
+        _consider_hold(tgid, itype, escalation_stage=stage or llm.get("escalation_stage"))
 
 
 # ---------------------------------------------------------------------------
