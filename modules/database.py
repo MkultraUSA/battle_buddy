@@ -7,7 +7,7 @@ from modules.talkgroups import CAT_COORDS
 
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS calls (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,7 +148,7 @@ def get_subscribers(itype: str, category: str) -> list:
         "AFD": "fire-ems", "TCFD": "fire-ems", "TCEMS": "fire-ems",
     }
     beat = beat_map.get(category, "general")
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     rows = conn.execute(
         "SELECT DISTINCT username FROM subscriptions WHERE beat='all' OR beat=?", (beat,)
     ).fetchall()
@@ -157,21 +157,21 @@ def get_subscribers(itype: str, category: str) -> list:
 
 
 def add_subscription(username: str, beat: str = "all"):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute("INSERT OR IGNORE INTO subscriptions (username, beat) VALUES (?,?)", (username, beat))
     conn.commit()
     conn.close()
 
 
 def remove_subscription(username: str, beat: str = "all"):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute("DELETE FROM subscriptions WHERE username=? AND beat=?", (username, beat))
     conn.commit()
     conn.close()
 
 
 def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx=0) -> int:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     cur  = conn.execute(
         "INSERT INTO calls (ts,tgid,tag,category,node,duration,transcript,lat,lon,location,coords_approx) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -184,7 +184,7 @@ def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, l
 
 
 def recent_calls(limit=200):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT * FROM calls ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
@@ -192,7 +192,7 @@ def recent_calls(limit=200):
 
 
 def calls_since(since_ts: float) -> list:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM calls WHERE ts > ? ORDER BY ts DESC", (since_ts,)
@@ -220,7 +220,7 @@ def _fill_incident_coords(inc: dict) -> dict:
 
 
 def active_incidents() -> list:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     cutoff = time.time() - 30 * 60
     rows = conn.execute(
@@ -232,7 +232,7 @@ def active_incidents() -> list:
 
 
 def get_all_incidents(limit=50) -> list:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM incidents ORDER BY ts_start DESC LIMIT ?", (limit,)

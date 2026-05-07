@@ -484,7 +484,7 @@ def api_incidents_active():
 def api_stats():
     """24-hour summary stats for the splash page."""
     since = time.time() - 86400
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     calls_24h = conn.execute(
         "SELECT COUNT(*) FROM calls WHERE ts > ?", (since,)
@@ -517,7 +517,7 @@ def api_shooting_intel():
     import json as _json
     since = time.time() - (30 * 86400)
     CORROBORATING = {"AFD", "TCEMS", "TCSO", "TCFD"}
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
 
     rows = conn.execute(
@@ -617,7 +617,7 @@ def api_daily_summary():
     """
     import json as _json
     since = time.time() - 86400
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
 
     rows = conn.execute(
@@ -674,7 +674,7 @@ def api_daily_summary():
 @app.route("/api/tgid_guesses")
 def api_tgid_guesses():
     """Return all TGID identification guesses, grouped by tgid."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM tgid_guesses ORDER BY ts DESC LIMIT 500"
@@ -717,7 +717,7 @@ def api_tgid_confirm():
         with open(TGID_TSV, "a") as f:
             f.write(f"{tgid}\t{name}\n")
         # Mark confirmed in DB
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         conn.execute("UPDATE tgid_guesses SET confirmed=1 WHERE tgid=?", (tgid,))
         conn.commit()
         conn.close()
@@ -740,7 +740,7 @@ def api_drone_sighting():
     if not serial or lat is None or lon is None:
         return jsonify({"error": "serial, lat, lon required"}), 400
     ts = time.time()
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute(
         "INSERT INTO drone_sightings (ts, serial, ua_type, lat, lon, alt_geo, alt_agl, speed_ms, heading) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -767,7 +767,7 @@ def api_drone_sightings():
     """Return recent drone sightings (last 24h by default, ?hours=N to override)."""
     hours = min(int(request.args.get("hours", 24)), 168)
     since = time.time() - (hours * 3600)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM drone_sightings WHERE ts > ? ORDER BY ts DESC LIMIT 500",
@@ -781,7 +781,7 @@ def api_drone_sightings():
 def api_adsb():
     """Return current aircraft positions + 30-min trails grouped by icao24."""
     cutoff = time.time() - ADSB_TRAIL_SECS
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM aircraft_positions WHERE ts > ? ORDER BY icao24, ts",
@@ -948,7 +948,7 @@ def bot_talk():
 
     elif command == "!unknowns":
         # Show recent unknown TGID guesses
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         rows = conn.execute(
             "SELECT tgid, guess, confidence, COUNT(*) as cnt FROM tgid_guesses "
             "WHERE confirmed=0 GROUP BY tgid ORDER BY cnt DESC LIMIT 10"
@@ -973,7 +973,7 @@ def bot_talk():
                 name_arg = " ".join(parts[2:])
                 with open(TGID_TSV, "a") as f:
                     f.write(f"{tgid_arg}\t{name_arg}\n")
-                conn = sqlite3.connect(DB_PATH)
+                conn = sqlite3.connect(DB_PATH, timeout=5.0)
                 conn.execute("UPDATE tgid_guesses SET confirmed=1 WHERE tgid=?", (tgid_arg,))
                 conn.commit()
                 conn.close()
@@ -1477,7 +1477,7 @@ def _load_active_incidents_from_db():
     Any incident older than 4 hours is closed immediately as stale."""
     MAX_AGE = 4 * 3600  # close anything untouched for >4 hours
     now = time.time()
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM incidents WHERE status='active' AND is_test=0"
@@ -1506,7 +1506,7 @@ def _load_active_incidents_from_db():
             loaded += 1
 
     if to_close_now:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         conn.executemany(
             "UPDATE incidents SET status='cleared', ts_cleared=? WHERE id=?",
             [(now, iid) for iid in to_close_now]
@@ -1542,7 +1542,7 @@ def _nc_upload(path: str, data: bytes, content_type: str = "text/markdown"):
 
 def _export_incident_snapshot(inc_id: int):
     """Build a markdown snapshot of a flagged incident and push to Nextcloud."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     inc = conn.execute("SELECT * FROM incidents WHERE id=?", (inc_id,)).fetchone()
     if not inc:
@@ -1627,7 +1627,7 @@ def _export_incident_snapshot(inc_id: int):
 @app.route("/api/incidents/<int:inc_id>/flag", methods=["POST"])
 def api_flag_incident(inc_id):
     """Flag an incident and export a snapshot to Nextcloud."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute("UPDATE incidents SET flagged=1 WHERE id=?", (inc_id,))
     conn.commit()
     conn.close()
@@ -1638,7 +1638,7 @@ def api_flag_incident(inc_id):
 @app.route("/api/incidents/flagged")
 def api_flagged_incidents():
     """Return all flagged incidents."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM incidents WHERE flagged=1 ORDER BY ts_start DESC"
@@ -1701,7 +1701,7 @@ def api_logout():
     if sess:
         token = request.cookies.get("bb_session") or \
                 request.headers.get("Authorization", "").replace("Bearer ", "").strip()
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         conn.execute("DELETE FROM sessions WHERE token=?", (token,))
         conn.commit()
         conn.close()
@@ -1750,7 +1750,7 @@ def api_commute_save():
     if not info:
         return jsonify({"error": "Could not resolve addresses or fetch travel time. Check that both addresses are valid US locations."}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute(
         "UPDATE premium_users SET commute_origin=?, commute_origin_lat=?, commute_origin_lon=?, "
         "commute_dest=?, commute_dest_lat=?, commute_dest_lon=?, commute_baseline_mins=? "
@@ -1770,7 +1770,7 @@ def api_commute_save():
 def api_commute_time():
     sess = _get_session(request)
     username = sess["username"]
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     row = conn.execute(
         "SELECT commute_origin, commute_origin_lat, commute_origin_lon, "
         "commute_dest, commute_dest_lat, commute_dest_lon, commute_baseline_mins "
@@ -1802,7 +1802,7 @@ def api_commute_polyline():
     import json as _json
     token = request.args.get("token")
     if token:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         row = conn.execute(
             "SELECT commute_origin, commute_origin_lat, commute_origin_lon, "
             "commute_dest, commute_dest_lat, commute_dest_lon "
@@ -1816,7 +1816,7 @@ def api_commute_polyline():
         sess = _get_session(request)
         if not sess:
             return jsonify({"error": "login required"}), 401
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         row = conn.execute(
             "SELECT commute_origin, commute_origin_lat, commute_origin_lon, "
             "commute_dest, commute_dest_lat, commute_dest_lon "
@@ -1857,7 +1857,7 @@ def api_commute_incidents():
     """Return active incidents near the user's commute route. Auth via session or share token."""
     token = request.args.get("token")
     if token:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         row = conn.execute(
             "SELECT username, commute_origin_lat, commute_origin_lon, "
             "commute_dest_lat, commute_dest_lon FROM premium_users WHERE commute_share_token=?",
@@ -1871,7 +1871,7 @@ def api_commute_incidents():
         sess = _get_session(request)
         if not sess:
             return jsonify({"error": "login required"}), 401
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         row = conn.execute(
             "SELECT commute_origin_lat, commute_origin_lon, commute_dest_lat, commute_dest_lon "
             "FROM premium_users WHERE username=?", (sess["username"],)
@@ -1882,7 +1882,7 @@ def api_commute_incidents():
         olat, olon, dlat, dlon = row
 
     cutoff = time.time() - 3600 * 4
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     rows = conn.execute(
         "SELECT id, itype, location, lat, lon, description, ts_start FROM incidents "
         "WHERE status='active' AND lat IS NOT NULL AND ts_start > ? AND is_test=0",
@@ -1915,7 +1915,7 @@ def api_commute_share_token():
     import secrets as _secrets
     sess = _get_session(request)
     username = sess["username"]
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     row = conn.execute(
         "SELECT commute_share_token FROM premium_users WHERE username=?", (username,)
     ).fetchone()
@@ -2132,7 +2132,7 @@ def api_intel_query():
     username = sess["username"]
 
     # Check quota
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     row = conn.execute(
         "SELECT intel_queries_used, intel_quota FROM premium_users WHERE username=?",
         (username,)
@@ -2156,7 +2156,7 @@ def api_intel_query():
     keywords = [k for k in keywords if k not in stop][:8]
 
     # Build DB query — search transcripts and talkgroup names
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     results = []
     tgids_hit = set()
 
@@ -2216,7 +2216,7 @@ def api_intel_query():
             print(f"[intel] Anthropic error: {e}", flush=True)
 
     # Increment usage counter and log
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute(
         "UPDATE premium_users SET intel_queries_used = intel_queries_used + 1 WHERE username=?",
         (username,)
@@ -2318,7 +2318,7 @@ def premium_setup():
     if not token:
         error = "Missing or invalid setup link."
     else:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         row = conn.execute(
             "SELECT username, setup_token_expires FROM premium_users WHERE setup_token=?",
             (token,)
@@ -2403,7 +2403,7 @@ def api_premium_setpassword():
     if not token or len(password) < 8:
         return jsonify({"error": "Invalid request"}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     row = conn.execute(
         "SELECT username, setup_token_expires FROM premium_users WHERE setup_token=?",
         (token,)
@@ -2437,7 +2437,7 @@ def api_premium_setpassword():
         return jsonify({"error": "Could not reach Nextcloud. Try again."}), 500
 
     # Invalidate token
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.execute(
         "UPDATE premium_users SET setup_token=NULL, setup_token_expires=NULL WHERE username=?",
         (username,)
@@ -2459,7 +2459,7 @@ def api_subscription_status():
     sess = _get_session(request)
     if not sess:
         return jsonify({"premium": False, "logged_in": False})
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     row = conn.execute(
         "SELECT status, intel_queries_used, intel_quota FROM premium_users WHERE username=?",
         (sess["username"],)
@@ -2499,7 +2499,7 @@ def api_premium_homicides_summary():
             seed_count = sum(int(e.get("count", 1)) for e in seed_data)
         except Exception:
             pass
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     rows = conn.execute(
         """SELECT ts_start, location FROM incidents
            WHERE itype = 'HOMICIDE'
@@ -2553,7 +2553,7 @@ def api_premium_weather():
     # Use commute origin coords if saved, otherwise default to Austin
     lat, lon, location_label = 30.2672, -97.7431, "Austin TX"
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         row  = conn.execute(
             "SELECT commute_origin_lat, commute_origin_lon, commute_origin "
             "FROM premium_users WHERE username=?", (sess["username"],)
@@ -3018,7 +3018,7 @@ def premium_headlines():
     if not sess or (not sess.get("is_admin") and not sess.get("is_premium")):
         return jsonify({"error": "unauthorized"}), 401
     cutoff = time.time() - 24 * 3600
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
         SELECT ia.id, ia.ts, ia.headline, ia.url, ia.source, ia.snippet, ia.match_score,
@@ -3056,7 +3056,7 @@ def api_premium_citizen_intel():
     if not sess:
         return jsonify({"error": "unauthorized"}), 401
     cutoff = time.time() - 7 * 86400
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     rows = conn.execute("""
         SELECT r.ts, r.post_id, r.subreddit, r.title, r.url, r.author,
                r.keywords, r.incident_id, r.match_score,
@@ -3090,7 +3090,7 @@ def premium_index():
 
     if is_premium or is_admin:
         # Redirect active premium members to dashboard
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
         row = conn.execute(
             "SELECT intel_queries_used, intel_quota FROM premium_users WHERE username=?",
             (username,)
