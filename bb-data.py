@@ -23,12 +23,12 @@ Tables: calls, activity, incidents, events, aircraft_positions, bookings,
 Formats: csv, json
 """
 
+import argparse
+import os
 import sqlite3
 import sys
-import os
 import time
-import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 CALLS_DB = "/opt/battlebuddy/calls.db"
