@@ -107,6 +107,34 @@ _APD_HEADLINE_KW  = [
     "arrest", "suspect", "murder", "aggravated",
 ]
 
+# ---------------------------------------------------------------------------
+# Retry helper for poller HTTP fetches
+# ---------------------------------------------------------------------------
+
+def _fetch_url_with_retry(url: str, headers: dict | None = None,
+                          timeout: int = 15, max_retries: int = 3,
+                          label: str = "poller") -> bytes:
+    """Fetch a URL with exponential backoff retry.
+
+    Returns the response body as bytes, or raises the last exception after
+    all retries are exhausted.
+    """
+    last_err: Exception | None = None
+    req = urllib.request.Request(url, headers=headers or {})
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError) as e:
+            last_err = e
+            wait = 2 ** attempt
+            if attempt < max_retries - 1:
+                print(f"[{label}] fetch attempt {attempt + 1}/{max_retries} failed ({e}) — retrying in {wait}s", flush=True)
+                time.sleep(wait)
+    raise last_err  # type: ignore[misc]
+
+
+
 def _apd_parse_rss(xml_text: str) -> list[dict]:
     """Parse Google News RSS feed; return list of {title, link}."""
     import xml.etree.ElementTree as ET
@@ -379,12 +407,12 @@ def apd_news_thread():
     while True:
         time.sleep(APD_NEWS_INTERVAL)
         try:
-            req  = urllib.request.Request(
+            xml_text = _fetch_url_with_retry(
                 APD_NEWS_URL,
                 headers={"User-Agent": "BattleBuddy/2.0",
-                         "Accept": "application/rss+xml, application/xml, text/xml"}
-            )
-            xml_text = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", errors="replace")
+                         "Accept": "application/rss+xml, application/xml, text/xml"},
+                timeout=15, label="apd-news",
+            ).decode("utf-8", errors="replace")
         except Exception as e:
             print(f"[apd-news] fetch error: {e}", flush=True)
             continue
@@ -717,8 +745,11 @@ def _nominatim_geocode(query: str):
     try:
         q = urllib.parse.quote_plus(f"{query} Austin TX")
         url = f"https://nominatim.openstreetmap.org/search?q={q}&format=json&limit=1"
-        req = urllib.request.Request(url, headers={"User-Agent": "BattleBuddy/2.0"})
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
+        data = json.loads(_fetch_url_with_retry(
+            url,
+            headers={"User-Agent": "BattleBuddy/2.0"},
+            timeout=10, label="nominatim",
+        ).decode("utf-8"))
         if data:
             return float(data[0]["lat"]), float(data[0]["lon"])
     except Exception as e:
@@ -1051,10 +1082,12 @@ def traffic_open_data_thread():
     while True:
         time.sleep(TRAFFIC_POLL_INTERVAL)
         try:
-            req = urllib.request.Request(TRAFFIC_OPEN_DATA_URL,
-                                         headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                incidents = json.loads(resp.read())
+            raw = _fetch_url_with_retry(
+                TRAFFIC_OPEN_DATA_URL,
+                headers={"Accept": "application/json"},
+                timeout=15, label="traffic",
+            )
+            incidents = json.loads(raw)
         except Exception as e:
             print(f"[traffic] fetch error: {e}", flush=True)
             continue
@@ -1171,10 +1204,12 @@ def atxfloods_thread():
     print("[atxfloods] ATXFloods poller started", flush=True)
     while True:
         try:
-            req = urllib.request.Request(ATXFLOODS_URL,
-                                         headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                payload = json.loads(resp.read())
+            raw = _fetch_url_with_retry(
+                ATXFLOODS_URL,
+                headers={"Accept": "application/json"},
+                timeout=20, label="atxfloods",
+            )
+            payload = json.loads(raw)
         except Exception as e:
             print(f"[atxfloods] fetch error: {e}", flush=True)
             time.sleep(ATXFLOODS_POLL_INTERVAL)
@@ -1472,9 +1507,12 @@ def _cad_fetch_and_store():
     url = APD_CAD_URL.format(lookback=lookback_str)
 
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            records = json.loads(resp.read())
+        raw = _fetch_url_with_retry(
+            url,
+            headers={"Accept": "application/json"},
+            timeout=30, label="cad",
+        )
+        records = json.loads(raw)
     except Exception as e:
         print(f"[cad] fetch error: {e}", flush=True)
         return 0

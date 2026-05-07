@@ -150,7 +150,7 @@ def receive():
 
     def process():
         try:
-            
+
             _state['last_call_ts'] = time.time()
             transcript = transcribe(wav_bytes)
             lat, lon, location = extract_location(transcript)
@@ -172,6 +172,10 @@ def receive():
                                  daemon=True).start()
             analyze_for_incident(call)
             post_to_talk(call)
+        except Exception as _proc_exc:
+            import traceback as _tb
+            print(f"[recv] PROCESS ERROR for {tag}: {_proc_exc}", flush=True)
+            _tb.print_exc()
         finally:
             _process_sem.release()
             if is_broadcastify:
