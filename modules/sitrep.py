@@ -79,7 +79,7 @@ def build_sitrep(
     high_calls = [
         c
         for c in calls
-        if (c.get("groq") or {}).get("priority") == "HIGH"
+        if (c.get("llm") or {}).get("priority") == "HIGH"
         or any(k in (c.get("transcript") or "").lower() for k in _SITREP_HIGH_KW)
     ]
     if high_calls:
@@ -89,10 +89,10 @@ def build_sitrep(
             ts = datetime.fromtimestamp(c["ts"]).strftime("%H:%M")
             loc = f" @ {c['location']}" if c.get("location") else ""
             txt = (c.get("transcript") or "(no transcript)")[:150]
-            groq_desc = (c.get("groq") or {}).get("description", "")
+            llm_desc = (c.get("llm") or {}).get("description", "")
             lines.append(f"  🔴 {ts} {c['tag'] or c['tgid']}{loc}: {txt}")
-            if groq_desc:
-                lines.append(f"     → {groq_desc}")
+            if llm_desc:
+                lines.append(f"     → {llm_desc}")
         lines.append("")
 
     med_calls = [
@@ -100,7 +100,7 @@ def build_sitrep(
         for c in calls
         if c not in high_calls
         and (
-            (c.get("groq") or {}).get("priority") == "MED"
+            (c.get("llm") or {}).get("priority") == "MED"
             or any(k in (c.get("transcript") or "").lower() for k in _SITREP_MED_KW)
         )
     ]

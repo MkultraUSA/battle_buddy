@@ -73,7 +73,7 @@ class SitrepTests(unittest.TestCase):
                 "category": "APD",
                 "location": "100 Congress Ave",
                 "transcript": "shots fired reported",
-                "groq": {"priority": "LOW", "description": "possible shooting"},
+                "llm": {"priority": "LOW", "description": "possible shooting"},
             },
             {
                 "ts": 1_060.0,
@@ -82,7 +82,7 @@ class SitrepTests(unittest.TestCase):
                 "category": "AFD",
                 "location": None,
                 "transcript": "minor crash blocking lane",
-                "groq": {"priority": "MED"},
+                "llm": {"priority": "MED"},
             },
             {
                 "ts": 1_120.0,
@@ -91,7 +91,7 @@ class SitrepTests(unittest.TestCase):
                 "category": "EMS",
                 "location": None,
                 "transcript": "routine patient transport",
-                "groq": {},
+                "llm": {},
             },
         ]
         incidents = [

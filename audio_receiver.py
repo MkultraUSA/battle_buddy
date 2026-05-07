@@ -165,10 +165,10 @@ def receive():
             call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag, category=category,
                         transcript=transcript, lat=lat, lon=lon, location=location)
             recent = calls_since(ts - 15 * 60)
-            call["groq"] = groq_analyze(call, recent)
-            # If this is an unknown talkgroup, ask Groq to identify it
+            call["llm"] = llm_analyze(call, recent)
+            # If this is an unknown talkgroup, ask the LLM to identify it
             if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
-                threading.Thread(target=groq_identify_tgid, args=(tgid, transcript),
+                threading.Thread(target=llm_identify_tgid, args=(tgid, transcript),
                                  daemon=True).start()
             analyze_for_incident(call)
             post_to_talk(call)
@@ -224,7 +224,7 @@ def test_call():
     call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag, category=category,
                 transcript=transcript, lat=lat, lon=lon, location=location)
     recent = calls_since(ts - 15 * 60)
-    call["groq"] = groq_analyze(call, recent)
+    call["llm"] = llm_analyze(call, recent)
     analyze_for_incident(call)
     post_to_talk(call)
     return jsonify({"status": "ok", "tag": tag, "category": category, "transcript": transcript}), 200
