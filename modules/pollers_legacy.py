@@ -119,7 +119,6 @@ def _fetch_url_with_retry(url: str, headers: dict | None = None,
     Returns the response body as bytes, or raises the last exception after
     all retries are exhausted.
     """
-    import urllib.error as _ure
     last_err: Exception | None = None
     req = urllib.request.Request(url, headers=headers or {})
     for attempt in range(max_retries):
