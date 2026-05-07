@@ -9,7 +9,8 @@
 #   AUDIO_RECEIVER_PROCESS=audio_receiver
 #   PI_HOST=radio-node.example.local
 #   PI_USER=pi
-#   NEXTCLOUD_HOST=nextcloud.example.com
+#   NEXTCLOUD_HOST=nextcloud.example.com   # optional if NEXTCLOUD_WEB_BASE is set
+#   NEXTCLOUD_WEB_BASE=https://nextcloud.example.com  # alternative; hostname extracted automatically
 #   NEXTCLOUD_OCC=/var/www/nextcloud/occ
 #   NEXTCLOUD_DATA_DIR=/srv/nextcloud-data
 #   GROQ_ENV_FILE=/opt/battlebuddy/.env
@@ -34,10 +35,27 @@ BB_DB="${BATTLE_BUDDY_DB:-/opt/battlebuddy/calls.db}"
 BB_PROCESS="${AUDIO_RECEIVER_PROCESS:-audio_receiver}"
 PI_HOST="${PI_HOST:-radio-node.example.local}"
 PI_USER="${PI_USER:-pi}"
-NC_HOST="${NEXTCLOUD_HOST:-nextcloud.example.com}"
 NC_OCC="${NEXTCLOUD_OCC:-/var/www/nextcloud/occ}"
 NC_DATA_DIR="${NEXTCLOUD_DATA_DIR:-/srv/nextcloud-data}"
 GROQ_ENV_FILE="${GROQ_ENV_FILE:-/opt/battlebuddy/.env}"
+
+# Source Battle Buddy env file if it exists (provides NEXTCLOUD_HOST, NEXTCLOUD_WEB_BASE, etc.)
+if [ -f "$GROQ_ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$GROQ_ENV_FILE"
+  set +a
+fi
+
+# Determine Nextcloud hostname: explicit NEXTCLOUD_HOST > NEXTCLOUD_WEB_BASE > unset
+if [ -n "${NEXTCLOUD_HOST:-}" ]; then
+  NC_HOST="$NEXTCLOUD_HOST"
+elif [ -n "${NEXTCLOUD_WEB_BASE:-}" ]; then
+  # Extract hostname from URL (e.g. https://nextcloud.example.com -> nextcloud.example.com)
+  NC_HOST="$(echo "$NEXTCLOUD_WEB_BASE" | sed -E 's|https?://([^/]+).*|\1|')"
+else
+  NC_HOST=""
+fi
 
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
@@ -212,7 +230,12 @@ else
 fi
 
 # ── Nextcloud ────────────────────────────────────────────────────────────────
-hdr "NEXTCLOUD (${NC_HOST})"
+if [ -n "$NC_HOST" ]; then
+  hdr "NEXTCLOUD (${NC_HOST})"
+else
+  hdr "NEXTCLOUD"
+  warn "NEXTCLOUD_HOST and NEXTCLOUD_WEB_BASE not set — skipping Nextcloud checks"
+fi
 
 if has_cmd systemctl; then
   NC_STATUS=$(systemctl is-active nginx 2>/dev/null || true)
@@ -225,7 +248,7 @@ if has_cmd systemctl; then
   [ "$PHP_STATUS" = "active" ] && ok "PHP-FPM running" || warn "PHP-FPM is ${PHP_STATUS:-unknown}"
 fi
 
-if has_cmd curl; then
+if has_cmd curl && [ -n "$NC_HOST" ]; then
   NC_TIME=$(curl -s -o /dev/null -w "%{time_total}" --max-time 10 "https://${NC_HOST}/" 2>/dev/null || true)
   if [ -n "$NC_TIME" ] && has_cmd bc; then
     NC_MS=$(echo "$NC_TIME * 1000" | bc 2>/dev/null | cut -d. -f1)
@@ -254,7 +277,9 @@ fi
 # ── TLS Certificate ─────────────────────────────────────────────────────────
 hdr "TLS CERTIFICATE"
 
-if has_cmd openssl; then
+if [ -z "$NC_HOST" ]; then
+  warn "TLS cert check skipped — NEXTCLOUD_HOST / NEXTCLOUD_WEB_BASE not set"
+elif has_cmd openssl; then
   CERT_EXPIRY=$(echo | openssl s_client -servername "$NC_HOST" -connect "${NC_HOST}:443" 2>/dev/null \
     | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)
   if [ -n "$CERT_EXPIRY" ]; then
