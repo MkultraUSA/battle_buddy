@@ -5,8 +5,8 @@ Usage: bb-query <command> [args...]
 Runs the query on the VPS and streams results back.
 """
 
-import sys
 import subprocess
+import sys
 
 VPS = "root@kevcloud.ddns.net"
 BB_DATA = "/usr/local/bin/bb-data"
@@ -14,8 +14,8 @@ BB_DATA = "/usr/local/bin/bb-data"
 def main():
     args = sys.argv[1:]
     if not args:
-        print(f"Usage: bb-query <command> [args...]")
-        print(f"Commands: calls, activity, incidents, events, aircraft, bookings, tips, tgid, stats, live, search")
+        print("Usage: bb-query <command> [args...]")
+        print("Commands: calls, activity, incidents, events, aircraft, bookings, tips, tgid, stats, live, search")
         sys.exit(1)
 
     cmd = ["ssh", "-o", "StrictHostKeyChecking=no", VPS, BB_DATA] + args
