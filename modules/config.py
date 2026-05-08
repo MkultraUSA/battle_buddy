@@ -95,13 +95,17 @@ OPENROUTER_MODEL = _get_recommended_model()
 OPENROUTER_ENABLED = bool(OPENROUTER_API_KEY)
 OPENROUTER_API_BASE = os.environ.get("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
 
+# OpenRouter free-model auto-switching
+# URL for machine-readable model status and recommendations (updated every 15 min)
+OPENROUTER_RECOMMENDATIONS_URL = os.environ.get(
+    "OPENROUTER_RECOMMENDATIONS_URL",
+    "https://hermes.libertas.mobi/free-model-status/recommendations.json",
+)
+# How long to cache the recommendations before re-fetching (seconds)
+OPENROUTER_MODEL_CACHE_SECS = int(os.environ.get("OPENROUTER_MODEL_CACHE_SECS", "900"))
+
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_ENABLED = bool(ANTHROPIC_API_KEY) and (_anthropic is not None)
-
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_API_BASE = os.environ.get("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
-GROQ_ENABLED = bool(GROQ_API_KEY)
 
 # ---------------------------------------------------------------------------
 # Nextcloud / Talk / Deck

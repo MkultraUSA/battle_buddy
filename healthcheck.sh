@@ -13,7 +13,7 @@
 #   NEXTCLOUD_WEB_BASE=https://nextcloud.example.com  # alternative; hostname extracted automatically
 #   NEXTCLOUD_OCC=/var/www/nextcloud/occ
 #   NEXTCLOUD_DATA_DIR=/srv/nextcloud-data
-#   GROQ_ENV_FILE=/opt/battlebuddy/.env
+#   BB_ENV_FILE=/opt/battlebuddy/.env
 
 set -u
 
@@ -37,13 +37,13 @@ PI_HOST="${PI_HOST:-radio-node.example.local}"
 PI_USER="${PI_USER:-pi}"
 NC_OCC="${NEXTCLOUD_OCC:-/var/www/nextcloud/occ}"
 NC_DATA_DIR="${NEXTCLOUD_DATA_DIR:-/srv/nextcloud-data}"
-GROQ_ENV_FILE="${GROQ_ENV_FILE:-/opt/battlebuddy/.env}"
+BB_ENV_FILE="${BB_ENV_FILE:-/opt/battlebuddy/.env}"
 
 # Source Battle Buddy env file if it exists (provides NEXTCLOUD_HOST, NEXTCLOUD_WEB_BASE, etc.)
-if [ -f "$GROQ_ENV_FILE" ]; then
+if [ -f "$BB_ENV_FILE" ]; then
   set -a
   # shellcheck disable=SC1090
-  . "$GROQ_ENV_FILE"
+  . "$BB_ENV_FILE"
   set +a
 fi
 
@@ -172,23 +172,24 @@ FW_RUNNING=$(ps aux | grep "$BB_PROCESS" | grep -v grep | wc -l | tr -d ' ')
 [ "${FW_RUNNING:-0}" -gt 0 ] && ok "transcription process appears to be running" \
   || warn "transcription process not running"
 
-if [ -f "$GROQ_ENV_FILE" ] && grep -q '^GROQ_API_KEY=' "$GROQ_ENV_FILE" && has_cmd curl; then
-  GROQ_KEY=$(grep '^GROQ_API_KEY=' "$GROQ_ENV_FILE" | cut -d= -f2-)
-  GROQ_RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
-    -H "Authorization: Bearer ${GROQ_KEY}" \
+if [ -f "$BB_ENV_FILE" ] && grep -q '^OPENROUTER_API_KEY=' "$BB_ENV_FILE" && has_cmd curl; then
+  OR_KEY=$(grep '^OPENROUTER_API_KEY=' "$BB_ENV_FILE" | cut -d= -f2-)
+  OR_RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
+    -H "Authorization: Bearer $OR_KEY" \
     -H "Content-Type: application/json" \
     -H "User-Agent: BattleBuddyHealthCheck/1.0" \
-    -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
-    "https://api.groq.com/openai/v1/chat/completions" 2>/dev/null || true)
-  case "$GROQ_RESULT" in
-    200) ok "Groq LLM API: reachable" ;;
-    429) warn "Groq LLM API: reachable but rate-limited" ;;
-    401) fail "Groq LLM API: auth failed — check API key" ;;
-    403) fail "Groq LLM API: blocked by provider or network policy" ;;
-    *)   warn "Groq LLM API: unexpected HTTP ${GROQ_RESULT:-timeout}" ;;
+    -H "HTTP-Referer: https://battlebuddy.news" \
+    -d '{"model":"google/gemini-2.5-flash","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
+    "https://openrouter.ai/api/v1/chat/completions" 2>/dev/null || true)
+  case "$OR_RESULT" in
+    200) ok "OpenRouter LLM API: reachable" ;;
+    429) warn "OpenRouter LLM API: reachable but rate-limited" ;;
+    401) fail "OpenRouter LLM API: auth failed — check API key" ;;
+    403) fail "OpenRouter LLM API: blocked by provider or network policy" ;;
+    *)   warn "OpenRouter LLM API: unexpected HTTP ${OR_RESULT:-timeout}" ;;
   esac
 else
-  warn "Groq live check skipped — no env file/key or curl unavailable"
+  warn "OpenRouter live check skipped — no env file/key or curl unavailable"
 fi
 
 LAST_TRANSCRIPT=$(sqlite_count "SELECT CAST((strftime('%s','now') - MAX(ts)) AS INTEGER) FROM calls WHERE transcript != '' AND LENGTH(transcript) > 10;")
