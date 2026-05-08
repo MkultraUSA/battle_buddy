@@ -1663,22 +1663,48 @@ function makeHeloIcon(isLeo) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function flightAwareIdentifier(ac) {
+  const fields = [ac.callsign, ac.label, ac.icao24];
+  for (const field of fields) {
+    const match = String(field || '').toUpperCase().match(/\bN[0-9][A-Z0-9]{1,5}\b/);
+    if (match) return match[0];
+  }
+  const callsign = String(ac.callsign || '').trim().toUpperCase();
+  return /^[A-Z0-9]{2,8}$/.test(callsign) ? callsign : '';
+}
+
+function flightAwareLink(ac) {
+  const ident = flightAwareIdentifier(ac);
+  if (!ident) return '';
+  const url = `https://www.flightaware.com/live/flight/${encodeURIComponent(ident)}`;
+  return `<div style="margin-top:8px"><a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#3b82f6;text-decoration:none;font-weight:600">FlightAware details</a></div>`;
+}
+
 function popupHtml(ac) {
   const ago  = Math.round((Date.now()/1000 - ac.ts) / 60);
   const leo  = ac.is_leo ? '<div style="color:#f59e0b;font-weight:700;margin:4px 0">🔴 LAW ENFORCEMENT / EMS</div>' : '';
-  const cs   = ac.callsign ? `<div>Flight: <b>${ac.callsign}</b></div>` : '';
+  const cs   = ac.callsign ? `<div>Flight: <b>${escapeHtml(ac.callsign)}</b></div>` : '';
   const hdg  = ac.heading  ? `${Math.round(ac.heading)}&deg;` : '?';
   const spd  = ac.speed_kts ? `${Math.round(ac.speed_kts)} kts` : '?';
+  const label = escapeHtml(ac.label || ac.icao24);
+  const icao = escapeHtml(ac.icao24);
   return `
     <div style="font-family:-apple-system,sans-serif;min-width:180px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:4px">${ac.label || ac.icao24}</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">${label}</div>
       ${leo}${cs}
       <div style="color:#64748b;font-size:12px">
-        ICAO: ${ac.icao24}<br>
+        ICAO: ${icao}<br>
         Alt: <b>${ac.alt_ft ? ac.alt_ft.toLocaleString() + ' ft' : '?'}</b> &nbsp;
         Hdg: ${hdg} &nbsp; Spd: ${spd}<br>
         Updated ${ago}m ago
       </div>
+      ${flightAwareLink(ac)}
     </div>`;
 }
 
@@ -1743,4 +1769,3 @@ setInterval(poll, 30000);
 @public_bp.route("/public/aircraft")
 def public_aircraft():
     return PUBLIC_AIRCRAFT_HTML
-

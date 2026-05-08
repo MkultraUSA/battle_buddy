@@ -806,6 +806,7 @@ def api_adsb():
                 "lon":      r["lon"],
                 "alt_ft":   r["alt_ft"],
                 "heading":  r["heading"],
+                "speed_kts": r["speed_kts"],
                 "ts":       r["ts"],
                 "trail":    [],
             }
@@ -816,6 +817,7 @@ def api_adsb():
                 "lon":     r["lon"],
                 "alt_ft":  r["alt_ft"],
                 "heading": r["heading"],
+                "speed_kts": r["speed_kts"],
                 "ts":      r["ts"],
             })
         aircraft[icao]["trail"].append([r["lat"], r["lon"], r["ts"]])
@@ -1418,14 +1420,39 @@ function makeHeloIcon(isLeo) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function flightAwareIdentifier(ac) {
+  const fields = [ac.callsign, ac.label, ac.icao24];
+  for (const field of fields) {
+    const match = String(field || '').toUpperCase().match(/\bN[0-9][A-Z0-9]{1,5}\b/);
+    if (match) return match[0];
+  }
+  const callsign = String(ac.callsign || '').trim().toUpperCase();
+  return /^[A-Z0-9]{2,8}$/.test(callsign) ? callsign : '';
+}
+
+function flightAwareLink(ac) {
+  const ident = flightAwareIdentifier(ac);
+  if (!ident) return '';
+  const url = `https://www.flightaware.com/live/flight/${encodeURIComponent(ident)}`;
+  return `<br><a href="${url}" target="_blank" rel="noopener noreferrer">FlightAware details</a>`;
+}
+
 function adsbPopup(ac) {
   const ago = Math.round((Date.now()/1000 - ac.ts) / 60);
   const leo = ac.is_leo ? '<br><b style="color:#f59e0b">🔴 LEO</b>' : '';
-  return `<b>${ac.label || ac.icao24}</b>${leo}
-    <br>${ac.callsign ? 'Flight: ' + ac.callsign + '<br>' : ''}
-    Alt: ${ac.alt_ft ? ac.alt_ft + ' ft' : '?'}
-    | ICAO: ${ac.icao24}
-    <br><small>${ago}m ago</small>`;
+  const label = escapeHtml(ac.label || ac.icao24);
+  const callsign = ac.callsign ? `Flight: ${escapeHtml(ac.callsign)}<br>` : '';
+  return `<b>${label}</b>${leo}
+    <br>${callsign}
+    Alt: ${ac.alt_ft ? escapeHtml(ac.alt_ft) + ' ft' : '?'}
+    | ICAO: ${escapeHtml(ac.icao24)}
+    <br><small>${ago}m ago</small>${flightAwareLink(ac)}`;
 }
 
 async function pollAdsb() {
