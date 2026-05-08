@@ -257,7 +257,7 @@ def _pi_watchdog_alert(msg: str) -> None:
     for username in PI_ALERT_USERS:
         sent = False
         for attempt in range(5):
-            from modules.pollers_legacy import _get_or_create_dm_room  # noqa: PLC0415
+            from modules.talk import _get_or_create_dm_room  # noqa: PLC0415
 
             token = _get_or_create_dm_room(username)
             if not token:

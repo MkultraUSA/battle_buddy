@@ -107,11 +107,15 @@ def receive():
 
     wav_bytes = base64.b64decode(data["audio_b64"])
 
-    # Prefer tag from Pi 1 (already resolved by OP25), fall back to TSV
-    tag      = data.get("tag") or TGID_META.get(tgid, {}).get("tag") or f"TGID {tgid}"
+    meta     = TGID_META.get(tgid, {})
+    pi_tag   = (data.get("tag") or "").strip()
+    # The Pi may send generic labels like "TGID 2454" when its local TSV is stale.
+    # Treat those as unresolved so the server-side tag table can still label calls.
+    if re.fullmatch(r"TGID\s+\d+", pi_tag, flags=re.I):
+        pi_tag = ""
+    tag      = pi_tag or meta.get("tag") or f"TGID {tgid}"
     node     = data.get("node", "unknown")
     ts       = time.time()
-    meta     = TGID_META.get(tgid, {})
     category = meta.get("cat", "Unknown")
     def_lat  = meta.get("lat")
     def_lon  = meta.get("lon")
@@ -868,16 +872,26 @@ def bot_talk():
 
     print(f"[bot] received from {actor}: '{content[:80]}'", flush=True)
 
-    # Only respond to !commands
+    def respond(msg):
+        def _send_reply():
+            try:
+                _bot_reply(token, msg)
+                print(f"[bot] replied to {token}: {msg[:80]}", flush=True)
+            except Exception as e:
+                print(f"[bot] reply failed to {token}: {e}", flush=True)
+        threading.Thread(target=_send_reply, daemon=True).start()
+
+    # Friendly liveness check for humans. Commands still use the ! prefix.
     if not content.startswith("!"):
+        lowered = content.lower()
+        if "bot" in lowered or "battle buddy" in lowered or "listening" in lowered or "hello" in lowered:
+            respond("I am listening. Try !help, !status, !incidents, or !sitrep 60.")
+            return jsonify({"status": "liveness_reply"}), 200
         return jsonify({"status": "ignored"}), 200
 
     parts   = content.split()
     command = parts[0].lower()
     print(f"[bot] executing command: {command}", flush=True)
-
-    def respond(msg):
-        threading.Thread(target=_bot_reply, args=(token, msg), daemon=True).start()
 
     if command == "!sitrep":
         try:
@@ -911,7 +925,7 @@ def bot_talk():
         calls_1h  = len(calls_since(time.time() - 3600))
         calls_15m = len(calls_since(time.time() - 900))
         incs      = active_incidents()
-        held      = _current_hold_tgid
+        held      = globals().get("_current_hold_tgid")
         hold_str  = f"Holding TGID {held}" if held else "No hold active"
         respond(
             f"🛰 Battle Buddy Status\n"

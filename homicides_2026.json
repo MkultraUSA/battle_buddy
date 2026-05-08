@@ -209,5 +209,17 @@
         "url": "https://www.austintexas.gov/news/homicide-investigation-12435-dessau-road",
         "lat": 30.3889115,
         "lon": -97.6448116
+    },
+    {
+        "n": 22,
+        "date": "2026-05-06",
+        "address": "15424 FM 1825 Road, Pflugerville, TX",
+        "victim": "Mykal Jones, 27",
+        "summary": "One person killed and four others injured in a shooting outside Down South CaJJun Eats; multi-agency response with Pflugerville PD, TCSO, AFD, and ATCEMS.",
+        "url": "https://www.fox7austin.com/news/pflugerville-shooting-leaves-1-dead-4-others-injured",
+        "lat": 30.4423119,
+        "lon": -97.6657196,
+        "count": 1,
+        "source": "FOX 7 Austin / Pflugerville PD news conference"
     }
 ]
