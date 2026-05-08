@@ -83,6 +83,7 @@ from modules.transcription import (  # noqa: E402
     _broadcastify_sem,
     _get_fw_model,
     _process_sem,
+    get_transcription_observability,
 )
 
 app = Flask(__name__, static_folder="/opt/battlebuddy/static", static_url_path="/static")
@@ -415,6 +416,245 @@ try:
                 )
                 g_calls.add_metric([], float(calls_24h))
                 yield g_calls
+
+                # --- transcript reliability / ASR quality metrics ---
+                _quality_windows = [
+                    ("15m", _now - (15 * 60)),
+                    ("1h", _now - 3600),
+                    ("24h", _window),
+                ]
+
+                g_q_calls = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_calls",
+                    "Radio call count used for transcript quality scoring by rolling window",
+                    labels=["window"],
+                )
+                g_q_audio = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_audio_seconds",
+                    "Total radio audio seconds used for transcript quality scoring by rolling window",
+                    labels=["window"],
+                )
+                g_q_transcribed = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_transcribed_calls",
+                    "Calls with non-empty transcript text by rolling window",
+                    labels=["window"],
+                )
+                g_q_missing = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_missing_calls",
+                    "Calls missing transcript text by rolling window",
+                    labels=["window"],
+                )
+                g_q_low_density = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_low_density_calls",
+                    "Transcribed calls with fewer than 2 transcript characters per audio second by rolling window",
+                    labels=["window"],
+                )
+                g_q_short = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_short_calls",
+                    "Transcribed calls with very short transcript text on audio at least 2 seconds long by rolling window",
+                    labels=["window"],
+                )
+                g_q_repeated = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_repeated_short_calls",
+                    "Calls matching repeated short transcript phrases by rolling window",
+                    labels=["window"],
+                )
+                g_q_chars_sec = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_chars_per_second",
+                    "Average transcript characters per audio second for transcribed calls by rolling window",
+                    labels=["window"],
+                )
+                g_q_coverage = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_coverage_ratio",
+                    "Share of radio calls with non-empty transcript text by rolling window",
+                    labels=["window"],
+                )
+                g_q_score = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_reliability_score",
+                    "Heuristic transcript reliability score from 0 to 1; penalizes missing, sparse, and repeated-short transcripts",
+                    labels=["window"],
+                )
+
+                _repeated_short_phrases = (
+                    "thank you.",
+                    "go ahead.",
+                    "good.",
+                    "okay.",
+                    "yeah.",
+                    "sure.",
+                    "copy.",
+                    "so.",
+                    "for",
+                    "before.",
+                    "time for.",
+                )
+
+                for _label, _start in _quality_windows:
+                    cur.execute(
+                        "SELECT "
+                        "COUNT(*) AS calls, "
+                        "COALESCE(SUM(COALESCE(duration, 0)), 0) AS audio_seconds, "
+                        "SUM(CASE WHEN length(trim(COALESCE(transcript,''))) > 0 THEN 1 ELSE 0 END) AS transcribed, "
+                        "SUM(CASE WHEN length(trim(COALESCE(transcript,''))) = 0 THEN 1 ELSE 0 END) AS missing, "
+                        "SUM(CASE WHEN length(trim(COALESCE(transcript,''))) > 0 "
+                        "          AND COALESCE(duration, 0) > 0 "
+                        "          AND length(trim(transcript)) / COALESCE(duration, 1) < 2 "
+                        "         THEN 1 ELSE 0 END) AS low_density, "
+                        "SUM(CASE WHEN length(trim(COALESCE(transcript,''))) > 0 "
+                        "          AND COALESCE(duration, 0) >= 2 "
+                        "          AND length(trim(transcript)) < 8 "
+                        "         THEN 1 ELSE 0 END) AS short_text, "
+                        "SUM(CASE WHEN lower(trim(COALESCE(transcript,''))) IN ({}) "
+                        "         THEN 1 ELSE 0 END) AS repeated_short, "
+                        "AVG(CASE WHEN length(trim(COALESCE(transcript,''))) > 0 "
+                        "          AND COALESCE(duration, 0) > 0 "
+                        "         THEN length(trim(transcript)) / COALESCE(duration, 1) END) AS chars_per_second "
+                        "FROM calls WHERE ts >= ?".format(",".join("?" for _ in _repeated_short_phrases)),
+                        tuple(_repeated_short_phrases) + (_start,),
+                    )
+                    (
+                        _calls,
+                        _audio_seconds,
+                        _transcribed,
+                        _missing,
+                        _low_density,
+                        _short_text,
+                        _repeated_short,
+                        _chars_per_second,
+                    ) = cur.fetchone()
+
+                    _calls = float(_calls or 0)
+                    _audio_seconds = float(_audio_seconds or 0)
+                    _transcribed = float(_transcribed or 0)
+                    _missing = float(_missing or 0)
+                    _low_density = float(_low_density or 0)
+                    _short_text = float(_short_text or 0)
+                    _repeated_short = float(_repeated_short or 0)
+                    _chars_per_second = float(_chars_per_second or 0)
+                    _coverage = (_transcribed / _calls) if _calls else 0.0
+                    _penalty = (_missing + _low_density + (0.5 * _short_text) + (0.5 * _repeated_short))
+                    _score = max(0.0, min(1.0, 1.0 - (_penalty / _calls))) if _calls else 0.0
+
+                    g_q_calls.add_metric([_label], _calls)
+                    g_q_audio.add_metric([_label], _audio_seconds)
+                    g_q_transcribed.add_metric([_label], _transcribed)
+                    g_q_missing.add_metric([_label], _missing)
+                    g_q_low_density.add_metric([_label], _low_density)
+                    g_q_short.add_metric([_label], _short_text)
+                    g_q_repeated.add_metric([_label], _repeated_short)
+                    g_q_chars_sec.add_metric([_label], _chars_per_second)
+                    g_q_coverage.add_metric([_label], _coverage)
+                    g_q_score.add_metric([_label], _score)
+
+                for _metric in [
+                    g_q_calls,
+                    g_q_audio,
+                    g_q_transcribed,
+                    g_q_missing,
+                    g_q_low_density,
+                    g_q_short,
+                    g_q_repeated,
+                    g_q_chars_sec,
+                    g_q_coverage,
+                    g_q_score,
+                ]:
+                    yield _metric
+
+                # --- STT-stage observability from modules.transcription ---
+                _stt = get_transcription_observability(_now)
+                g_stt_in_progress = GaugeMetricFamily(
+                    "battlebuddy_transcription_in_progress",
+                    "Current in-process local faster-whisper transcription workers",
+                )
+                g_stt_in_progress.add_metric([], float(_stt.get("in_progress", 0)))
+                yield g_stt_in_progress
+
+                g_stt_total = CounterMetricFamily(
+                    "battlebuddy_transcription_requests",
+                    "Total local faster-whisper transcription requests by outcome",
+                    labels=["provider", "model", "status"],
+                )
+                for _status, _count in _stt.get("totals", {}).items():
+                    if _status == "started":
+                        continue
+                    g_stt_total.add_metric(
+                        [_stt.get("provider", "unknown"), _stt.get("model", "unknown"), str(_status)],
+                        float(_count or 0),
+                    )
+                yield g_stt_total
+
+                _stt_window_metrics = {
+                    "completed": GaugeMetricFamily(
+                        "battlebuddy_transcription_completed",
+                        "Completed local faster-whisper transcriptions by rolling window and outcome",
+                        labels=["window", "status"],
+                    ),
+                    "audio": GaugeMetricFamily(
+                        "battlebuddy_transcription_audio_seconds",
+                        "Audio seconds submitted to local faster-whisper by rolling window",
+                        labels=["window"],
+                    ),
+                    "latency_avg": GaugeMetricFamily(
+                        "battlebuddy_transcription_latency_seconds_avg",
+                        "Average local faster-whisper transcription latency by rolling window",
+                        labels=["window"],
+                    ),
+                    "latency_p95": GaugeMetricFamily(
+                        "battlebuddy_transcription_latency_seconds_p95",
+                        "Approximate p95 local faster-whisper transcription latency by rolling window",
+                        labels=["window"],
+                    ),
+                    "success_ratio": GaugeMetricFamily(
+                        "battlebuddy_transcription_success_ratio",
+                        "Share of completed local faster-whisper transcription attempts producing non-empty text by rolling window",
+                        labels=["window"],
+                    ),
+                }
+                for _label, _stats in _stt.get("windows", {}).items():
+                    for _status in ["success", "empty", "timeout", "exception", "lock_timeout"]:
+                        _stt_window_metrics["completed"].add_metric([_label, _status], float(_stats.get(_status, 0)))
+                    _stt_window_metrics["audio"].add_metric([_label], float(_stats.get("audio_seconds", 0)))
+                    _stt_window_metrics["latency_avg"].add_metric([_label], float(_stats.get("avg_latency_seconds", 0)))
+                    _stt_window_metrics["latency_p95"].add_metric([_label], float(_stats.get("p95_latency_seconds", 0)))
+                    _stt_window_metrics["success_ratio"].add_metric([_label], float(_stats.get("success_ratio", 0)))
+                for _metric in _stt_window_metrics.values():
+                    yield _metric
+
+                cur.execute(
+                    "SELECT COALESCE(tag,'unknown') AS tag, "
+                    "COUNT(*) AS calls, "
+                    "SUM(CASE WHEN length(trim(COALESCE(transcript,''))) > 0 THEN 1 ELSE 0 END) AS transcribed, "
+                    "AVG(CASE WHEN length(trim(COALESCE(transcript,''))) > 0 AND COALESCE(duration,0) > 0 "
+                    "         THEN length(trim(transcript)) / COALESCE(duration, 1) END) AS chars_per_second "
+                    "FROM calls WHERE ts >= ? "
+                    "GROUP BY tag HAVING calls >= 25 "
+                    "ORDER BY calls DESC LIMIT 30",
+                    (_window,),
+                )
+                g_q_tag_calls = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_calls_by_tag_24h",
+                    "Radio calls in last 24 hours for top talkgroup tags by volume",
+                    labels=["tag"],
+                )
+                g_q_tag_coverage = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_coverage_ratio_by_tag_24h",
+                    "Transcript coverage ratio in last 24 hours for top talkgroup tags by volume",
+                    labels=["tag"],
+                )
+                g_q_tag_chars_sec = GaugeMetricFamily(
+                    "battlebuddy_transcript_quality_chars_per_second_by_tag_24h",
+                    "Average transcript characters per audio second in last 24 hours for top talkgroup tags by volume",
+                    labels=["tag"],
+                )
+                for _tag, _tag_calls, _tag_transcribed, _tag_chars_sec in cur.fetchall():
+                    _tag_calls = float(_tag_calls or 0)
+                    _tag_transcribed = float(_tag_transcribed or 0)
+                    g_q_tag_calls.add_metric([str(_tag)], _tag_calls)
+                    g_q_tag_coverage.add_metric([str(_tag)], (_tag_transcribed / _tag_calls) if _tag_calls else 0.0)
+                    g_q_tag_chars_sec.add_metric([str(_tag)], float(_tag_chars_sec or 0))
+                yield g_q_tag_calls
+                yield g_q_tag_coverage
+                yield g_q_tag_chars_sec
 
                 # --- process memory / thread metrics (leak detection) ---
                 try:
