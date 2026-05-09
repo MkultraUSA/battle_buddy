@@ -42,8 +42,9 @@ _recommendations_lock = threading.Lock()
 
 # Models that are known to be unreliable even if they appear in the list
 _MODEL_DENYLIST = {
-    "openrouter/free",       # meta-router, unpredictable routing
-    "openrouter/owl-alpha",  # returns HTTP 200 with JSON error, not real 429
+    "openrouter/free",           # meta-router, unpredictable routing
+    "openrouter/owl-alpha",      # returns HTTP 200 with JSON error, not real 429
+    "minimax/minimax-m2.5:free", # claims supports_json but returns null content
 }
 
 # ── Runtime denylist ────────────────────────────────────────────────────────
@@ -201,7 +202,11 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
                     _runtime_ban_model(model)
                     raise Exception(f"429 rate limit: {err_msg}")
                 raise Exception(f"API error ({err_code}): {err_msg}")
-            return json.loads(data["choices"][0]["message"]["content"])
+            content = data["choices"][0]["message"]["content"]
+            if content is None:
+                _runtime_ban_model(model)
+                raise Exception(f"model returned null content (does not support JSON output): {model}")
+            return json.loads(content)
         except Exception as exc:
             last_exc = exc
             if "429" in str(exc):
