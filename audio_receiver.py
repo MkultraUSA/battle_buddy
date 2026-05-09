@@ -159,6 +159,11 @@ def receive():
 
             _state['last_call_ts'] = time.time()
             transcript = transcribe(wav_bytes)
+            if not transcript.strip() and node != "pi5":
+                # Broadcastify-derived clips are the noisiest source and can flood
+                # the DB with empty rows during contention; drop empties early.
+                print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — empty transcript", flush=True)
+                return
             lat, lon, location = extract_location(transcript)
             if lat is None:
                 lat, lon = def_lat, def_lon
@@ -189,6 +194,14 @@ def receive():
 
     threading.Thread(target=process, daemon=True).start()
     return jsonify({"status": "queued"}), 202
+
+
+@app.route("/api/backlog/claim", methods=["POST"])
+def api_backlog_claim():
+    """Compatibility endpoint for external backlog workers.
+    Current pipeline is push-driven; no claimable backlog jobs are exposed.
+    """
+    return jsonify({"ok": True, "job": None, "status": "no_work"}), 200
 
 
 @app.route("/watchdog_event", methods=["POST"])

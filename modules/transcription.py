@@ -11,8 +11,8 @@ from faster_whisper import WhisperModel as _FasterWhisperModel
 
 _fw_model            = None
 _fw_model_lock       = threading.Lock()
-_MAX_PROCESS_THREADS = 20
-_BROADCASTIFY_MAX    = 15
+_MAX_PROCESS_THREADS = 8
+_BROADCASTIFY_MAX    = 4
 _process_sem         = threading.Semaphore(_MAX_PROCESS_THREADS)
 _broadcastify_sem    = threading.Semaphore(_BROADCASTIFY_MAX)
 
@@ -220,7 +220,7 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
             f.write(wav_bytes)
             tmp = f.name
         try:
-            acquired = _fw_model_lock.acquire(timeout=90)
+            acquired = _fw_model_lock.acquire(timeout=20)
             if not acquired:
                 print("[whisper] TIMEOUT waiting for model lock - dropping call", flush=True)
                 status_container.append("lock_timeout")
