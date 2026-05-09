@@ -3209,8 +3209,12 @@ function renderSpaceWeather(data){
   const flux = (data.xray_flux !== null && data.xray_flux !== undefined) ? Number(data.xray_flux).toExponential(2) : 'n/a';
   const swSpeed = data.solar_wind_speed_km_s ? `${data.solar_wind_speed_km_s} km/s` : 'n/a';
   const swDensity = data.solar_wind_density_p_cm3 ? `${data.solar_wind_density_p_cm3} p/cm^3` : 'n/a';
+  const staleBanner = data.stale
+    ? `<div style="margin-bottom:8px;color:#f59e0b;font-size:12px;font-weight:600">Using cached data (${Math.max(1, Math.round((data.cache_age_seconds||0)/60))}m old)</div>`
+    : '';
   return `<div class="panel">
     <div class="panel-title">Space Weather &mdash; NOAA SWPC</div>
+    ${staleBanner}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div style="background:#0f172a;border-radius:8px;padding:10px">
         <div style="font-size:11px;color:#64748b;margin-bottom:4px">Kp Index</div>

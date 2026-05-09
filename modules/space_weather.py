@@ -53,10 +53,18 @@ def get_space_weather():
             "solar_wind_temp_k": sw_latest.get("temperature"),
             "solar_wind_time": sw_latest.get("time_tag"),
             "source": "NOAA SWPC",
+            "stale": False,
+            "cache_ts": now,
         }
         _CACHE["data"] = data
         _CACHE["ts"] = now
         return data
     except Exception as e:
         print(f"[space-weather] fetch error: {e}", flush=True)
+        if _CACHE["data"]:
+            stale_data = dict(_CACHE["data"])
+            stale_data["stale"] = True
+            stale_data["stale_reason"] = str(e)
+            stale_data["cache_age_seconds"] = int(now - _CACHE["ts"])
+            return stale_data
         return None
