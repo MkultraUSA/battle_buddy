@@ -45,6 +45,31 @@ _MODEL_DENYLIST = {
     "openrouter/free",  # meta-router, unpredictable routing
 }
 
+# ── Runtime denylist ────────────────────────────────────────────────────────
+# Models that were rate-limited (HTTP 429) get a temporary ban so the system
+# automatically rotates to the next-best model instead of hammering the same
+# rate-limited endpoint for 15 minutes.
+# ────────────────────────────────────────────────────────────────────────────
+_runtime_bans: dict[str, float] = {}       # model_id → ban_until_ts
+_RUNTIME_BAN_SECS = 300                     # 5-minute cooldown after 429
+
+
+def _is_runtime_banned(model_id: str) -> bool:
+    """True if *model_id* is currently serving a 429 cool-down."""
+    now = time.time()
+    # Purge expired entries
+    stale = [mid for mid, until in _runtime_bans.items() if now >= until]
+    for mid in stale:
+        del _runtime_bans[mid]
+    return model_id in _runtime_bans
+
+
+def _runtime_ban_model(model_id: str) -> None:
+    """Ban *model_id* for _RUNTIME_BAN_SECS after a rate-limit."""
+    _runtime_bans[model_id] = time.time() + _RUNTIME_BAN_SECS
+    print(f"[llm] runtime-ban {model_id} for {_RUNTIME_BAN_SECS}s (rate limited)",
+          flush=True)
+
 
 def _fetch_recommendations() -> dict:
     """Fetch and cache the OpenRouter free-model recommendations JSON.
@@ -75,14 +100,19 @@ def _fetch_recommendations() -> dict:
 
 def _pick_best_model(recommendations: dict) -> str | None:
     """Pick the best available free model from the recommendations list.
-    Filters out denylisted models and those with status != 'online'.
-    Returns the model_id string or None if nothing suitable found.
+    Filters out denylisted models, runtime-banned models, and those with
+    status != 'online'.  Returns the model_id string or None if nothing
+    suitable found.
     """
     recs = recommendations.get("recommendations") or []
+
+    # Pass 1 — strict filtering (respect all bans)
     for rec in recs:
         model_id = rec.get("model_id") or ""
         status = rec.get("status") or ""
         if model_id in _MODEL_DENYLIST:
+            continue
+        if _is_runtime_banned(model_id):
             continue
         if status != "online":
             continue
@@ -90,26 +120,34 @@ def _pick_best_model(recommendations: dict) -> str | None:
         if not rec.get("supports_json"):
             continue
         return model_id
+
+    # Pass 2 — all eligible models are runtime-banned; clear bans and retry
+    if _runtime_bans:
+        print("[llm] all eligible models runtime-banned — clearing cooldowns",
+              flush=True)
+        _runtime_bans.clear()
+        for rec in recs:
+            model_id = rec.get("model_id") or ""
+            if model_id in _MODEL_DENYLIST:
+                continue
+            if rec.get("status") != "online":
+                continue
+            if not rec.get("supports_json"):
+                continue
+            return model_id
+
     return None
 
 
 def _get_effective_model() -> str:
-    """Return the model ID to use for LLM calls.
-    Priority:
-      1. OPENROUTER_MODEL env var if explicitly set (non-default value)
-      2. Best model from recommendations.json (auto-switching)
-      3. Fallback to OPENROUTER_MODEL default
     """
-    env_model = os.environ.get("OPENROUTER_MODEL", "")
-    if env_model and env_model != "google/gemini-2.5-flash":
-        # User explicitly overrode the default — respect it
-        return env_model
-    recs = _fetch_recommendations()
-    best = _pick_best_model(recs)
-    if best and best != OPENROUTER_MODEL:
-        print(f"[llm] auto-switching model: {OPENROUTER_MODEL} → {best}", flush=True)
-        return best
-    return OPENROUTER_MODEL
+    AUTO-SWITCHING DISABLED — returns a hardcoded safe model.
+    Previously fetched from hermes.libertas.mobi/recommendations.json
+    which kept rotating back to owl-alpha (rate-limited, crashes).
+    """
+    SAFE_MODEL = "openai/gpt-oss-20b:free"
+    return SAFE_MODEL
+
 
 
 # ---------------------------------------------------------------------------
@@ -118,27 +156,29 @@ def _get_effective_model() -> str:
 
 def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3) -> dict:
     """Call OpenRouter chat/completions with exponential-backoff retry.
-    Uses the auto-selected model from recommendations.json.
+    Re-selects the best model on each retry so that rate-limited models
+    are automatically rotated out via the runtime ban list.
     """
-    model = _get_effective_model()
-    payload = json.dumps({
-        "model":           model,
-        "messages":        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_msg},
-        ],
-        "max_tokens":      300,
-        "temperature":     0.1,
-        "response_format": {"type": "json_object"},
-    }).encode()
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type":  "application/json",
-        "User-Agent":    "Mozilla/5.0",
-        "HTTP-Referer":  "https://battlebuddy.news",
-    }
     last_exc = None
+    model = None          # set on first attempt, may change on retry
     for attempt in range(max_retries):
+        model = _get_effective_model()
+        payload = json.dumps({
+            "model":           model,
+            "messages":        [
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_msg},
+            ],
+            "max_tokens":      300,
+            "temperature":     0.1,
+            "response_format": {"type": "json_object"},
+        }).encode()
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type":  "application/json",
+            "User-Agent":    "Mozilla/5.0",
+            "HTTP-Referer":  "https://battlebuddy.news",
+        }
         try:
             req = urllib.request.Request(
                 f"{OPENROUTER_API_BASE}/chat/completions",
@@ -148,10 +188,22 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())
+<<<<<<< Updated upstream
+=======
+            if "error" in data:
+                err = data["error"]
+                err_msg = err.get("message", str(err))
+                err_code = err.get("code", 0)
+                if err_code == 429 or "429" in str(err_msg) or "rate" in str(err_msg).lower():
+                    _runtime_ban_model(model)
+                    raise Exception(f"429 rate limit: {err_msg}")
+                raise Exception(f"API error ({err_code}): {err_msg}")
+>>>>>>> Stashed changes
             return json.loads(data["choices"][0]["message"]["content"])
         except Exception as exc:
             last_exc = exc
             if "429" in str(exc):
+                _runtime_ban_model(model)
                 wait = (2 ** attempt) * 5
                 print(f"[llm] 429 rate limited (attempt {attempt+1}/{max_retries}), waiting {wait}s", flush=True)
                 time.sleep(wait)
