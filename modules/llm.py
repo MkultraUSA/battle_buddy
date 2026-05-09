@@ -188,8 +188,6 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())
-<<<<<<< Updated upstream
-=======
             if "error" in data:
                 err = data["error"]
                 err_msg = err.get("message", str(err))
@@ -198,7 +196,6 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
                     _runtime_ban_model(model)
                     raise Exception(f"429 rate limit: {err_msg}")
                 raise Exception(f"API error ({err_code}): {err_msg}")
->>>>>>> Stashed changes
             return json.loads(data["choices"][0]["message"]["content"])
         except Exception as exc:
             last_exc = exc
