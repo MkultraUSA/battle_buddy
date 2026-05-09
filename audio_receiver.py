@@ -25,6 +25,7 @@ import time
 import urllib.request
 
 import modules.weather as weather_mod
+import modules.space_weather as space_weather_mod
 
 try:
     import anthropic
@@ -2857,6 +2858,16 @@ def api_premium_weather():
     data["location"] = location_label
     return jsonify(data)
 
+@app.route("/api/premium/space_weather")
+def api_premium_space_weather():
+    sess = _get_session(request)
+    if not sess or not sess.get("is_premium"):
+        return jsonify({"error": "premium required"}), 403
+    data = space_weather_mod.get_space_weather()
+    if not data:
+        return jsonify({"error": "space weather unavailable"}), 503
+    return jsonify(data)
+
 
 # ---------------------------------------------------------------------------
 # Premium Display Dashboard (/premium/display)
@@ -2979,14 +2990,15 @@ def premium_display():
 <script>
 const PANELS = [
   {id:'weather',   label:'Weather'},
+  {id:'spacewx',   label:'Space WX'},
   {id:'incidents', label:'Incidents'},
   {id:'commute',   label:'Commute'},
   {id:'headlines', label:'Headlines'},
   {id:'homicides', label:'Homicides'},
 ];
 
-let state = {weather:null, incidents:null, commute:null, headlines:null, homicides:null};
-let lastUpdated = {weather:null, incidents:null, commute:null, headlines:null, homicides:null};
+let state = {weather:null, spacewx:null, incidents:null, commute:null, headlines:null, homicides:null};
+let lastUpdated = {weather:null, spacewx:null, incidents:null, commute:null, headlines:null, homicides:null};
 let username = '';
 
 // ── Clock ────────────────────────────────────────────────────────────────────
@@ -3097,6 +3109,7 @@ function showDashboard(){
 async function loadAll(){
   const vis = getVisible();
   if(vis.includes('weather'))   loadWeather();
+  if(vis.includes('spacewx'))   loadSpaceWeather();
   if(vis.includes('incidents')) loadIncidents();
   if(vis.includes('commute'))   loadCommute();
   if(vis.includes('headlines')) loadHeadlines();
@@ -3109,6 +3122,14 @@ async function loadWeather(){
     state.weather = await r.json();
     if(!state.weather.error) lastUpdated.weather = new Date();
   }catch(e){ state.weather = null; }
+  renderGrid();
+}
+async function loadSpaceWeather(){
+  try{
+    const r = await fetch('/api/premium/space_weather');
+    state.spacewx = await r.json();
+    if(!state.spacewx.error) lastUpdated.spacewx = new Date();
+  }catch(e){ state.spacewx = null; }
   renderGrid();
 }
 async function loadIncidents(){
@@ -3180,6 +3201,35 @@ function renderWeather(w){
     </div>
     <div class="wx-days">${days}</div>
     ${_ts("weather")}
+  </div>`;
+}
+function renderSpaceWeather(data){
+  if(!data || data.error) return '<div class="panel"><div class="panel-title">Space Weather</div><div class="inc-none">Space weather unavailable</div></div>';
+  const kp = (data.kp_index !== null && data.kp_index !== undefined) ? Number(data.kp_index).toFixed(1) : 'n/a';
+  const flux = (data.xray_flux !== null && data.xray_flux !== undefined) ? Number(data.xray_flux).toExponential(2) : 'n/a';
+  const swSpeed = data.solar_wind_speed_km_s ? `${data.solar_wind_speed_km_s} km/s` : 'n/a';
+  const swDensity = data.solar_wind_density_p_cm3 ? `${data.solar_wind_density_p_cm3} p/cm^3` : 'n/a';
+  return `<div class="panel">
+    <div class="panel-title">Space Weather &mdash; NOAA SWPC</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div style="background:#0f172a;border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#64748b;margin-bottom:4px">Kp Index</div>
+        <div style="font-size:28px;font-weight:700;color:#f59e0b">${kp}</div>
+      </div>
+      <div style="background:#0f172a;border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#64748b;margin-bottom:4px">X-Ray Flux</div>
+        <div style="font-size:20px;font-weight:700;color:#38bdf8">${flux}</div>
+      </div>
+      <div style="background:#0f172a;border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#64748b;margin-bottom:4px">Solar Wind Speed</div>
+        <div style="font-size:18px;font-weight:700;color:#e2e8f0">${swSpeed}</div>
+      </div>
+      <div style="background:#0f172a;border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#64748b;margin-bottom:4px">Plasma Density</div>
+        <div style="font-size:18px;font-weight:700;color:#e2e8f0">${swDensity}</div>
+      </div>
+    </div>
+    ${_ts("spacewx")}
   </div>`;
 }
 
@@ -3270,6 +3320,7 @@ function renderGrid(){
   const vis = getVisible();
   const map = {
     weather:   renderWeather(state.weather),
+    spacewx:   renderSpaceWeather(state.spacewx),
     incidents: renderIncidents(state.incidents),
     commute:   renderCommute(state.commute),
     headlines: renderHeadlines(state.headlines),
