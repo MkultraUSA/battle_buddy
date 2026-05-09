@@ -42,7 +42,8 @@ _recommendations_lock = threading.Lock()
 
 # Models that are known to be unreliable even if they appear in the list
 _MODEL_DENYLIST = {
-    "openrouter/free",  # meta-router, unpredictable routing
+    "openrouter/free",   # meta-router, unpredictable routing
+    "openrouter/owl-alpha",  # heavy rate-limiting on free tier
 }
 
 
@@ -97,18 +98,35 @@ def _get_effective_model() -> str:
     """Return the model ID to use for LLM calls.
     Priority:
       1. OPENROUTER_MODEL env var if explicitly set (non-default value)
+         — but never if it's denylisted (e.g. owl-alpha)
       2. Best model from recommendations.json (auto-switching)
       3. Fallback to OPENROUTER_MODEL default
+         — but never if it's denylisted
+      4. Final hardcoded safe default
     """
+    # --- env-var override ------------------------------------------------
     env_model = os.environ.get("OPENROUTER_MODEL", "")
     if env_model and env_model != "google/gemini-2.5-flash":
-        # User explicitly overrode the default — respect it
-        return env_model
+        if env_model in _MODEL_DENYLIST:
+            print(f"[llm] WARN env OPENROUTER_MODEL={env_model} is denylisted — "
+                  f"ignoring and falling through to auto-switch", flush=True)
+        else:
+            # User explicitly overrode the default and it's safe — respect it
+            return env_model
+
+    # --- auto-switch from recommendations --------------------------------
     recs = _fetch_recommendations()
     best = _pick_best_model(recs)
     if best and best != OPENROUTER_MODEL:
         print(f"[llm] auto-switching model: {OPENROUTER_MODEL} → {best}", flush=True)
         return best
+
+    # --- fallback — but never return a denylisted model ------------------
+    if OPENROUTER_MODEL in _MODEL_DENYLIST:
+        safe_default = "google/gemini-2.0-flash-thinking-exp"
+        print(f"[llm] WARN OPENROUTER_MODEL={OPENROUTER_MODEL} is denylisted — "
+              f"falling back to {safe_default}", flush=True)
+        return safe_default
     return OPENROUTER_MODEL
 
 
@@ -148,6 +166,13 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())
+            if "error" in data:
+                err = data["error"]
+                err_msg = err.get("message", str(err))
+                err_code = err.get("code", 0)
+                if err_code == 429 or "429" in str(err_msg) or "rate" in str(err_msg).lower():
+                    raise Exception(f"429 rate limit: {err_msg}")
+                raise Exception(f"API error ({err_code}): {err_msg}")
             return json.loads(data["choices"][0]["message"]["content"])
         except Exception as exc:
             last_exc = exc

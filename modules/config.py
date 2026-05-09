@@ -77,7 +77,9 @@ def _get_recommended_model():
             mid = entry.get("model_id", "")
             if mid in {"meta-llama/llama-3.2-3b-instruct:free",
                        "nousresearch/hermes-3-llama-3.1-405b:free",
-                       "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"}:
+                       "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+                       "openrouter/free",
+                       "openrouter/owl-alpha"}:
                 continue
             _model_cache["model"] = mid
             _model_cache["fetched_at"] = now

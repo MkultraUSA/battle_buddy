@@ -1330,6 +1330,10 @@ def bot_talk():
                     )
                     with _ur.urlopen(req, timeout=25) as resp:
                         result = _j.loads(resp.read())
+                    if "error" in result:
+                        err = result["error"]
+                        err_msg = err.get("message", str(err))
+                        raise Exception(f"API error: {err_msg}")
                     answer = result["choices"][0]["message"]["content"].strip()
                     _bot_reply(tok, f"🔍 {name} asked: {q}\n\n{answer}")
                 except Exception as _e:
