@@ -42,7 +42,8 @@ _recommendations_lock = threading.Lock()
 
 # Models that are known to be unreliable even if they appear in the list
 _MODEL_DENYLIST = {
-    "openrouter/free",  # meta-router, unpredictable routing
+    "openrouter/free",       # meta-router, unpredictable routing
+    "openrouter/owl-alpha",  # returns HTTP 200 with JSON error, not real 429
 }
 
 # ── Runtime denylist ────────────────────────────────────────────────────────
@@ -140,13 +141,17 @@ def _pick_best_model(recommendations: dict) -> str | None:
 
 
 def _get_effective_model() -> str:
-    """
-    AUTO-SWITCHING DISABLED — returns a hardcoded safe model.
-    Previously fetched from hermes.libertas.mobi/recommendations.json
-    which kept rotating back to owl-alpha (rate-limited, crashes).
-    """
-    SAFE_MODEL = "openai/gpt-oss-20b:free"
-    return SAFE_MODEL
+    """Pick the best available free model from the recommendations endpoint.
+    Falls back to a hardcoded safe model if no recommendation is available.
+    owl-alpha is permanently denylisted (returns HTTP 200 error JSON)."""
+    SAFE_FALLBACK = "openai/gpt-oss-20b:free"
+    recs = _fetch_recommendations()
+    model = _pick_best_model(recs)
+    if model:
+        print(f"[llm] auto-selected model: {model}", flush=True)
+        return model
+    print(f"[llm] no suitable model found — falling back to {SAFE_FALLBACK}", flush=True)
+    return SAFE_FALLBACK
 
 
 
