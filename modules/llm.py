@@ -44,8 +44,11 @@ _recommendations_lock = threading.Lock()
 _MODEL_DENYLIST = {
     "openrouter/free",           # meta-router, unpredictable routing
     "openrouter/owl-alpha",      # returns HTTP 200 with JSON error, not real 429
-    "minimax/minimax-m2.5:free", # claims supports_json but returns null content
 }
+# NOTE: minimax/minimax-m2.5:free was previously denylisted here because it
+# returns null content when asked for JSON.  It is now handled via the runtime
+# ban mechanism (same path as any model that returns null content), so it can
+# still be auto-selected and will be temporarily banned if it misbehaves.
 
 # ── Runtime denylist ────────────────────────────────────────────────────────
 # Models that were rate-limited (HTTP 429) get a temporary ban so the system
@@ -144,14 +147,24 @@ def _pick_best_model(recommendations: dict) -> str | None:
 def _get_effective_model() -> str:
     """Pick the best available free model from the recommendations endpoint.
     Falls back to a hardcoded safe model if no recommendation is available.
-    owl-alpha is permanently denylisted (returns HTTP 200 error JSON)."""
-    SAFE_FALLBACK = "openai/gpt-oss-20b:free"
+    The fallback model is chosen from online models that support JSON output.
+    If no suitable model exists at all, returns None (caller must handle)."""
     recs = _fetch_recommendations()
     model = _pick_best_model(recs)
     if model:
         print(f"[llm] auto-selected model: {model}", flush=True)
         return model
-    print(f"[llm] no suitable model found — falling back to {SAFE_FALLBACK}", flush=True)
+    # No model from recommendations — try to find any online model that supports JSON
+    for rec in recs.get("recommendations") or []:
+        if rec.get("status") == "online" and rec.get("supports_json"):
+            mid = rec.get("model_id", "")
+            if mid not in _MODEL_DENYLIST and not _is_runtime_banned(mid):
+                print(f"[llm] fallback to online JSON model: {mid}", flush=True)
+                return mid
+    # Absolute last resort: use a known free model even if it may not support JSON.
+    # The caller (_call_openrouter_llm) handles null content gracefully via retries.
+    SAFE_FALLBACK = "openai/gpt-oss-20b:free"
+    print(f"[llm] no suitable JSON model found — falling back to {SAFE_FALLBACK}", flush=True)
     return SAFE_FALLBACK
 
 
