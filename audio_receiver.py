@@ -24,8 +24,8 @@ import threading
 import time
 import urllib.request
 
-import modules.weather as weather_mod
 import modules.space_weather as space_weather_mod
+import modules.weather as weather_mod
 
 try:
     import anthropic

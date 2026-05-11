@@ -12,3 +12,11 @@ addopts = "--cov=modules --cov-report=term-missing --cov-report=xml"
 
 [tool.coverage.run]
 omit = ["tests/*", "*/migrations/*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "requests>=2.33.1",
+    "ruff>=0.15.12",
+]
