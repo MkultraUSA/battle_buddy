@@ -1,16 +1,16 @@
-# Graph Report - battle_buddy  (2026-05-11)
+# Graph Report - battle_buddy  (2026-05-13)
 
 ## Corpus Check
-- 78 files · ~299,926 words
+- 79 files · ~297,233 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1176 nodes · 1611 edges · 86 communities (58 shown, 28 thin omitted)
-- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 180 edges (avg confidence: 0.71)
+- 1161 nodes · 1570 edges · 87 communities (58 shown, 29 thin omitted)
+- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 177 edges (avg confidence: 0.71)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `23116373`
+- Built from commit: `f9022d85`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -85,14 +85,15 @@
 - [[_COMMUNITY_Community 73|Community 73]]
 - [[_COMMUNITY_Community 74|Community 74]]
 - [[_COMMUNITY_Community 75|Community 75]]
-- [[_COMMUNITY_Community 77|Community 77]]
+- [[_COMMUNITY_Community 76|Community 76]]
 - [[_COMMUNITY_Community 78|Community 78]]
-- [[_COMMUNITY_Community 80|Community 80]]
+- [[_COMMUNITY_Community 79|Community 79]]
 - [[_COMMUNITY_Community 81|Community 81]]
 - [[_COMMUNITY_Community 82|Community 82]]
 - [[_COMMUNITY_Community 83|Community 83]]
 - [[_COMMUNITY_Community 84|Community 84]]
 - [[_COMMUNITY_Community 85|Community 85]]
+- [[_COMMUNITY_Community 86|Community 86]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `BasePoller` - 35 edges
@@ -103,58 +104,58 @@
 6. `_make_rss()` - 17 edges
 7. `TestClassifyItype` - 17 edges
 8. `APDCADPoller` - 16 edges
-9. `ADSBAirAssetPoller` - 16 edges
-10. `RedditIntelPoller` - 16 edges
+9. `ADSBAirAssetPollerTests` - 16 edges
+10. `Battle Buddy` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `test_call()` --calls--> `llm_analyze()`  [INFERRED]
-  audio_receiver.py → modules/llm.py
+- `_reddit_tip_recheck()` --calls--> `_haversine_km()`  [INFERRED]
+  pollers_legacy.py → modules/incident_engine.py
+- `_adsb_check_orbit()` --calls--> `_km()`  [INFERRED]
+  pollers_legacy.py → modules/pollers/impl/adsb_air_asset.py
+- `test_call()` --calls--> `post_to_talk()`  [INFERRED]
+  audio_receiver.py → modules/pollers/impl/adsb_air_asset.py
 - `test_call()` --calls--> `insert_call()`  [INFERRED]
   audio_receiver.py → modules/database.py
-- `test_call()` --calls--> `analyze_for_incident()`  [INFERRED]
-  audio_receiver.py → modules/incident_engine.py
-- `_BBMetricsCollector` --uses--> `PiWatchdogService`  [INFERRED]
-  audio_receiver.py → modules/pi_watchdog.py
-- `api_sitrep()` --calls--> `build_sitrep()`  [INFERRED]
-  audio_receiver.py → modules/sitrep.py
+- `test_call()` --calls--> `llm_analyze()`  [INFERRED]
+  audio_receiver.py → modules/llm.py
 
-## Communities (86 total, 28 thin omitted)
+## Communities (87 total, 29 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.05
-Nodes (58): apd_cad_thread(), _apd_fetch_article(), apd_news_thread(), _apd_parse_rss(), _atxfloods_post_to_talk(), atxfloods_thread(), _austin_events_format(), _austin_events_load() (+50 more)
+Nodes (31): _BBMetricsCollector, get_transcription_observability(), _prune_metrics(), Monitors transcription activity and detects hangs.      Tracks the timestamp of, Record that a transcription has started., Record that a transcription completed successfully., Return True if a transcription has been running longer than ``timeout`` seconds., Reset watchdog state (e.g. after restarting the transcription thread). (+23 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.05
-Nodes (31): _BBMetricsCollector, get_transcription_observability(), _prune_metrics(), Monitors transcription activity and detects hangs.      Tracks the timestamp of, Record that a transcription has started., Record that a transcription completed successfully., Return True if a transcription has been running longer than ``timeout`` seconds., Reset watchdog state (e.g. after restarting the transcription thread). (+23 more)
+Nodes (43): api_login(), api_premium_setpassword(), auth_nc_admin(), nginx auth_request endpoint. Returns 200 if caller is a Nextcloud admin, 401 oth, _add_to_talk_rooms(), api_login(), api_logout(), api_me() (+35 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.05
-Nodes (43): api_login(), api_premium_setpassword(), auth_nc_admin(), nginx auth_request endpoint. Returns 200 if caller is a Nextcloud admin, 401 oth, _add_to_talk_rooms(), api_login(), api_logout(), api_me() (+35 more)
+Nodes (34): _banner_api(), _check_commute_alerts(), clear_banner(), create_deck_card(), _point_to_segment_distance_miles(), post_banner(), modules/alerts.py — Banners, Deck cards, and commute alerts.  Moved here from mo, Create a Deck card in the New column when a new incident is detected. (+26 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.05
-Nodes (36): _banner_api(), _check_commute_alerts(), clear_banner(), create_deck_card(), _point_to_segment_distance_miles(), post_banner(), modules/alerts.py — Banners, Deck cards, and commute alerts.  Moved here from mo, Create a Deck card in the New column when a new incident is detected. (+28 more)
+Nodes (34): _adsb_check_orbit(), _apd_fetch_article(), _apd_parse_rss(), _cad_fetch_and_store(), _cad_init_db(), _cad_match_and_harvest(), _extract_tip_location(), _fetch_url_with_retry() (+26 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.08
-Nodes (26): ADSBAirAssetPoller, alert_leo_aircraft(), alert_orbit(), check_orbit(), ensure_schema(), fetch_aircraft(), _heading_delta(), _km() (+18 more)
+Cohesion: 0.09
+Nodes (22): ADSBAirAssetPoller, alert_leo_aircraft(), alert_orbit(), check_orbit(), ensure_schema(), fetch_aircraft(), _heading_delta(), _km() (+14 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.08
 Nodes (22): enrich_incident_match(), enrich_tip_location(), ensure_schema(), extract_tip_location(), fetch_feed(), _mark_tip_matched(), _mark_tip_no_data(), _nearby_calls() (+14 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.09
-Nodes (10): get_default_service(), pi_watchdog_thread(), PiWatchdogService, modules/pi_watchdog.py ~~~~~~~~~~~~~~~~~~~~~~ Pi / OP25 watchdog service.  Track, Backward-compatible raw-thread entry point., Background service for Pi reachability, OP25, and audio-silence checks., _ImmediateThread, PiWatchdogServiceTests (+2 more)
+Cohesion: 0.08
+Nodes (34): api_tgid_confirm(), Manually confirm a TGID name and write it to the tags TSV., analyze_for_incident(), _consider_hold(), _create_incident(), _detect_escalation_stage(), _find_incident_by_location(), _haversine_km() (+26 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.06
-Nodes (26): _afd_issue_to_itype(), AFDOpenDataPoller, modules/pollers/impl/afd_news.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ AFD Open Data, Map AFD issue_reported string to a Battle Buddy itype., Poll Austin Open Data for active AFD incidents every 60 seconds.      State is h, Fetch AFD incidents and process new/cleared entries., adsb_air_asset_thread(), afd_open_data_thread() (+18 more)
+Cohesion: 0.08
+Nodes (12): get_default_service(), _pi_watchdog_alert(), pi_watchdog_thread(), PiWatchdogService, modules/pi_watchdog.py ~~~~~~~~~~~~~~~~~~~~~~ Pi / OP25 watchdog service.  Track, Send a DM alert to watchdog users with email as a parallel channel., Backward-compatible raw-thread entry point., Background service for Pi reachability, OP25, and audio-silence checks. (+4 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.09
-Nodes (31): api_tgid_confirm(), Manually confirm a TGID name and write it to the tags TSV., analyze_for_incident(), _consider_hold(), _create_incident(), _detect_escalation_stage(), _find_incident_by_location(), _haversine_km() (+23 more)
+Cohesion: 0.06
+Nodes (26): _afd_issue_to_itype(), AFDOpenDataPoller, modules/pollers/impl/afd_news.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ AFD Open Data, Map AFD issue_reported string to a Battle Buddy itype., Poll Austin Open Data for active AFD incidents every 60 seconds.      State is h, Fetch AFD incidents and process new/cleared entries., adsb_air_asset_thread(), afd_open_data_thread() (+18 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.06
@@ -238,15 +239,15 @@ Nodes (5): Send a breaking incident DM alert to subscribed users., send_dm_alert
 
 ### Community 31 - "Community 31"
 Cohesion: 0.15
-Nodes (6): _make_db(), Verify that the _APD_NEWS_LOCK prevents race conditions when multiple     poller, Create the minimal schema tables required by apd_news., Return a path to a fresh temp DB file (caller responsible for cleanup)., TestConcurrentDedup, _tmp_db()
+Nodes (12): Branch Workflow, Code Style, code:bash (git clone https://github.com/MkultraUSA/battle_buddy.git), code:bash (git checkout -b feature/my-change), code:bash (git grep -n -i -E "api[_-]?key|secret|token|password|passwd|), code:bash (gitleaks detect --source . --verbose), code:text ([ ] The change is focused and documented), Contributing (+4 more)
 
 ### Community 32 - "Community 32"
-Cohesion: 0.15
-Nodes (12): Branch Workflow, Code Style, code:bash (git clone https://github.com/MkultraUSA/battle_buddy.git), code:bash (git checkout -b feature/my-change), code:bash (git grep -n -i -E "api[_-]?key|secret|token|password|passwd|), code:bash (gitleaks detect --source . --verbose), code:text ([ ] The change is focused and documented), Contributing (+4 more)
+Cohesion: 0.17
+Nodes (5): api_homicides(), public_feed_rss(), Battle Buddy public-facing page routes.  Extracted from audio_receiver.py to kee, Return 2026 homicide data for the heat map — static seed + live DB incidents., RSS 2.0 feed of confirmed Battle Buddy incidents (last 200, 30 days).
 
 ### Community 33 - "Community 33"
 Cohesion: 0.17
-Nodes (5): api_homicides(), public_feed_rss(), Battle Buddy public-facing page routes.  Extracted from audio_receiver.py to kee, Return 2026 homicide data for the heat map — static seed + live DB incidents., RSS 2.0 feed of confirmed Battle Buddy incidents (last 200, 30 days).
+Nodes (6): _make_db(), Verify that the _APD_NEWS_LOCK prevents race conditions when multiple     poller, Create the minimal schema tables required by apd_news., Return a path to a fresh temp DB file (caller responsible for cleanup)., TestConcurrentDedup, _tmp_db()
 
 ### Community 35 - "Community 35"
 Cohesion: 0.17
@@ -264,7 +265,7 @@ Nodes (10): receive(), _evict_expired(), is_duplicate(), is_duplicate_and_mark()
 Cohesion: 0.2
 Nodes (9): API Exposure and Route Security, Authentication Guidance, code:text (Internet), code:nginx (location /api/incidents {), Nginx Sketch, Public Safety / Privacy Notes, Recommended Exposure Model, Route Classes (+1 more)
 
-### Community 41 - "Community 41"
+### Community 42 - "Community 42"
 Cohesion: 0.22
 Nodes (8): Architecture, Capture Node, code:text (Radio system / SDR), Data Stores, External Integrations, High-Level Flow, Security Boundaries, Server Node
 
@@ -321,20 +322,20 @@ Cohesion: 0.5
 Nodes (3): Refactor APD Press Release poller (`modules/pollers.py` lines 218-630) into `modules/pollers/impl/apd_news.py` - COMPLETE, TODO, [x] Refactor APD Press Release poller (`modules/pollers.py` lines 218-630) into `modules/pollers/impl/apd_news.py`
 
 ## Knowledge Gaps
-- **357 isolated node(s):** `Compatibility endpoint for external backlog workers.     Current pipeline is pus`, `Receive Pi watchdog events and forward as Talk DM alerts.`, `Pi polls this endpoint for pending commands (restart_op25, etc.).`, `Inject a synthetic call for pipeline testing — bypasses Whisper.`, `Returns a clean, natural-language spoken sitrep for TTS.` (+352 more)
+- **351 isolated node(s):** `Fetch a URL with exponential backoff retry.      Returns the response body as by`, `Parse Google News RSS feed; return list of {title, link}.`, `Try to resolve the real article URL via the source site's RSS feed.     Falls ba`, `Fetch a news article URL (follows redirects), extract address and description.`, `Fetch a URL via the Pi5 fetch agent (residential IP, browser headers).     Retur` (+346 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **28 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **29 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `BasePoller` connect `Community 16` to `Community 34`, `Community 4`, `Community 5`, `Community 38`, `Community 7`, `Community 40`, `Community 42`, `Community 10`, `Community 15`, `Community 17`, `Community 18`, `Community 49`, `Community 51`, `Community 23`, `Community 27`, `Community 30`, `Community 31`?**
-  _High betweenness centrality (0.267) - this node is a cross-community bridge._
-- **Why does `_nc_create_user()` connect `Community 2` to `Community 5`?**
-  _High betweenness centrality (0.117) - this node is a cross-community bridge._
-- **Why does `RedditIntelPollerTests` connect `Community 5` to `Community 16`?**
-  _High betweenness centrality (0.105) - this node is a cross-community bridge._
-- **Are the 29 inferred relationships involving `BasePoller` (e.g. with `ApdNewsPoller` and `APDCADPoller`) actually correct?**
+- **Why does `BasePoller` connect `Community 16` to `Community 33`, `Community 34`, `Community 4`, `Community 5`, `Community 38`, `Community 8`, `Community 41`, `Community 40`, `Community 10`, `Community 15`, `Community 17`, `Community 18`, `Community 49`, `Community 51`, `Community 23`, `Community 27`, `Community 30`?**
+  _High betweenness centrality (0.273) - this node is a cross-community bridge._
+- **Why does `test_call()` connect `Community 24` to `Community 12`, `Community 4`, `Community 22`, `Community 6`?**
+  _High betweenness centrality (0.226) - this node is a cross-community bridge._
+- **Why does `ADSBAirAssetPoller` connect `Community 4` to `Community 16`, `Community 8`?**
+  _High betweenness centrality (0.198) - this node is a cross-community bridge._
+- **Are the 29 inferred relationships involving `BasePoller` (e.g. with `ADSBAirAssetPoller` and `ApdNewsPoller`) actually correct?**
   _`BasePoller` has 29 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 15 inferred relationships involving `APDNewsPoller` (e.g. with `BasePoller` and `TestConstants`) actually correct?**
   _`APDNewsPoller` has 15 INFERRED edges - model-reasoned connections that need verification._
