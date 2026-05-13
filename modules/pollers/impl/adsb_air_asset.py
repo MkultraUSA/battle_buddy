@@ -80,7 +80,6 @@ class ADSBAirAssetPoller(BasePoller):
         )
         from modules.incident_engine import _atak_post_marker  # noqa: PLC0415
         from modules.pollers_legacy import send_dm_alert  # noqa: PLC0415
-        from modules.talk_post import post_to_talk  # noqa: PLC0415
 
         if not self._schema_ready:
             self.ensure_schema(DB_PATH)

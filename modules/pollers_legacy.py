@@ -1228,8 +1228,9 @@ def _cad_match_and_harvest():
 
 
 
-            "structure fire", "mass casualty", "hostage", "barricade", "10-99",
-            "homicide", "body found", "found dead", "death investigation", "medical examiner"]
+BANNER_INCIDENT_TYPES = [
+    "structure fire", "mass casualty", "hostage", "barricade", "10-99",
+    "homicide", "body found", "found dead", "death investigation", "medical examiner"]
 
 
 
