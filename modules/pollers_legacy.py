@@ -1,6 +1,6 @@
 import base64
 import json
-import os
+import os  # noqa: F401
 import re
 import sqlite3
 import threading
@@ -13,29 +13,29 @@ from zoneinfo import ZoneInfo
 from modules.alerts import send_dm_alert  # noqa: F401
 from modules.config import (
     DB_PATH,
-    DECK_BASE,
-    DECK_BOARD_ID,
-    DECK_LABELS,
-    DECK_STACK_NEW,
+    DECK_BASE,  # noqa: F401
+    DECK_BOARD_ID,  # noqa: F401
+    DECK_LABELS,  # noqa: F401
+    DECK_STACK_NEW,  # noqa: F401
     GOOGLE_CSE_API_KEY,
     GOOGLE_CSE_ID,
     PI_FETCH_ENABLED,
     PI_FETCH_TOKEN,
     PI_FETCH_URL,
     TALK_BASE,
-    TALK_ENABLED,
+    TALK_ENABLED,  # noqa: F401
     TALK_PASS,
     TALK_ROOMS,
     TALK_USER,
-    _room_for_call,
+    _room_for_call,  # noqa: F401
 )
-from modules.geocoding import _geocode_address
+from modules.geocoding import _geocode_address  # noqa: F401
 from modules.incident_engine import (
-    _active_incidents,
-    _atak_clear_marker,
-    _atak_post_marker,
+    _active_incidents,  # noqa: F401
+    _atak_clear_marker,  # noqa: F401
+    _atak_post_marker,  # noqa: F401
     _haversine_km,
-    _incident_lock,
+    _incident_lock,  # noqa: F401
 )
 from modules.pi_watchdog import (  # noqa: F401
     PI1_OP25_CMD_URL,
@@ -55,10 +55,10 @@ from modules.sitrep import build_sitrep  # noqa: F401
 from modules.talkgroups import (
     IGNORE_TGIDS,
     TGID_META,
-    detect_air_asset,
-    detect_dps_assets,
-    is_capitol_area,
-    mentions_dps,
+    detect_air_asset,  # noqa: F401
+    detect_dps_assets,  # noqa: F401
+    is_capitol_area,  # noqa: F401
+    mentions_dps,  # noqa: F401
 )
 
 _CDT = ZoneInfo("America/Chicago")
