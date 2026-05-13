@@ -1,7 +1,7 @@
 # Graph Report - battle_buddy  (2026-05-13)
 
 ## Corpus Check
-- 79 files · ~297,185 words
+- 79 files · ~297,233 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `5098d727`
+- Built from commit: `f9022d85`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -72,8 +72,6 @@
 - [[_COMMUNITY_Community 55|Community 55]]
 - [[_COMMUNITY_Community 56|Community 56]]
 - [[_COMMUNITY_Community 57|Community 57]]
-- [[_COMMUNITY_Community 61|Community 61]]
-- [[_COMMUNITY_Community 62|Community 62]]
 - [[_COMMUNITY_Community 63|Community 63]]
 - [[_COMMUNITY_Community 64|Community 64]]
 - [[_COMMUNITY_Community 65|Community 65]]
@@ -84,6 +82,8 @@
 - [[_COMMUNITY_Community 70|Community 70]]
 - [[_COMMUNITY_Community 71|Community 71]]
 - [[_COMMUNITY_Community 72|Community 72]]
+- [[_COMMUNITY_Community 73|Community 73]]
+- [[_COMMUNITY_Community 74|Community 74]]
 - [[_COMMUNITY_Community 75|Community 75]]
 - [[_COMMUNITY_Community 76|Community 76]]
 - [[_COMMUNITY_Community 78|Community 78]]
@@ -108,16 +108,16 @@
 10. `Battle Buddy` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `_reddit_tip_recheck()` --calls--> `_haversine_km()`  [INFERRED]
+  pollers_legacy.py → modules/incident_engine.py
+- `_adsb_check_orbit()` --calls--> `_km()`  [INFERRED]
+  pollers_legacy.py → modules/pollers/impl/adsb_air_asset.py
 - `test_call()` --calls--> `post_to_talk()`  [INFERRED]
   audio_receiver.py → modules/pollers/impl/adsb_air_asset.py
 - `test_call()` --calls--> `insert_call()`  [INFERRED]
   audio_receiver.py → modules/database.py
 - `test_call()` --calls--> `llm_analyze()`  [INFERRED]
   audio_receiver.py → modules/llm.py
-- `test_call()` --calls--> `analyze_for_incident()`  [INFERRED]
-  audio_receiver.py → modules/incident_engine.py
-- `_BBMetricsCollector` --uses--> `PiWatchdogService`  [INFERRED]
-  audio_receiver.py → modules/pi_watchdog.py
 
 ## Communities (87 total, 29 thin omitted)
 
@@ -162,16 +162,16 @@ Cohesion: 0.06
 Nodes (31): Clone the Repository, code:bash (git clone https://github.com/MkultraUSA/battle_buddy.git), code:ini ([Unit]), code:bash (sudo systemctl daemon-reload), code:bash (journalctl -u battlebuddy.service -f), code:nginx (server {), code:bash (python -m pip install -r requirements-dev.txt), code:bash (cd /opt/battlebuddy) (+23 more)
 
 ### Community 10 - "Community 10"
+Cohesion: 0.12
+Nodes (10): _make_rss(), Network errors during RSS fetch should be caught silently., Build a minimal Google News RSS XML string from a list of item dicts., Integration tests for the APD press-release sub-poll.      All network I/O (urlo, Run _poll_apd_press_releases with mocked network and stubs., Articles with no pubDate should be skipped (no pub_ts)., Articles older than _ARTICLE_MAX_AGE_SECS should be skipped., test_source_rss_tier_resolves_when_title_matches() (+2 more)
+
+### Community 11 - "Community 11"
 Cohesion: 0.06
 Nodes (30): [0.5.0] — 2026-03-01 (approx.), [0.6.0] — 2026-03-09, [0.7.0] — 2026-03-09, [0.7.1] — 2026-03-09, [0.7.2] — 2026-03-09, [0.7.3] — 2026-03-09, [0.7.6] — 2026-03-09, [0.7.7] — 2026-03-09 (+22 more)
 
-### Community 11 - "Community 11"
+### Community 12 - "Community 12"
 Cohesion: 0.11
 Nodes (25): api_commute_incidents(), api_commute_polyline(), api_commute_save(), api_commute_share_token(), api_commute_time(), api_intel_query(), api_logout(), api_me() (+17 more)
-
-### Community 12 - "Community 12"
-Cohesion: 0.12
-Nodes (9): _make_rss(), Network errors during RSS fetch should be caught silently., Build a minimal Google News RSS XML string from a list of item dicts., Integration tests for the APD press-release sub-poll.      All network I/O (urlo, Run _poll_apd_press_releases with mocked network and stubs., Articles with no pubDate should be skipped (no pub_ts)., Articles older than _ARTICLE_MAX_AGE_SECS should be skipped., TestPollAPDPressReleases (+1 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.12
@@ -190,20 +190,20 @@ Cohesion: 0.1
 Nodes (14): BasePoller, APDNewsPoller, Poll Google News RSS for APD press releases every 5 minutes.      State is held, Return a human-readable status string for health checks and tests., ApdNewsPoller, BasePoller, modules/pollers/base.py ~~~~~~~~~~~~~~~~~~~~~~~ Abstract base class for all Batt, Abstract poller that runs run() in a daemon thread every `interval` seconds. (+6 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.09
-Nodes (8): _attach_to_parent(), _load_from_file(), tests/test_apd_poller.py ~~~~~~~~~~~~~~~~~~~~~~~~ Unit test suite for modules/po, # IMPORTANT: we do NOT pre-register any parent package ("modules",, Register a lightweight stub for *name* in sys.modules without touching     any p, Expose a directly loaded/stubbed module on its parent package.      importlib no, _stub_leaf(), test_source_rss_tier_resolves_when_title_matches()
+Cohesion: 0.12
+Nodes (10): APDCADPoller, _parse_cad_ts(), modules/pollers/impl/apd_cad.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Austin PD CAD r, Fetch CAD records from the lookback window and upsert them., Match unmatched CAD rows to scanner incidents and harvest TGID hints., Poll APD CAD records every six hours and enrich matching incidents., Create APD CAD and TGID hint tables if they do not exist., APDCADPollerTests (+2 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.13
 Nodes (10): modules/pollers/impl/traffic_open_data.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~, Process a new traffic incident. Returns matched incident ID if any., Map traffic issue_reported string to a Battle Buddy itype., Poll Austin Open Data for active traffic incidents every 60 seconds., _traffic_issue_to_itype(), TrafficOpenDataPoller, Unit tests for modules/pollers/impl/traffic_open_data.py., test_matched_minor_incident_posts_without_marker() (+2 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.12
-Nodes (10): APDCADPoller, _parse_cad_ts(), modules/pollers/impl/apd_cad.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Austin PD CAD r, Fetch CAD records from the lookback window and upsert them., Match unmatched CAD rows to scanner incidents and harvest TGID hints., Poll APD CAD records every six hours and enrich matching incidents., Create APD CAD and TGID hint tables if they do not exist., APDCADPollerTests (+2 more)
+Cohesion: 0.09
+Nodes (9): Unit tests for modules.audio_dedup.  Tests verify thread-safety, TTL eviction, a, Clear module-level state between tests., An entry older than TTL should be evicted and reported as not-duplicate., is_duplicate() must not side-effect the cache., Only one of N concurrent threads registering the same hash wins., _reset(), TestIsDuplicate, TestIsDuplicateAndMark (+1 more)
 
 ### Community 20 - "Community 20"
 Cohesion: 0.09
-Nodes (9): Unit tests for modules.audio_dedup.  Tests verify thread-safety, TTL eviction, a, Clear module-level state between tests., An entry older than TTL should be evicted and reported as not-duplicate., is_duplicate() must not side-effect the cache., Only one of N concurrent threads registering the same hash wins., _reset(), TestIsDuplicate, TestIsDuplicateAndMark (+1 more)
+Nodes (7): _attach_to_parent(), _load_from_file(), tests/test_apd_poller.py ~~~~~~~~~~~~~~~~~~~~~~~~ Unit test suite for modules/po, # IMPORTANT: we do NOT pre-register any parent package ("modules",, Register a lightweight stub for *name* in sys.modules without touching     any p, Expose a directly loaded/stubbed module on its parent package.      importlib no, _stub_leaf()
 
 ### Community 21 - "Community 21"
 Cohesion: 0.08
@@ -237,17 +237,17 @@ Nodes (13): code:text ([ ] No real Broadcastify credentials), code:bash (git gre
 Cohesion: 0.18
 Nodes (5): Send a breaking incident DM alert to subscribed users., send_dm_alert(), DMAlertTests, _ImmediateThread, Unit tests for DM alert helpers in modules/alerts.py.
 
-### Community 30 - "Community 30"
-Cohesion: 0.15
-Nodes (6): _make_db(), Verify that the _APD_NEWS_LOCK prevents race conditions when multiple     poller, Create the minimal schema tables required by apd_news., Return a path to a fresh temp DB file (caller responsible for cleanup)., TestConcurrentDedup, _tmp_db()
-
-### Community 32 - "Community 32"
+### Community 31 - "Community 31"
 Cohesion: 0.15
 Nodes (12): Branch Workflow, Code Style, code:bash (git clone https://github.com/MkultraUSA/battle_buddy.git), code:bash (git checkout -b feature/my-change), code:bash (git grep -n -i -E "api[_-]?key|secret|token|password|passwd|), code:bash (gitleaks detect --source . --verbose), code:text ([ ] The change is focused and documented), Contributing (+4 more)
 
-### Community 33 - "Community 33"
+### Community 32 - "Community 32"
 Cohesion: 0.17
 Nodes (5): api_homicides(), public_feed_rss(), Battle Buddy public-facing page routes.  Extracted from audio_receiver.py to kee, Return 2026 homicide data for the heat map — static seed + live DB incidents., RSS 2.0 feed of confirmed Battle Buddy incidents (last 200, 30 days).
+
+### Community 33 - "Community 33"
+Cohesion: 0.17
+Nodes (6): _make_db(), Verify that the _APD_NEWS_LOCK prevents race conditions when multiple     poller, Create the minimal schema tables required by apd_news., Return a path to a fresh temp DB file (caller responsible for cleanup)., TestConcurrentDedup, _tmp_db()
 
 ### Community 35 - "Community 35"
 Cohesion: 0.17
@@ -265,7 +265,7 @@ Nodes (10): receive(), _evict_expired(), is_duplicate(), is_duplicate_and_mark()
 Cohesion: 0.2
 Nodes (9): API Exposure and Route Security, Authentication Guidance, code:text (Internet), code:nginx (location /api/incidents {), Nginx Sketch, Public Safety / Privacy Notes, Recommended Exposure Model, Route Classes (+1 more)
 
-### Community 41 - "Community 41"
+### Community 42 - "Community 42"
 Cohesion: 0.22
 Nodes (8): Architecture, Capture Node, code:text (Radio system / SDR), Data Stores, External Integrations, High-Level Flow, Security Boundaries, Server Node
 
@@ -322,20 +322,20 @@ Cohesion: 0.5
 Nodes (3): Refactor APD Press Release poller (`modules/pollers.py` lines 218-630) into `modules/pollers/impl/apd_news.py` - COMPLETE, TODO, [x] Refactor APD Press Release poller (`modules/pollers.py` lines 218-630) into `modules/pollers/impl/apd_news.py`
 
 ## Knowledge Gaps
-- **351 isolated node(s):** `Compatibility endpoint for external backlog workers.     Current pipeline is pus`, `Receive Pi watchdog events and forward as Talk DM alerts.`, `Pi polls this endpoint for pending commands (restart_op25, etc.).`, `Inject a synthetic call for pipeline testing — bypasses Whisper.`, `Returns a clean, natural-language spoken sitrep for TTS.` (+346 more)
+- **351 isolated node(s):** `Fetch a URL with exponential backoff retry.      Returns the response body as by`, `Parse Google News RSS feed; return list of {title, link}.`, `Try to resolve the real article URL via the source site's RSS feed.     Falls ba`, `Fetch a news article URL (follows redirects), extract address and description.`, `Fetch a URL via the Pi5 fetch agent (residential IP, browser headers).     Retur` (+346 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **29 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `BasePoller` connect `Community 16` to `Community 34`, `Community 4`, `Community 5`, `Community 38`, `Community 8`, `Community 40`, `Community 42`, `Community 12`, `Community 15`, `Community 49`, `Community 18`, `Community 19`, `Community 51`, `Community 23`, `Community 27`, `Community 30`, `Community 31`?**
+- **Why does `BasePoller` connect `Community 16` to `Community 33`, `Community 34`, `Community 4`, `Community 5`, `Community 38`, `Community 8`, `Community 41`, `Community 40`, `Community 10`, `Community 15`, `Community 17`, `Community 18`, `Community 49`, `Community 51`, `Community 23`, `Community 27`, `Community 30`?**
   _High betweenness centrality (0.273) - this node is a cross-community bridge._
-- **Why does `test_call()` connect `Community 24` to `Community 11`, `Community 4`, `Community 22`, `Community 6`?**
-  _High betweenness centrality (0.220) - this node is a cross-community bridge._
+- **Why does `test_call()` connect `Community 24` to `Community 12`, `Community 4`, `Community 22`, `Community 6`?**
+  _High betweenness centrality (0.226) - this node is a cross-community bridge._
 - **Why does `ADSBAirAssetPoller` connect `Community 4` to `Community 16`, `Community 8`?**
-  _High betweenness centrality (0.190) - this node is a cross-community bridge._
-- **Are the 29 inferred relationships involving `BasePoller` (e.g. with `ApdNewsPoller` and `APDCADPoller`) actually correct?**
+  _High betweenness centrality (0.198) - this node is a cross-community bridge._
+- **Are the 29 inferred relationships involving `BasePoller` (e.g. with `ADSBAirAssetPoller` and `ApdNewsPoller`) actually correct?**
   _`BasePoller` has 29 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 15 inferred relationships involving `APDNewsPoller` (e.g. with `BasePoller` and `TestConstants`) actually correct?**
   _`APDNewsPoller` has 15 INFERRED edges - model-reasoned connections that need verification._

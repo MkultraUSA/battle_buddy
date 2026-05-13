@@ -4,936 +4,18 @@
   "graph": {},
   "nodes": [
     {
-      "label": "audio_receiver.py",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1",
-      "id": "audio_receiver_py",
-      "community": 11,
-      "norm_label": "audio_receiver.py"
-    },
-    {
-      "label": "receive()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L100",
-      "id": "battle_buddy_audio_receiver_receive",
-      "community": 37,
-      "norm_label": "receive()"
-    },
-    {
-      "label": "api_backlog_claim()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L201",
-      "id": "battle_buddy_audio_receiver_api_backlog_claim",
-      "community": 61,
-      "norm_label": "api_backlog_claim()"
-    },
-    {
-      "label": "watchdog_event()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L209",
-      "id": "battle_buddy_audio_receiver_watchdog_event",
-      "community": 70,
-      "norm_label": "watchdog_event()"
-    },
-    {
-      "label": "pi_commands()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L223",
-      "id": "battle_buddy_audio_receiver_pi_commands",
-      "community": 65,
-      "norm_label": "pi_commands()"
-    },
-    {
-      "label": "test_call()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L231",
-      "id": "battle_buddy_audio_receiver_test_call",
-      "community": 24,
-      "norm_label": "test_call()"
-    },
-    {
-      "label": "api_calls()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L254",
-      "id": "battle_buddy_audio_receiver_api_calls",
-      "community": 24,
-      "norm_label": "api_calls()"
-    },
-    {
-      "label": "_BBMetricsCollector",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L265",
-      "id": "battle_buddy_audio_receiver_bbmetricscollector",
-      "community": 0,
-      "norm_label": "_bbmetricscollector"
-    },
-    {
-      "label": ".collect()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L266",
-      "id": "battle_buddy_audio_receiver_bbmetricscollector_collect",
-      "community": 0,
-      "norm_label": ".collect()"
-    },
-    {
-      "label": "prometheus_metrics()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L707",
-      "id": "battle_buddy_audio_receiver_prometheus_metrics",
-      "community": 11,
-      "norm_label": "prometheus_metrics()"
-    },
-    {
-      "label": "api_sitrep()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L720",
-      "id": "battle_buddy_audio_receiver_api_sitrep",
-      "community": 26,
-      "norm_label": "api_sitrep()"
-    },
-    {
-      "label": "api_voice_sitrep()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L726",
-      "id": "battle_buddy_audio_receiver_api_voice_sitrep",
-      "community": 26,
-      "norm_label": "api_voice_sitrep()"
-    },
-    {
-      "label": "api_incidents()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L733",
-      "id": "battle_buddy_audio_receiver_api_incidents",
-      "community": 24,
-      "norm_label": "api_incidents()"
-    },
-    {
-      "label": "api_incidents_active()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L738",
-      "id": "battle_buddy_audio_receiver_api_incidents_active",
-      "community": 24,
-      "norm_label": "api_incidents_active()"
-    },
-    {
-      "label": "api_stats()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L743",
-      "id": "battle_buddy_audio_receiver_api_stats",
-      "community": 66,
-      "norm_label": "api_stats()"
-    },
-    {
-      "label": "api_shooting_intel()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L770",
-      "id": "battle_buddy_audio_receiver_api_shooting_intel",
-      "community": 72,
-      "norm_label": "api_shooting_intel()"
-    },
-    {
-      "label": "api_daily_summary()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L867",
-      "id": "battle_buddy_audio_receiver_api_daily_summary",
-      "community": 68,
-      "norm_label": "api_daily_summary()"
-    },
-    {
-      "label": "api_tgid_guesses()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L934",
-      "id": "battle_buddy_audio_receiver_api_tgid_guesses",
-      "community": 62,
-      "norm_label": "api_tgid_guesses()"
-    },
-    {
-      "label": "api_tgid_confirm()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L966",
-      "id": "battle_buddy_audio_receiver_api_tgid_confirm",
-      "community": 6,
-      "norm_label": "api_tgid_confirm()"
-    },
-    {
-      "label": "api_drone_sighting()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L991",
-      "id": "battle_buddy_audio_receiver_api_drone_sighting",
-      "community": 67,
-      "norm_label": "api_drone_sighting()"
-    },
-    {
-      "label": "api_drone_sightings()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1025",
-      "id": "battle_buddy_audio_receiver_api_drone_sightings",
-      "community": 69,
-      "norm_label": "api_drone_sightings()"
-    },
-    {
-      "label": "api_adsb()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1040",
-      "id": "battle_buddy_audio_receiver_api_adsb",
-      "community": 71,
-      "norm_label": "api_adsb()"
-    },
-    {
-      "label": "index()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1084",
-      "id": "battle_buddy_audio_receiver_index",
-      "community": 11,
-      "norm_label": "index()"
-    },
-    {
-      "label": "_verify_bot_signature()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1093",
-      "id": "battle_buddy_audio_receiver_verify_bot_signature",
-      "community": 24,
-      "norm_label": "_verify_bot_signature()"
-    },
-    {
-      "label": "bot_talk()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1107",
-      "id": "battle_buddy_audio_receiver_bot_talk",
-      "community": 24,
-      "norm_label": "bot_talk()"
-    },
-    {
-      "label": "_load_active_incidents_from_db()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1771",
-      "id": "battle_buddy_audio_receiver_load_active_incidents_from_db",
-      "community": 63,
-      "norm_label": "_load_active_incidents_from_db()"
-    },
-    {
-      "label": "_nc_upload()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1821",
-      "id": "battle_buddy_audio_receiver_nc_upload",
-      "community": 55,
-      "norm_label": "_nc_upload()"
-    },
-    {
-      "label": "_export_incident_snapshot()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1839",
-      "id": "battle_buddy_audio_receiver_export_incident_snapshot",
-      "community": 55,
-      "norm_label": "_export_incident_snapshot()"
-    },
-    {
-      "label": "api_flag_incident()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1924",
-      "id": "battle_buddy_audio_receiver_api_flag_incident",
-      "community": 64,
-      "norm_label": "api_flag_incident()"
-    },
-    {
-      "label": "api_flagged_incidents()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1935",
-      "id": "battle_buddy_audio_receiver_api_flagged_incidents",
-      "community": 24,
-      "norm_label": "api_flagged_incidents()"
-    },
-    {
-      "label": "api_login()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1972",
-      "id": "battle_buddy_audio_receiver_api_login",
-      "community": 1,
-      "norm_label": "api_login()"
-    },
-    {
-      "label": "api_logout()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1995",
-      "id": "battle_buddy_audio_receiver_api_logout",
-      "community": 11,
-      "norm_label": "api_logout()"
-    },
-    {
-      "label": "api_me()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2011",
-      "id": "battle_buddy_audio_receiver_api_me",
-      "community": 11,
-      "norm_label": "api_me()"
-    },
-    {
-      "label": "api_commute_save()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2035",
-      "id": "battle_buddy_audio_receiver_api_commute_save",
-      "community": 11,
-      "norm_label": "api_commute_save()"
-    },
-    {
-      "label": "api_commute_time()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2066",
-      "id": "battle_buddy_audio_receiver_api_commute_time",
-      "community": 11,
-      "norm_label": "api_commute_time()"
-    },
-    {
-      "label": "api_commute_polyline()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2096",
-      "id": "battle_buddy_audio_receiver_api_commute_polyline",
-      "community": 11,
-      "norm_label": "api_commute_polyline()"
-    },
-    {
-      "label": "api_commute_incidents()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2152",
-      "id": "battle_buddy_audio_receiver_api_commute_incidents",
-      "community": 11,
-      "norm_label": "api_commute_incidents()"
-    },
-    {
-      "label": "api_commute_share_token()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2209",
-      "id": "battle_buddy_audio_receiver_api_commute_share_token",
-      "community": 11,
-      "norm_label": "api_commute_share_token()"
-    },
-    {
-      "label": "premium_commute()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2232",
-      "id": "battle_buddy_audio_receiver_premium_commute",
-      "community": 11,
-      "norm_label": "premium_commute()"
-    },
-    {
-      "label": "api_intel_query()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2426",
-      "id": "battle_buddy_audio_receiver_api_intel_query",
-      "community": 11,
-      "norm_label": "api_intel_query()"
-    },
-    {
-      "label": "premium_welcome()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2542",
-      "id": "battle_buddy_audio_receiver_premium_welcome",
-      "community": 11,
-      "norm_label": "premium_welcome()"
-    },
-    {
-      "label": "premium_setup()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2611",
-      "id": "battle_buddy_audio_receiver_premium_setup",
-      "community": 11,
-      "norm_label": "premium_setup()"
-    },
-    {
-      "label": "api_premium_setpassword()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2695",
-      "id": "battle_buddy_audio_receiver_api_premium_setpassword",
-      "community": 1,
-      "norm_label": "api_premium_setpassword()"
-    },
-    {
-      "label": "api_subscription_status()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2754",
-      "id": "battle_buddy_audio_receiver_api_subscription_status",
-      "community": 11,
-      "norm_label": "api_subscription_status()"
-    },
-    {
-      "label": "api_premium_homicides_summary()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2784",
-      "id": "battle_buddy_audio_receiver_api_premium_homicides_summary",
-      "community": 11,
-      "norm_label": "api_premium_homicides_summary()"
-    },
-    {
-      "label": "api_premium_atak_status()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2837",
-      "id": "battle_buddy_audio_receiver_api_premium_atak_status",
-      "community": 11,
-      "norm_label": "api_premium_atak_status()"
-    },
-    {
-      "label": "api_premium_weather()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2845",
-      "id": "battle_buddy_audio_receiver_api_premium_weather",
-      "community": 11,
-      "norm_label": "api_premium_weather()"
-    },
-    {
-      "label": "api_premium_space_weather()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2876",
-      "id": "battle_buddy_audio_receiver_api_premium_space_weather",
-      "community": 11,
-      "norm_label": "api_premium_space_weather()"
-    },
-    {
-      "label": "premium_display()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2890",
-      "id": "battle_buddy_audio_receiver_premium_display",
-      "community": 11,
-      "norm_label": "premium_display()"
-    },
-    {
-      "label": "premium_headlines()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L3365",
-      "id": "battle_buddy_audio_receiver_premium_headlines",
-      "community": 11,
-      "norm_label": "premium_headlines()"
-    },
-    {
-      "label": "api_premium_citizen_intel()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L3404",
-      "id": "battle_buddy_audio_receiver_api_premium_citizen_intel",
-      "community": 11,
-      "norm_label": "api_premium_citizen_intel()"
-    },
-    {
-      "label": "premium_index()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L3435",
-      "id": "battle_buddy_audio_receiver_premium_index",
-      "community": 11,
-      "norm_label": "premium_index()"
-    },
-    {
-      "label": "auth_nc_admin()",
-      "file_type": "code",
-      "source_file": "audio_receiver.py",
-      "source_location": "L3875",
-      "id": "battle_buddy_audio_receiver_auth_nc_admin",
-      "community": 1,
-      "norm_label": "auth_nc_admin()"
-    },
-    {
-      "label": "Compatibility endpoint for external backlog workers.     Current pipeline is pus",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L202",
-      "id": "battle_buddy_audio_receiver_rationale_202",
-      "community": 61,
-      "norm_label": "compatibility endpoint for external backlog workers.     current pipeline is pus"
-    },
-    {
-      "label": "Receive Pi watchdog events and forward as Talk DM alerts.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L210",
-      "id": "battle_buddy_audio_receiver_rationale_210",
-      "community": 70,
-      "norm_label": "receive pi watchdog events and forward as talk dm alerts."
-    },
-    {
-      "label": "Pi polls this endpoint for pending commands (restart_op25, etc.).",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L224",
-      "id": "battle_buddy_audio_receiver_rationale_224",
-      "community": 65,
-      "norm_label": "pi polls this endpoint for pending commands (restart_op25, etc.)."
-    },
-    {
-      "label": "Inject a synthetic call for pipeline testing \u2014 bypasses Whisper.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L232",
-      "id": "battle_buddy_audio_receiver_rationale_232",
-      "community": 24,
-      "norm_label": "inject a synthetic call for pipeline testing \u2014 bypasses whisper."
-    },
-    {
-      "label": "Returns a clean, natural-language spoken sitrep for TTS.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L727",
-      "id": "battle_buddy_audio_receiver_rationale_727",
-      "community": 26,
-      "norm_label": "returns a clean, natural-language spoken sitrep for tts."
-    },
-    {
-      "label": "24-hour summary stats for the splash page.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L744",
-      "id": "battle_buddy_audio_receiver_rationale_744",
-      "community": 66,
-      "norm_label": "24-hour summary stats for the splash page."
-    },
-    {
-      "label": "Public endpoint: shooting incidents with transcript evidence, last 30 days.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L771",
-      "id": "battle_buddy_audio_receiver_rationale_771",
-      "community": 72,
-      "norm_label": "public endpoint: shooting incidents with transcript evidence, last 30 days."
-    },
-    {
-      "label": "Public daily summary of incidents bucketed by confidence tier.      Confidence t",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L868",
-      "id": "battle_buddy_audio_receiver_rationale_868",
-      "community": 68,
-      "norm_label": "public daily summary of incidents bucketed by confidence tier.      confidence t"
-    },
-    {
-      "label": "Return all TGID identification guesses, grouped by tgid.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L935",
-      "id": "battle_buddy_audio_receiver_rationale_935",
-      "community": 62,
-      "norm_label": "return all tgid identification guesses, grouped by tgid."
-    },
-    {
-      "label": "Manually confirm a TGID name and write it to the tags TSV.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L967",
-      "id": "battle_buddy_audio_receiver_rationale_967",
-      "community": 6,
-      "norm_label": "manually confirm a tgid name and write it to the tags tsv."
-    },
-    {
-      "label": "Receive a drone sighting from the DroneRID Android app.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L992",
-      "id": "battle_buddy_audio_receiver_rationale_992",
-      "community": 67,
-      "norm_label": "receive a drone sighting from the dronerid android app."
-    },
-    {
-      "label": "Return recent drone sightings (last 24h by default, ?hours=N to override).",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1026",
-      "id": "battle_buddy_audio_receiver_rationale_1026",
-      "community": 69,
-      "norm_label": "return recent drone sightings (last 24h by default, ?hours=n to override)."
-    },
-    {
-      "label": "Return current aircraft positions + 30-min trails grouped by icao24.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1041",
-      "id": "battle_buddy_audio_receiver_rationale_1041",
-      "community": 71,
-      "norm_label": "return current aircraft positions + 30-min trails grouped by icao24."
-    },
-    {
-      "label": "Verify Nextcloud Talk bot HMAC-SHA256 signature.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1094",
-      "id": "battle_buddy_audio_receiver_rationale_1094",
-      "community": 24,
-      "norm_label": "verify nextcloud talk bot hmac-sha256 signature."
-    },
-    {
-      "label": "On startup, reload active incidents into _active_incidents so _release_stale can",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1772",
-      "id": "battle_buddy_audio_receiver_rationale_1772",
-      "community": 63,
-      "norm_label": "on startup, reload active incidents into _active_incidents so _release_stale can"
-    },
-    {
-      "label": "Upload a file to Nextcloud via WebDAV.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1822",
-      "id": "battle_buddy_audio_receiver_rationale_1822",
-      "community": 55,
-      "norm_label": "upload a file to nextcloud via webdav."
-    },
-    {
-      "label": "Build a markdown snapshot of a flagged incident and push to Nextcloud.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1840",
-      "id": "battle_buddy_audio_receiver_rationale_1840",
-      "community": 55,
-      "norm_label": "build a markdown snapshot of a flagged incident and push to nextcloud."
-    },
-    {
-      "label": "Flag an incident and export a snapshot to Nextcloud.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1925",
-      "id": "battle_buddy_audio_receiver_rationale_1925",
-      "community": 64,
-      "norm_label": "flag an incident and export a snapshot to nextcloud."
-    },
-    {
-      "label": "Return all flagged incidents.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L1936",
-      "id": "battle_buddy_audio_receiver_rationale_1936",
-      "community": 24,
-      "norm_label": "return all flagged incidents."
-    },
-    {
-      "label": "Return encoded polyline for user's commute route. Auth via session or share toke",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2097",
-      "id": "battle_buddy_audio_receiver_rationale_2097",
-      "community": 11,
-      "norm_label": "return encoded polyline for user's commute route. auth via session or share toke"
-    },
-    {
-      "label": "Return active incidents near the user's commute route. Auth via session or share",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2153",
-      "id": "battle_buddy_audio_receiver_rationale_2153",
-      "community": 11,
-      "norm_label": "return active incidents near the user's commute route. auth via session or share"
-    },
-    {
-      "label": "Generate or return existing share token for the user's commute map.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2210",
-      "id": "battle_buddy_audio_receiver_rationale_2210",
-      "community": 11,
-      "norm_label": "generate or return existing share token for the user's commute map."
-    },
-    {
-      "label": "Live commute map \u2014 premium-gated or token-gated.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L2233",
-      "id": "battle_buddy_audio_receiver_rationale_2233",
-      "community": 11,
-      "norm_label": "live commute map \u2014 premium-gated or token-gated."
-    },
-    {
-      "label": "Return incident_articles linked in the last 24h for the Headlines panel.",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L3366",
-      "id": "battle_buddy_audio_receiver_rationale_3366",
-      "community": 11,
-      "norm_label": "return incident_articles linked in the last 24h for the headlines panel."
-    },
-    {
-      "label": "nginx auth_request endpoint. Returns 200 if caller is a Nextcloud admin, 401 oth",
-      "file_type": "rationale",
-      "source_file": "audio_receiver.py",
-      "source_location": "L3876",
-      "id": "battle_buddy_audio_receiver_rationale_3876",
-      "community": 1,
-      "norm_label": "nginx auth_request endpoint. returns 200 if caller is a nextcloud admin, 401 oth"
-    },
-    {
-      "label": "adsb_air_asset.py",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L1",
-      "id": "modules_pollers_impl_adsb_air_asset_py",
-      "community": 4,
-      "norm_label": "adsb_air_asset.py"
-    },
-    {
-      "label": "ADSBAirAssetPoller",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L60",
-      "id": "impl_adsb_air_asset_adsbairassetpoller",
-      "community": 4,
-      "norm_label": "adsbairassetpoller"
-    },
-    {
-      "label": "BasePoller",
-      "file_type": "code",
-      "source_file": "",
-      "source_location": "",
-      "id": "basepoller",
-      "community": 16,
-      "norm_label": "basepoller"
-    },
-    {
-      "label": ".__init__()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L66",
-      "id": "impl_adsb_air_asset_adsbairassetpoller_init",
-      "community": 4,
-      "norm_label": ".__init__()"
-    },
-    {
-      "label": ".run()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L73",
-      "id": "impl_adsb_air_asset_adsbairassetpoller_run",
-      "community": 4,
-      "norm_label": ".run()"
-    },
-    {
-      "label": "ensure_schema()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L120",
-      "id": "impl_adsb_air_asset_ensure_schema",
-      "community": 4,
-      "norm_label": "ensure_schema()"
-    },
-    {
-      "label": "fetch_aircraft()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L141",
-      "id": "impl_adsb_air_asset_fetch_aircraft",
-      "community": 4,
-      "norm_label": "fetch_aircraft()"
-    },
-    {
-      "label": "prune_positions()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L149",
-      "id": "impl_adsb_air_asset_prune_positions",
-      "community": 4,
-      "norm_label": "prune_positions()"
-    },
-    {
-      "label": ".process_aircraft()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L158",
-      "id": "impl_adsb_air_asset_adsbairassetpoller_process_aircraft",
-      "community": 4,
-      "norm_label": ".process_aircraft()"
-    },
-    {
-      "label": "normalize_aircraft()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L199",
-      "id": "impl_adsb_air_asset_normalize_aircraft",
-      "community": 4,
-      "norm_label": "normalize_aircraft()"
-    },
-    {
-      "label": "store_position()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L236",
-      "id": "impl_adsb_air_asset_store_position",
-      "community": 4,
-      "norm_label": "store_position()"
-    },
-    {
-      "label": "post_non_leo_marker()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L262",
-      "id": "impl_adsb_air_asset_post_non_leo_marker",
-      "community": 4,
-      "norm_label": "post_non_leo_marker()"
-    },
-    {
-      "label": "alert_leo_aircraft()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L283",
-      "id": "impl_adsb_air_asset_alert_leo_aircraft",
-      "community": 4,
-      "norm_label": "alert_leo_aircraft()"
-    },
-    {
-      "label": ".detect_orbits()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L321",
-      "id": "impl_adsb_air_asset_adsbairassetpoller_detect_orbits",
-      "community": 4,
-      "norm_label": ".detect_orbits()"
-    },
-    {
-      "label": "alert_orbit()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L363",
-      "id": "impl_adsb_air_asset_alert_orbit",
-      "community": 4,
-      "norm_label": "alert_orbit()"
-    },
-    {
-      "label": "post_to_talk()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L426",
-      "id": "impl_adsb_air_asset_post_to_talk",
-      "community": 4,
-      "norm_label": "post_to_talk()"
-    },
-    {
-      "label": "check_orbit()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L448",
-      "id": "impl_adsb_air_asset_check_orbit",
-      "community": 4,
-      "norm_label": "check_orbit()"
-    },
-    {
-      "label": "_km()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L527",
-      "id": "impl_adsb_air_asset_km",
-      "community": 4,
-      "norm_label": "_km()"
-    },
-    {
-      "label": "_heading_delta()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L538",
-      "id": "impl_adsb_air_asset_heading_delta",
-      "community": 4,
-      "norm_label": "_heading_delta()"
-    },
-    {
-      "label": "_median()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L542",
-      "id": "impl_adsb_air_asset_median",
-      "community": 4,
-      "norm_label": "_median()"
-    },
-    {
-      "label": "_near_known_airport()",
-      "file_type": "code",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L550",
-      "id": "impl_adsb_air_asset_near_known_airport",
-      "community": 4,
-      "norm_label": "_near_known_airport()"
-    },
-    {
-      "label": "modules/pollers/impl/adsb_air_asset.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ AD",
-      "file_type": "rationale",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L1",
-      "id": "impl_adsb_air_asset_rationale_1",
-      "community": 4,
-      "norm_label": "modules/pollers/impl/adsb_air_asset.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ad"
-    },
-    {
-      "label": "Poll adsb.lol for low-altitude helicopters over Austin.",
-      "file_type": "rationale",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L61",
-      "id": "impl_adsb_air_asset_rationale_61",
-      "community": 4,
-      "norm_label": "poll adsb.lol for low-altitude helicopters over austin."
-    },
-    {
-      "label": "Return True when recent ADS-B trail geometry looks like tactical orbiting.",
-      "file_type": "rationale",
-      "source_file": "modules/pollers/impl/adsb_air_asset.py",
-      "source_location": "L449",
-      "id": "impl_adsb_air_asset_rationale_449",
-      "community": 4,
-      "norm_label": "return true when recent ads-b trail geometry looks like tactical orbiting."
-    },
-    {
       "label": "pollers_legacy.py",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L1",
-      "id": "modules_pollers_legacy_py",
+      "id": "pollers_legacy_py",
       "community": 3,
       "norm_label": "pollers_legacy.py"
     },
     {
       "label": "_fetch_url_with_retry()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L114",
       "id": "modules_pollers_legacy_fetch_url_with_retry",
       "community": 3,
@@ -942,7 +24,7 @@
     {
       "label": "_apd_parse_rss()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L138",
       "id": "modules_pollers_legacy_apd_parse_rss",
       "community": 3,
@@ -951,7 +33,7 @@
     {
       "label": "_resolve_article_url()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L176",
       "id": "modules_pollers_legacy_resolve_article_url",
       "community": 3,
@@ -960,7 +42,7 @@
     {
       "label": "_apd_fetch_article()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L235",
       "id": "modules_pollers_legacy_apd_fetch_article",
       "community": 3,
@@ -969,7 +51,7 @@
     {
       "label": "_pi_fetch()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L279",
       "id": "modules_pollers_legacy_pi_fetch",
       "community": 3,
@@ -978,7 +60,7 @@
     {
       "label": "_match_article_to_incident()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L334",
       "id": "modules_pollers_legacy_match_article_to_incident",
       "community": 3,
@@ -987,7 +69,7 @@
     {
       "label": "_store_article_link()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L384",
       "id": "modules_pollers_legacy_store_article_link",
       "community": 3,
@@ -996,7 +78,7 @@
     {
       "label": "_reddit_matches()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L442",
       "id": "modules_pollers_legacy_reddit_matches",
       "community": 3,
@@ -1005,7 +87,7 @@
     {
       "label": "_reddit_match_incident()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L450",
       "id": "modules_pollers_legacy_reddit_match_incident",
       "community": 3,
@@ -1014,7 +96,7 @@
     {
       "label": "_nominatim_geocode()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L519",
       "id": "modules_pollers_legacy_nominatim_geocode",
       "community": 3,
@@ -1023,7 +105,7 @@
     {
       "label": "_extract_tip_location()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L536",
       "id": "modules_pollers_legacy_extract_tip_location",
       "community": 3,
@@ -1032,7 +114,7 @@
     {
       "label": "_reddit_tip_recheck()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L575",
       "id": "modules_pollers_legacy_reddit_tip_recheck",
       "community": 3,
@@ -1041,7 +123,7 @@
     {
       "label": "_adsb_check_orbit()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L681",
       "id": "modules_pollers_legacy_adsb_check_orbit",
       "community": 3,
@@ -1050,7 +132,7 @@
     {
       "label": "_traffic_issue_to_itype()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L762",
       "id": "modules_pollers_legacy_traffic_issue_to_itype",
       "community": 3,
@@ -1059,7 +141,7 @@
     {
       "label": "_traffic_post_to_talk()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L768",
       "id": "modules_pollers_legacy_traffic_post_to_talk",
       "community": 3,
@@ -1068,7 +150,7 @@
     {
       "label": "_atxfloods_post_to_talk()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L812",
       "id": "modules_pollers_legacy_atxfloods_post_to_talk",
       "community": 3,
@@ -1077,7 +159,7 @@
     {
       "label": "_austin_events_load()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L850",
       "id": "modules_pollers_legacy_austin_events_load",
       "community": 3,
@@ -1086,7 +168,7 @@
     {
       "label": "_austin_events_upcoming()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L859",
       "id": "modules_pollers_legacy_austin_events_upcoming",
       "community": 3,
@@ -1095,7 +177,7 @@
     {
       "label": "_austin_events_state_load()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L875",
       "id": "modules_pollers_legacy_austin_events_state_load",
       "community": 3,
@@ -1104,7 +186,7 @@
     {
       "label": "_austin_events_state_save()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L883",
       "id": "modules_pollers_legacy_austin_events_state_save",
       "community": 3,
@@ -1113,7 +195,7 @@
     {
       "label": "_austin_events_format()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L891",
       "id": "modules_pollers_legacy_austin_events_format",
       "community": 3,
@@ -1122,7 +204,7 @@
     {
       "label": "_austin_events_post_to_talk()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L914",
       "id": "modules_pollers_legacy_austin_events_post_to_talk",
       "community": 3,
@@ -1131,7 +213,7 @@
     {
       "label": "_cad_init_db()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L960",
       "id": "modules_pollers_legacy_cad_init_db",
       "community": 3,
@@ -1140,7 +222,7 @@
     {
       "label": "_cad_fetch_and_store()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L1000",
       "id": "modules_pollers_legacy_cad_fetch_and_store",
       "community": 3,
@@ -1149,7 +231,7 @@
     {
       "label": "_cad_match_and_harvest()",
       "file_type": "code",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L1068",
       "id": "modules_pollers_legacy_cad_match_and_harvest",
       "community": 3,
@@ -1158,7 +240,7 @@
     {
       "label": "Fetch a URL with exponential backoff retry.      Returns the response body as by",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L117",
       "id": "modules_pollers_legacy_rationale_117",
       "community": 3,
@@ -1167,7 +249,7 @@
     {
       "label": "Parse Google News RSS feed; return list of {title, link}.",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L139",
       "id": "modules_pollers_legacy_rationale_139",
       "community": 3,
@@ -1176,7 +258,7 @@
     {
       "label": "Try to resolve the real article URL via the source site's RSS feed.     Falls ba",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L177",
       "id": "modules_pollers_legacy_rationale_177",
       "community": 3,
@@ -1185,7 +267,7 @@
     {
       "label": "Fetch a news article URL (follows redirects), extract address and description.",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L236",
       "id": "modules_pollers_legacy_rationale_236",
       "community": 3,
@@ -1194,7 +276,7 @@
     {
       "label": "Fetch a URL via the Pi5 fetch agent (residential IP, browser headers).     Retur",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L280",
       "id": "modules_pollers_legacy_rationale_280",
       "community": 3,
@@ -1203,7 +285,7 @@
     {
       "label": "Try to match a news article to a recent radio-detected incident.     Returns (in",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L335",
       "id": "modules_pollers_legacy_rationale_335",
       "community": 3,
@@ -1212,7 +294,7 @@
     {
       "label": "Insert a row into incident_articles and update incidents.article_url.",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L386",
       "id": "modules_pollers_legacy_rationale_386",
       "community": 3,
@@ -1221,7 +303,7 @@
     {
       "label": "Score a reddit post against incidents within \u00b14h. Returns (incident_id, score) o",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L451",
       "id": "modules_pollers_legacy_rationale_451",
       "community": 3,
@@ -1230,7 +312,7 @@
     {
       "label": "Geocode a free-form Austin string. Returns (lat, lon) or (None, None).",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L520",
       "id": "modules_pollers_legacy_rationale_520",
       "community": 3,
@@ -1239,7 +321,7 @@
     {
       "label": "Extract a location from a Reddit post. Returns (location_str, lat, lon) or (None",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L537",
       "id": "modules_pollers_legacy_rationale_537",
       "community": 3,
@@ -1248,7 +330,7 @@
     {
       "label": "Re-check investigating tips against radio calls and incidents. Marks matched / n",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L576",
       "id": "modules_pollers_legacy_rationale_576",
       "community": 3,
@@ -1257,7 +339,7 @@
     {
       "label": "Return True if icao24 has been orbiting (circling/hovering) in the last 5 minute",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L682",
       "id": "modules_pollers_legacy_rationale_682",
       "community": 3,
@@ -1266,7 +348,7 @@
     {
       "label": "Map traffic issue_reported string to a BB itype.",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L763",
       "id": "modules_pollers_legacy_rationale_763",
       "community": 3,
@@ -1275,7 +357,7 @@
     {
       "label": "Post a traffic incident to the incidents Talk room.",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L769",
       "id": "modules_pollers_legacy_rationale_769",
       "community": 3,
@@ -1284,7 +366,7 @@
     {
       "label": "Create apd_cad and tgid_sector_hints tables if they don't exist.",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L961",
       "id": "modules_pollers_legacy_rationale_961",
       "community": 3,
@@ -1293,7 +375,7 @@
     {
       "label": "Fetch CAD records from the last 14 days and upsert into apd_cad.",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L1001",
       "id": "modules_pollers_legacy_rationale_1001",
       "community": 3,
@@ -1302,11 +384,929 @@
     {
       "label": "Match unmatched CAD records against scanner incidents.     On match: enrich the",
       "file_type": "rationale",
-      "source_file": "modules/pollers_legacy.py",
+      "source_file": "pollers_legacy.py",
       "source_location": "L1069",
       "id": "modules_pollers_legacy_rationale_1069",
       "community": 3,
       "norm_label": "match unmatched cad records against scanner incidents.     on match: enrich the"
+    },
+    {
+      "label": "audio_receiver.py",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1",
+      "community": 12,
+      "norm_label": "audio_receiver.py",
+      "id": "audio_receiver_py"
+    },
+    {
+      "label": "receive()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L100",
+      "community": 37,
+      "norm_label": "receive()",
+      "id": "battle_buddy_audio_receiver_receive"
+    },
+    {
+      "label": "api_backlog_claim()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L201",
+      "community": 69,
+      "norm_label": "api_backlog_claim()",
+      "id": "battle_buddy_audio_receiver_api_backlog_claim"
+    },
+    {
+      "label": "watchdog_event()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L209",
+      "community": 68,
+      "norm_label": "watchdog_event()",
+      "id": "battle_buddy_audio_receiver_watchdog_event"
+    },
+    {
+      "label": "pi_commands()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L223",
+      "community": 70,
+      "norm_label": "pi_commands()",
+      "id": "battle_buddy_audio_receiver_pi_commands"
+    },
+    {
+      "label": "test_call()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L231",
+      "community": 24,
+      "norm_label": "test_call()",
+      "id": "battle_buddy_audio_receiver_test_call"
+    },
+    {
+      "label": "api_calls()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L254",
+      "community": 24,
+      "norm_label": "api_calls()",
+      "id": "battle_buddy_audio_receiver_api_calls"
+    },
+    {
+      "label": "_BBMetricsCollector",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L265",
+      "community": 0,
+      "norm_label": "_bbmetricscollector",
+      "id": "battle_buddy_audio_receiver_bbmetricscollector"
+    },
+    {
+      "label": ".collect()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L266",
+      "community": 0,
+      "norm_label": ".collect()",
+      "id": "battle_buddy_audio_receiver_bbmetricscollector_collect"
+    },
+    {
+      "label": "prometheus_metrics()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L707",
+      "community": 12,
+      "norm_label": "prometheus_metrics()",
+      "id": "battle_buddy_audio_receiver_prometheus_metrics"
+    },
+    {
+      "label": "api_sitrep()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L720",
+      "community": 26,
+      "norm_label": "api_sitrep()",
+      "id": "battle_buddy_audio_receiver_api_sitrep"
+    },
+    {
+      "label": "api_voice_sitrep()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L726",
+      "community": 26,
+      "norm_label": "api_voice_sitrep()",
+      "id": "battle_buddy_audio_receiver_api_voice_sitrep"
+    },
+    {
+      "label": "api_incidents()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L733",
+      "community": 24,
+      "norm_label": "api_incidents()",
+      "id": "battle_buddy_audio_receiver_api_incidents"
+    },
+    {
+      "label": "api_incidents_active()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L738",
+      "community": 24,
+      "norm_label": "api_incidents_active()",
+      "id": "battle_buddy_audio_receiver_api_incidents_active"
+    },
+    {
+      "label": "api_stats()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L743",
+      "community": 67,
+      "norm_label": "api_stats()",
+      "id": "battle_buddy_audio_receiver_api_stats"
+    },
+    {
+      "label": "api_shooting_intel()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L770",
+      "community": 66,
+      "norm_label": "api_shooting_intel()",
+      "id": "battle_buddy_audio_receiver_api_shooting_intel"
+    },
+    {
+      "label": "api_daily_summary()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L867",
+      "community": 73,
+      "norm_label": "api_daily_summary()",
+      "id": "battle_buddy_audio_receiver_api_daily_summary"
+    },
+    {
+      "label": "api_tgid_guesses()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L934",
+      "community": 74,
+      "norm_label": "api_tgid_guesses()",
+      "id": "battle_buddy_audio_receiver_api_tgid_guesses"
+    },
+    {
+      "label": "api_tgid_confirm()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L966",
+      "community": 6,
+      "norm_label": "api_tgid_confirm()",
+      "id": "battle_buddy_audio_receiver_api_tgid_confirm"
+    },
+    {
+      "label": "api_drone_sighting()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L991",
+      "community": 72,
+      "norm_label": "api_drone_sighting()",
+      "id": "battle_buddy_audio_receiver_api_drone_sighting"
+    },
+    {
+      "label": "api_drone_sightings()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1025",
+      "community": 64,
+      "norm_label": "api_drone_sightings()",
+      "id": "battle_buddy_audio_receiver_api_drone_sightings"
+    },
+    {
+      "label": "api_adsb()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1040",
+      "community": 63,
+      "norm_label": "api_adsb()",
+      "id": "battle_buddy_audio_receiver_api_adsb"
+    },
+    {
+      "label": "index()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1084",
+      "community": 12,
+      "norm_label": "index()",
+      "id": "battle_buddy_audio_receiver_index"
+    },
+    {
+      "label": "_verify_bot_signature()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1093",
+      "community": 24,
+      "norm_label": "_verify_bot_signature()",
+      "id": "battle_buddy_audio_receiver_verify_bot_signature"
+    },
+    {
+      "label": "bot_talk()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1107",
+      "community": 24,
+      "norm_label": "bot_talk()",
+      "id": "battle_buddy_audio_receiver_bot_talk"
+    },
+    {
+      "label": "_load_active_incidents_from_db()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1771",
+      "community": 71,
+      "norm_label": "_load_active_incidents_from_db()",
+      "id": "battle_buddy_audio_receiver_load_active_incidents_from_db"
+    },
+    {
+      "label": "_nc_upload()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1821",
+      "community": 55,
+      "norm_label": "_nc_upload()",
+      "id": "battle_buddy_audio_receiver_nc_upload"
+    },
+    {
+      "label": "_export_incident_snapshot()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1839",
+      "community": 55,
+      "norm_label": "_export_incident_snapshot()",
+      "id": "battle_buddy_audio_receiver_export_incident_snapshot"
+    },
+    {
+      "label": "api_flag_incident()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1924",
+      "community": 65,
+      "norm_label": "api_flag_incident()",
+      "id": "battle_buddy_audio_receiver_api_flag_incident"
+    },
+    {
+      "label": "api_flagged_incidents()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1935",
+      "community": 24,
+      "norm_label": "api_flagged_incidents()",
+      "id": "battle_buddy_audio_receiver_api_flagged_incidents"
+    },
+    {
+      "label": "api_login()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1972",
+      "community": 1,
+      "norm_label": "api_login()",
+      "id": "battle_buddy_audio_receiver_api_login"
+    },
+    {
+      "label": "api_logout()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1995",
+      "community": 12,
+      "norm_label": "api_logout()",
+      "id": "battle_buddy_audio_receiver_api_logout"
+    },
+    {
+      "label": "api_me()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2011",
+      "community": 12,
+      "norm_label": "api_me()",
+      "id": "battle_buddy_audio_receiver_api_me"
+    },
+    {
+      "label": "api_commute_save()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2035",
+      "community": 12,
+      "norm_label": "api_commute_save()",
+      "id": "battle_buddy_audio_receiver_api_commute_save"
+    },
+    {
+      "label": "api_commute_time()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2066",
+      "community": 12,
+      "norm_label": "api_commute_time()",
+      "id": "battle_buddy_audio_receiver_api_commute_time"
+    },
+    {
+      "label": "api_commute_polyline()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2096",
+      "community": 12,
+      "norm_label": "api_commute_polyline()",
+      "id": "battle_buddy_audio_receiver_api_commute_polyline"
+    },
+    {
+      "label": "api_commute_incidents()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2152",
+      "community": 12,
+      "norm_label": "api_commute_incidents()",
+      "id": "battle_buddy_audio_receiver_api_commute_incidents"
+    },
+    {
+      "label": "api_commute_share_token()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2209",
+      "community": 12,
+      "norm_label": "api_commute_share_token()",
+      "id": "battle_buddy_audio_receiver_api_commute_share_token"
+    },
+    {
+      "label": "premium_commute()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2232",
+      "community": 12,
+      "norm_label": "premium_commute()",
+      "id": "battle_buddy_audio_receiver_premium_commute"
+    },
+    {
+      "label": "api_intel_query()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2426",
+      "community": 12,
+      "norm_label": "api_intel_query()",
+      "id": "battle_buddy_audio_receiver_api_intel_query"
+    },
+    {
+      "label": "premium_welcome()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2542",
+      "community": 12,
+      "norm_label": "premium_welcome()",
+      "id": "battle_buddy_audio_receiver_premium_welcome"
+    },
+    {
+      "label": "premium_setup()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2611",
+      "community": 12,
+      "norm_label": "premium_setup()",
+      "id": "battle_buddy_audio_receiver_premium_setup"
+    },
+    {
+      "label": "api_premium_setpassword()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2695",
+      "community": 1,
+      "norm_label": "api_premium_setpassword()",
+      "id": "battle_buddy_audio_receiver_api_premium_setpassword"
+    },
+    {
+      "label": "api_subscription_status()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2754",
+      "community": 12,
+      "norm_label": "api_subscription_status()",
+      "id": "battle_buddy_audio_receiver_api_subscription_status"
+    },
+    {
+      "label": "api_premium_homicides_summary()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2784",
+      "community": 12,
+      "norm_label": "api_premium_homicides_summary()",
+      "id": "battle_buddy_audio_receiver_api_premium_homicides_summary"
+    },
+    {
+      "label": "api_premium_atak_status()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2837",
+      "community": 12,
+      "norm_label": "api_premium_atak_status()",
+      "id": "battle_buddy_audio_receiver_api_premium_atak_status"
+    },
+    {
+      "label": "api_premium_weather()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2845",
+      "community": 12,
+      "norm_label": "api_premium_weather()",
+      "id": "battle_buddy_audio_receiver_api_premium_weather"
+    },
+    {
+      "label": "api_premium_space_weather()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2876",
+      "community": 12,
+      "norm_label": "api_premium_space_weather()",
+      "id": "battle_buddy_audio_receiver_api_premium_space_weather"
+    },
+    {
+      "label": "premium_display()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2890",
+      "community": 12,
+      "norm_label": "premium_display()",
+      "id": "battle_buddy_audio_receiver_premium_display"
+    },
+    {
+      "label": "premium_headlines()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L3365",
+      "community": 12,
+      "norm_label": "premium_headlines()",
+      "id": "battle_buddy_audio_receiver_premium_headlines"
+    },
+    {
+      "label": "api_premium_citizen_intel()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L3404",
+      "community": 12,
+      "norm_label": "api_premium_citizen_intel()",
+      "id": "battle_buddy_audio_receiver_api_premium_citizen_intel"
+    },
+    {
+      "label": "premium_index()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L3435",
+      "community": 12,
+      "norm_label": "premium_index()",
+      "id": "battle_buddy_audio_receiver_premium_index"
+    },
+    {
+      "label": "auth_nc_admin()",
+      "file_type": "code",
+      "source_file": "audio_receiver.py",
+      "source_location": "L3875",
+      "community": 1,
+      "norm_label": "auth_nc_admin()",
+      "id": "battle_buddy_audio_receiver_auth_nc_admin"
+    },
+    {
+      "label": "Compatibility endpoint for external backlog workers.     Current pipeline is pus",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L202",
+      "community": 69,
+      "norm_label": "compatibility endpoint for external backlog workers.     current pipeline is pus",
+      "id": "battle_buddy_audio_receiver_rationale_202"
+    },
+    {
+      "label": "Receive Pi watchdog events and forward as Talk DM alerts.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L210",
+      "community": 68,
+      "norm_label": "receive pi watchdog events and forward as talk dm alerts.",
+      "id": "battle_buddy_audio_receiver_rationale_210"
+    },
+    {
+      "label": "Pi polls this endpoint for pending commands (restart_op25, etc.).",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L224",
+      "community": 70,
+      "norm_label": "pi polls this endpoint for pending commands (restart_op25, etc.).",
+      "id": "battle_buddy_audio_receiver_rationale_224"
+    },
+    {
+      "label": "Inject a synthetic call for pipeline testing \u2014 bypasses Whisper.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L232",
+      "community": 24,
+      "norm_label": "inject a synthetic call for pipeline testing \u2014 bypasses whisper.",
+      "id": "battle_buddy_audio_receiver_rationale_232"
+    },
+    {
+      "label": "Returns a clean, natural-language spoken sitrep for TTS.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L727",
+      "community": 26,
+      "norm_label": "returns a clean, natural-language spoken sitrep for tts.",
+      "id": "battle_buddy_audio_receiver_rationale_727"
+    },
+    {
+      "label": "24-hour summary stats for the splash page.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L744",
+      "community": 67,
+      "norm_label": "24-hour summary stats for the splash page.",
+      "id": "battle_buddy_audio_receiver_rationale_744"
+    },
+    {
+      "label": "Public endpoint: shooting incidents with transcript evidence, last 30 days.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L771",
+      "community": 66,
+      "norm_label": "public endpoint: shooting incidents with transcript evidence, last 30 days.",
+      "id": "battle_buddy_audio_receiver_rationale_771"
+    },
+    {
+      "label": "Public daily summary of incidents bucketed by confidence tier.      Confidence t",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L868",
+      "community": 73,
+      "norm_label": "public daily summary of incidents bucketed by confidence tier.      confidence t",
+      "id": "battle_buddy_audio_receiver_rationale_868"
+    },
+    {
+      "label": "Return all TGID identification guesses, grouped by tgid.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L935",
+      "community": 74,
+      "norm_label": "return all tgid identification guesses, grouped by tgid.",
+      "id": "battle_buddy_audio_receiver_rationale_935"
+    },
+    {
+      "label": "Manually confirm a TGID name and write it to the tags TSV.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L967",
+      "community": 6,
+      "norm_label": "manually confirm a tgid name and write it to the tags tsv.",
+      "id": "battle_buddy_audio_receiver_rationale_967"
+    },
+    {
+      "label": "Receive a drone sighting from the DroneRID Android app.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L992",
+      "community": 72,
+      "norm_label": "receive a drone sighting from the dronerid android app.",
+      "id": "battle_buddy_audio_receiver_rationale_992"
+    },
+    {
+      "label": "Return recent drone sightings (last 24h by default, ?hours=N to override).",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1026",
+      "community": 64,
+      "norm_label": "return recent drone sightings (last 24h by default, ?hours=n to override).",
+      "id": "battle_buddy_audio_receiver_rationale_1026"
+    },
+    {
+      "label": "Return current aircraft positions + 30-min trails grouped by icao24.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1041",
+      "community": 63,
+      "norm_label": "return current aircraft positions + 30-min trails grouped by icao24.",
+      "id": "battle_buddy_audio_receiver_rationale_1041"
+    },
+    {
+      "label": "Verify Nextcloud Talk bot HMAC-SHA256 signature.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1094",
+      "community": 24,
+      "norm_label": "verify nextcloud talk bot hmac-sha256 signature.",
+      "id": "battle_buddy_audio_receiver_rationale_1094"
+    },
+    {
+      "label": "On startup, reload active incidents into _active_incidents so _release_stale can",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1772",
+      "community": 71,
+      "norm_label": "on startup, reload active incidents into _active_incidents so _release_stale can",
+      "id": "battle_buddy_audio_receiver_rationale_1772"
+    },
+    {
+      "label": "Upload a file to Nextcloud via WebDAV.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1822",
+      "community": 55,
+      "norm_label": "upload a file to nextcloud via webdav.",
+      "id": "battle_buddy_audio_receiver_rationale_1822"
+    },
+    {
+      "label": "Build a markdown snapshot of a flagged incident and push to Nextcloud.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1840",
+      "community": 55,
+      "norm_label": "build a markdown snapshot of a flagged incident and push to nextcloud.",
+      "id": "battle_buddy_audio_receiver_rationale_1840"
+    },
+    {
+      "label": "Flag an incident and export a snapshot to Nextcloud.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1925",
+      "community": 65,
+      "norm_label": "flag an incident and export a snapshot to nextcloud.",
+      "id": "battle_buddy_audio_receiver_rationale_1925"
+    },
+    {
+      "label": "Return all flagged incidents.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L1936",
+      "community": 24,
+      "norm_label": "return all flagged incidents.",
+      "id": "battle_buddy_audio_receiver_rationale_1936"
+    },
+    {
+      "label": "Return encoded polyline for user's commute route. Auth via session or share toke",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2097",
+      "community": 12,
+      "norm_label": "return encoded polyline for user's commute route. auth via session or share toke",
+      "id": "battle_buddy_audio_receiver_rationale_2097"
+    },
+    {
+      "label": "Return active incidents near the user's commute route. Auth via session or share",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2153",
+      "community": 12,
+      "norm_label": "return active incidents near the user's commute route. auth via session or share",
+      "id": "battle_buddy_audio_receiver_rationale_2153"
+    },
+    {
+      "label": "Generate or return existing share token for the user's commute map.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2210",
+      "community": 12,
+      "norm_label": "generate or return existing share token for the user's commute map.",
+      "id": "battle_buddy_audio_receiver_rationale_2210"
+    },
+    {
+      "label": "Live commute map \u2014 premium-gated or token-gated.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L2233",
+      "community": 12,
+      "norm_label": "live commute map \u2014 premium-gated or token-gated.",
+      "id": "battle_buddy_audio_receiver_rationale_2233"
+    },
+    {
+      "label": "Return incident_articles linked in the last 24h for the Headlines panel.",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L3366",
+      "community": 12,
+      "norm_label": "return incident_articles linked in the last 24h for the headlines panel.",
+      "id": "battle_buddy_audio_receiver_rationale_3366"
+    },
+    {
+      "label": "nginx auth_request endpoint. Returns 200 if caller is a Nextcloud admin, 401 oth",
+      "file_type": "rationale",
+      "source_file": "audio_receiver.py",
+      "source_location": "L3876",
+      "community": 1,
+      "norm_label": "nginx auth_request endpoint. returns 200 if caller is a nextcloud admin, 401 oth",
+      "id": "battle_buddy_audio_receiver_rationale_3876"
+    },
+    {
+      "label": "adsb_air_asset.py",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L1",
+      "community": 4,
+      "norm_label": "adsb_air_asset.py",
+      "id": "modules_pollers_impl_adsb_air_asset_py"
+    },
+    {
+      "label": "ADSBAirAssetPoller",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L60",
+      "community": 4,
+      "norm_label": "adsbairassetpoller",
+      "id": "impl_adsb_air_asset_adsbairassetpoller"
+    },
+    {
+      "label": "BasePoller",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "community": 16,
+      "norm_label": "basepoller",
+      "id": "basepoller"
+    },
+    {
+      "label": ".__init__()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L66",
+      "community": 4,
+      "norm_label": ".__init__()",
+      "id": "impl_adsb_air_asset_adsbairassetpoller_init"
+    },
+    {
+      "label": ".run()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L73",
+      "community": 4,
+      "norm_label": ".run()",
+      "id": "impl_adsb_air_asset_adsbairassetpoller_run"
+    },
+    {
+      "label": "ensure_schema()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L120",
+      "community": 4,
+      "norm_label": "ensure_schema()",
+      "id": "impl_adsb_air_asset_ensure_schema"
+    },
+    {
+      "label": "fetch_aircraft()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L141",
+      "community": 4,
+      "norm_label": "fetch_aircraft()",
+      "id": "impl_adsb_air_asset_fetch_aircraft"
+    },
+    {
+      "label": "prune_positions()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L149",
+      "community": 4,
+      "norm_label": "prune_positions()",
+      "id": "impl_adsb_air_asset_prune_positions"
+    },
+    {
+      "label": ".process_aircraft()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L158",
+      "community": 4,
+      "norm_label": ".process_aircraft()",
+      "id": "impl_adsb_air_asset_adsbairassetpoller_process_aircraft"
+    },
+    {
+      "label": "normalize_aircraft()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L199",
+      "community": 4,
+      "norm_label": "normalize_aircraft()",
+      "id": "impl_adsb_air_asset_normalize_aircraft"
+    },
+    {
+      "label": "store_position()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L236",
+      "community": 4,
+      "norm_label": "store_position()",
+      "id": "impl_adsb_air_asset_store_position"
+    },
+    {
+      "label": "post_non_leo_marker()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L262",
+      "community": 4,
+      "norm_label": "post_non_leo_marker()",
+      "id": "impl_adsb_air_asset_post_non_leo_marker"
+    },
+    {
+      "label": "alert_leo_aircraft()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L283",
+      "community": 4,
+      "norm_label": "alert_leo_aircraft()",
+      "id": "impl_adsb_air_asset_alert_leo_aircraft"
+    },
+    {
+      "label": ".detect_orbits()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L321",
+      "community": 4,
+      "norm_label": ".detect_orbits()",
+      "id": "impl_adsb_air_asset_adsbairassetpoller_detect_orbits"
+    },
+    {
+      "label": "alert_orbit()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L363",
+      "community": 4,
+      "norm_label": "alert_orbit()",
+      "id": "impl_adsb_air_asset_alert_orbit"
+    },
+    {
+      "label": "post_to_talk()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L426",
+      "community": 4,
+      "norm_label": "post_to_talk()",
+      "id": "impl_adsb_air_asset_post_to_talk"
+    },
+    {
+      "label": "check_orbit()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L448",
+      "community": 4,
+      "norm_label": "check_orbit()",
+      "id": "impl_adsb_air_asset_check_orbit"
+    },
+    {
+      "label": "_km()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L527",
+      "community": 4,
+      "norm_label": "_km()",
+      "id": "impl_adsb_air_asset_km"
+    },
+    {
+      "label": "_heading_delta()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L538",
+      "community": 4,
+      "norm_label": "_heading_delta()",
+      "id": "impl_adsb_air_asset_heading_delta"
+    },
+    {
+      "label": "_median()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L542",
+      "community": 4,
+      "norm_label": "_median()",
+      "id": "impl_adsb_air_asset_median"
+    },
+    {
+      "label": "_near_known_airport()",
+      "file_type": "code",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L550",
+      "community": 4,
+      "norm_label": "_near_known_airport()",
+      "id": "impl_adsb_air_asset_near_known_airport"
+    },
+    {
+      "label": "modules/pollers/impl/adsb_air_asset.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ AD",
+      "file_type": "rationale",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L1",
+      "community": 4,
+      "norm_label": "modules/pollers/impl/adsb_air_asset.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ad",
+      "id": "impl_adsb_air_asset_rationale_1"
+    },
+    {
+      "label": "Poll adsb.lol for low-altitude helicopters over Austin.",
+      "file_type": "rationale",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L61",
+      "community": 4,
+      "norm_label": "poll adsb.lol for low-altitude helicopters over austin.",
+      "id": "impl_adsb_air_asset_rationale_61"
+    },
+    {
+      "label": "Return True when recent ADS-B trail geometry looks like tactical orbiting.",
+      "file_type": "rationale",
+      "source_file": "modules/pollers/impl/adsb_air_asset.py",
+      "source_location": "L449",
+      "community": 4,
+      "norm_label": "return true when recent ads-b trail geometry looks like tactical orbiting.",
+      "id": "impl_adsb_air_asset_rationale_449"
     },
     {
       "label": "bb-query.py",
@@ -1988,7 +1988,7 @@
       "file_type": "code",
       "source_file": "modules/premium.py",
       "source_location": "L116",
-      "community": 11,
+      "community": 12,
       "norm_label": "_get_session()",
       "id": "modules_premium_get_session"
     },
@@ -2231,7 +2231,7 @@
       "file_type": "rationale",
       "source_file": "modules/premium.py",
       "source_location": "L117",
-      "community": 11,
+      "community": 12,
       "norm_label": "extract and validate session token from cookie or authorization header.     retu",
       "id": "modules_premium_rationale_117"
     },
@@ -2699,7 +2699,7 @@
       "file_type": "code",
       "source_file": "modules/space_weather.py",
       "source_location": "L1",
-      "community": 73,
+      "community": 61,
       "norm_label": "space_weather.py",
       "id": "modules_space_weather_py"
     },
@@ -2708,7 +2708,7 @@
       "file_type": "code",
       "source_file": "modules/space_weather.py",
       "source_location": "L9",
-      "community": 73,
+      "community": 61,
       "norm_label": "get_space_weather()",
       "id": "modules_space_weather_get_space_weather"
     },
@@ -2717,7 +2717,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1",
-      "community": 33,
+      "community": 32,
       "norm_label": "public.py",
       "id": "modules_public_py"
     },
@@ -2726,7 +2726,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1185",
-      "community": 33,
+      "community": 32,
       "norm_label": "public_splash()",
       "id": "modules_public_public_splash"
     },
@@ -2735,7 +2735,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1189",
-      "community": 33,
+      "community": 32,
       "norm_label": "public_map()",
       "id": "modules_public_public_map"
     },
@@ -2744,7 +2744,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1194",
-      "community": 33,
+      "community": 32,
       "norm_label": "api_homicides()",
       "id": "modules_public_api_homicides"
     },
@@ -2753,7 +2753,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1234",
-      "community": 33,
+      "community": 32,
       "norm_label": "public_feed()",
       "id": "modules_public_public_feed"
     },
@@ -2762,7 +2762,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1240",
-      "community": 33,
+      "community": 32,
       "norm_label": "public_feed_rss()",
       "id": "modules_public_public_feed_rss"
     },
@@ -2771,7 +2771,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1563",
-      "community": 33,
+      "community": 32,
       "norm_label": "public_homicides()",
       "id": "modules_public_public_homicides"
     },
@@ -2780,7 +2780,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1567",
-      "community": 33,
+      "community": 32,
       "norm_label": "public_about()",
       "id": "modules_public_public_about"
     },
@@ -2789,7 +2789,7 @@
       "file_type": "code",
       "source_file": "modules/public.py",
       "source_location": "L1770",
-      "community": 33,
+      "community": 32,
       "norm_label": "public_aircraft()",
       "id": "modules_public_public_aircraft"
     },
@@ -2798,7 +2798,7 @@
       "file_type": "rationale",
       "source_file": "modules/public.py",
       "source_location": "L1",
-      "community": 33,
+      "community": 32,
       "norm_label": "battle buddy public-facing page routes.  extracted from audio_receiver.py to kee",
       "id": "modules_public_rationale_1"
     },
@@ -2807,7 +2807,7 @@
       "file_type": "rationale",
       "source_file": "modules/public.py",
       "source_location": "L1195",
-      "community": 33,
+      "community": 32,
       "norm_label": "return 2026 homicide data for the heat map \u2014 static seed + live db incidents.",
       "id": "modules_public_rationale_1195"
     },
@@ -2816,7 +2816,7 @@
       "file_type": "rationale",
       "source_file": "modules/public.py",
       "source_location": "L1241",
-      "community": 33,
+      "community": 32,
       "norm_label": "rss 2.0 feed of confirmed battle buddy incidents (last 200, 30 days).",
       "id": "modules_public_rationale_1241"
     },
@@ -4418,7 +4418,7 @@
       "file_type": "code",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L1",
-      "community": 19,
+      "community": 17,
       "norm_label": "apd_cad.py",
       "id": "modules_pollers_impl_apd_cad_py"
     },
@@ -4427,7 +4427,7 @@
       "file_type": "code",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L60",
-      "community": 19,
+      "community": 17,
       "norm_label": "_parse_cad_ts()",
       "id": "impl_apd_cad_parse_cad_ts"
     },
@@ -4436,7 +4436,7 @@
       "file_type": "code",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L74",
-      "community": 19,
+      "community": 17,
       "norm_label": "apdcadpoller",
       "id": "impl_apd_cad_apdcadpoller"
     },
@@ -4445,7 +4445,7 @@
       "file_type": "code",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L80",
-      "community": 19,
+      "community": 17,
       "norm_label": ".__init__()",
       "id": "impl_apd_cad_apdcadpoller_init"
     },
@@ -4454,7 +4454,7 @@
       "file_type": "code",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L89",
-      "community": 19,
+      "community": 17,
       "norm_label": ".run()",
       "id": "impl_apd_cad_apdcadpoller_run"
     },
@@ -4463,7 +4463,7 @@
       "file_type": "code",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L96",
-      "community": 19,
+      "community": 17,
       "norm_label": ".init_db()",
       "id": "impl_apd_cad_apdcadpoller_init_db"
     },
@@ -4472,7 +4472,7 @@
       "file_type": "code",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L137",
-      "community": 19,
+      "community": 17,
       "norm_label": ".fetch_and_store()",
       "id": "impl_apd_cad_apdcadpoller_fetch_and_store"
     },
@@ -4481,7 +4481,7 @@
       "file_type": "code",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L195",
-      "community": 19,
+      "community": 17,
       "norm_label": ".match_and_harvest()",
       "id": "impl_apd_cad_apdcadpoller_match_and_harvest"
     },
@@ -4490,7 +4490,7 @@
       "file_type": "rationale",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L1",
-      "community": 19,
+      "community": 17,
       "norm_label": "modules/pollers/impl/apd_cad.py ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ austin pd cad r",
       "id": "impl_apd_cad_rationale_1"
     },
@@ -4499,7 +4499,7 @@
       "file_type": "rationale",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L75",
-      "community": 19,
+      "community": 17,
       "norm_label": "poll apd cad records every six hours and enrich matching incidents.",
       "id": "impl_apd_cad_rationale_75"
     },
@@ -4508,7 +4508,7 @@
       "file_type": "rationale",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L97",
-      "community": 19,
+      "community": 17,
       "norm_label": "create apd cad and tgid hint tables if they do not exist.",
       "id": "impl_apd_cad_rationale_97"
     },
@@ -4517,7 +4517,7 @@
       "file_type": "rationale",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L138",
-      "community": 19,
+      "community": 17,
       "norm_label": "fetch cad records from the lookback window and upsert them.",
       "id": "impl_apd_cad_rationale_138"
     },
@@ -4526,7 +4526,7 @@
       "file_type": "rationale",
       "source_file": "modules/pollers/impl/apd_cad.py",
       "source_location": "L196",
-      "community": 19,
+      "community": 17,
       "norm_label": "match unmatched cad rows to scanner incidents and harvest tgid hints.",
       "id": "impl_apd_cad_rationale_196"
     },
@@ -5741,7 +5741,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L1",
-      "community": 19,
+      "community": 17,
       "norm_label": "test_apd_cad_poller.py",
       "id": "tests_test_apd_cad_poller_py"
     },
@@ -5750,7 +5750,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L22",
-      "community": 19,
+      "community": 17,
       "norm_label": "_stub_leaf()",
       "id": "tests_test_apd_cad_poller_stub_leaf"
     },
@@ -5759,7 +5759,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L39",
-      "community": 19,
+      "community": 17,
       "norm_label": "_load_from_file()",
       "id": "tests_test_apd_cad_poller_load_from_file"
     },
@@ -5768,7 +5768,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L62",
-      "community": 19,
+      "community": 17,
       "norm_label": "apdcadpollertests",
       "id": "tests_test_apd_cad_poller_apdcadpollertests"
     },
@@ -5777,7 +5777,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L63",
-      "community": 19,
+      "community": 17,
       "norm_label": ".test_is_base_poller_with_expected_interval()",
       "id": "tests_test_apd_cad_poller_apdcadpollertests_test_is_base_poller_with_expected_interval"
     },
@@ -5786,7 +5786,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L69",
-      "community": 19,
+      "community": 17,
       "norm_label": ".test_parse_cad_ts_handles_valid_and_invalid_values()",
       "id": "tests_test_apd_cad_poller_apdcadpollertests_test_parse_cad_ts_handles_valid_and_invalid_values"
     },
@@ -5795,7 +5795,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L74",
-      "community": 19,
+      "community": 17,
       "norm_label": ".test_init_db_creates_cad_tables()",
       "id": "tests_test_apd_cad_poller_apdcadpollertests_test_init_db_creates_cad_tables"
     },
@@ -5804,7 +5804,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L92",
-      "community": 19,
+      "community": 17,
       "norm_label": "test_fetch_and_store_upserts_records()",
       "id": "tests_test_apd_cad_poller_test_fetch_and_store_upserts_records"
     },
@@ -5813,7 +5813,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L125",
-      "community": 19,
+      "community": 17,
       "norm_label": ".test_match_and_harvest_enriches_high_confidence_incident()",
       "id": "tests_test_apd_cad_poller_apdcadpollertests_test_match_and_harvest_enriches_high_confidence_incident"
     },
@@ -5822,7 +5822,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L190",
-      "community": 19,
+      "community": 17,
       "norm_label": ".test_match_and_harvest_skips_known_tgid_hints()",
       "id": "tests_test_apd_cad_poller_apdcadpollertests_test_match_and_harvest_skips_known_tgid_hints"
     },
@@ -5831,7 +5831,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_cad_poller.py",
       "source_location": "L1",
-      "community": 19,
+      "community": 17,
       "norm_label": "unit tests for modules/pollers/impl/apd_cad.py.",
       "id": "tests_test_apd_cad_poller_rationale_1"
     },
@@ -6047,7 +6047,7 @@
       "file_type": "code",
       "source_file": "tests/test_smoke.py",
       "source_location": "L1",
-      "community": 74,
+      "community": 62,
       "norm_label": "test_smoke.py",
       "id": "tests_test_smoke_py"
     },
@@ -6056,7 +6056,7 @@
       "file_type": "code",
       "source_file": "tests/test_smoke.py",
       "source_location": "L24",
-      "community": 74,
+      "community": 62,
       "norm_label": "test_endpoint()",
       "id": "tests_test_smoke_test_endpoint"
     },
@@ -6353,7 +6353,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L1",
-      "community": 20,
+      "community": 19,
       "norm_label": "test_audio_dedup.py",
       "id": "tests_test_audio_dedup_py"
     },
@@ -6362,7 +6362,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L16",
-      "community": 20,
+      "community": 19,
       "norm_label": "_reset()",
       "id": "tests_test_audio_dedup_reset"
     },
@@ -6371,7 +6371,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L22",
-      "community": 20,
+      "community": 19,
       "norm_label": "testisduplicate",
       "id": "tests_test_audio_dedup_testisduplicate"
     },
@@ -6380,7 +6380,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L23",
-      "community": 20,
+      "community": 19,
       "norm_label": ".setup()",
       "id": "tests_test_audio_dedup_testisduplicate_setup"
     },
@@ -6389,7 +6389,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L26",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_new_hash_not_duplicate()",
       "id": "tests_test_audio_dedup_testisduplicate_test_new_hash_not_duplicate"
     },
@@ -6398,7 +6398,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L29",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_after_mark_seen_is_duplicate()",
       "id": "tests_test_audio_dedup_testisduplicate_test_after_mark_seen_is_duplicate"
     },
@@ -6407,7 +6407,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L33",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_different_hash_not_duplicate()",
       "id": "tests_test_audio_dedup_testisduplicate_test_different_hash_not_duplicate"
     },
@@ -6416,7 +6416,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L37",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_expired_hash_not_duplicate()",
       "id": "tests_test_audio_dedup_testisduplicate_test_expired_hash_not_duplicate"
     },
@@ -6425,7 +6425,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L45",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_is_duplicate_does_not_register()",
       "id": "tests_test_audio_dedup_testisduplicate_test_is_duplicate_does_not_register"
     },
@@ -6434,7 +6434,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L53",
-      "community": 20,
+      "community": 19,
       "norm_label": "testmarkseen",
       "id": "tests_test_audio_dedup_testmarkseen"
     },
@@ -6443,7 +6443,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L54",
-      "community": 20,
+      "community": 19,
       "norm_label": ".setup()",
       "id": "tests_test_audio_dedup_testmarkseen_setup"
     },
@@ -6452,7 +6452,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L57",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_mark_seen_registers_hash()",
       "id": "tests_test_audio_dedup_testmarkseen_test_mark_seen_registers_hash"
     },
@@ -6461,7 +6461,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L62",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_mark_seen_evicts_expired()",
       "id": "tests_test_audio_dedup_testmarkseen_test_mark_seen_evicts_expired"
     },
@@ -6470,7 +6470,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L72",
-      "community": 20,
+      "community": 19,
       "norm_label": "testisduplicateandmark",
       "id": "tests_test_audio_dedup_testisduplicateandmark"
     },
@@ -6479,7 +6479,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L73",
-      "community": 20,
+      "community": 19,
       "norm_label": ".setup()",
       "id": "tests_test_audio_dedup_testisduplicateandmark_setup"
     },
@@ -6488,7 +6488,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L76",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_new_hash_returns_false_and_registers()",
       "id": "tests_test_audio_dedup_testisduplicateandmark_test_new_hash_returns_false_and_registers"
     },
@@ -6497,7 +6497,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L82",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_second_call_returns_true()",
       "id": "tests_test_audio_dedup_testisduplicateandmark_test_second_call_returns_true"
     },
@@ -6506,7 +6506,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L87",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_expired_hash_not_duplicate_and_reregisters()",
       "id": "tests_test_audio_dedup_testisduplicateandmark_test_expired_hash_not_duplicate_and_reregisters"
     },
@@ -6515,7 +6515,7 @@
       "file_type": "code",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L98",
-      "community": 20,
+      "community": 19,
       "norm_label": ".test_thread_safety()",
       "id": "tests_test_audio_dedup_testisduplicateandmark_test_thread_safety"
     },
@@ -6524,7 +6524,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L1",
-      "community": 20,
+      "community": 19,
       "norm_label": "unit tests for modules.audio_dedup.  tests verify thread-safety, ttl eviction, a",
       "id": "tests_test_audio_dedup_rationale_1"
     },
@@ -6533,7 +6533,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L17",
-      "community": 20,
+      "community": 19,
       "norm_label": "clear module-level state between tests.",
       "id": "tests_test_audio_dedup_rationale_17"
     },
@@ -6542,7 +6542,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L38",
-      "community": 20,
+      "community": 19,
       "norm_label": "an entry older than ttl should be evicted and reported as not-duplicate.",
       "id": "tests_test_audio_dedup_rationale_38"
     },
@@ -6551,7 +6551,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L46",
-      "community": 20,
+      "community": 19,
       "norm_label": "is_duplicate() must not side-effect the cache.",
       "id": "tests_test_audio_dedup_rationale_46"
     },
@@ -6560,7 +6560,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_audio_dedup.py",
       "source_location": "L99",
-      "community": 20,
+      "community": 19,
       "norm_label": "only one of n concurrent threads registering the same hash wins.",
       "id": "tests_test_audio_dedup_rationale_99"
     },
@@ -6569,7 +6569,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_apd_poller.py",
       "id": "tests_test_apd_poller_py"
     },
@@ -6578,7 +6578,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L50",
-      "community": 17,
+      "community": 20,
       "norm_label": "_stub_leaf()",
       "id": "tests_test_apd_poller_stub_leaf"
     },
@@ -6587,7 +6587,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L70",
-      "community": 17,
+      "community": 20,
       "norm_label": "_attach_to_parent()",
       "id": "tests_test_apd_poller_attach_to_parent"
     },
@@ -6596,7 +6596,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L147",
-      "community": 17,
+      "community": 20,
       "norm_label": "_load_from_file()",
       "id": "tests_test_apd_poller_load_from_file"
     },
@@ -6605,7 +6605,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L193",
-      "community": 30,
+      "community": 33,
       "norm_label": "_make_db()",
       "id": "tests_test_apd_poller_make_db"
     },
@@ -6614,7 +6614,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L230",
-      "community": 30,
+      "community": 33,
       "norm_label": "_tmp_db()",
       "id": "tests_test_apd_poller_tmp_db"
     },
@@ -6623,7 +6623,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L242",
-      "community": 12,
+      "community": 10,
       "norm_label": "_make_rss()",
       "id": "tests_test_apd_poller_make_rss"
     },
@@ -6632,7 +6632,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L263",
-      "community": 31,
+      "community": 30,
       "norm_label": "testconstants",
       "id": "tests_test_apd_poller_testconstants"
     },
@@ -6641,7 +6641,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L264",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_apd_news_url_contains_google_news()",
       "id": "tests_test_apd_poller_testconstants_test_apd_news_url_contains_google_news"
     },
@@ -6650,7 +6650,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L267",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_apd_news_url_contains_press_release_keyword()",
       "id": "tests_test_apd_poller_testconstants_test_apd_news_url_contains_press_release_keyword"
     },
@@ -6659,7 +6659,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L270",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_traffic_news_url_contains_google_news()",
       "id": "tests_test_apd_poller_testconstants_test_traffic_news_url_contains_google_news"
     },
@@ -6668,7 +6668,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L273",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_traffic_news_url_contains_fatal()",
       "id": "tests_test_apd_poller_testconstants_test_traffic_news_url_contains_fatal"
     },
@@ -6677,7 +6677,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L276",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_apd_news_interval_is_300()",
       "id": "tests_test_apd_poller_testconstants_test_apd_news_interval_is_300"
     },
@@ -6686,7 +6686,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L279",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_article_max_age_is_72_hours()",
       "id": "tests_test_apd_poller_testconstants_test_article_max_age_is_72_hours"
     },
@@ -6695,7 +6695,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L282",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_news_itype_compat_shooting_includes_shooting()",
       "id": "tests_test_apd_poller_testconstants_test_news_itype_compat_shooting_includes_shooting"
     },
@@ -6704,7 +6704,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L285",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_news_itype_compat_homicide_is_broad()",
       "id": "tests_test_apd_poller_testconstants_test_news_itype_compat_homicide_is_broad"
     },
@@ -6713,7 +6713,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L289",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_apd_source_rss_has_kxan()",
       "id": "tests_test_apd_poller_testconstants_test_apd_source_rss_has_kxan"
     },
@@ -6722,7 +6722,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L292",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_apd_headline_kw_has_homicide()",
       "id": "tests_test_apd_poller_testconstants_test_apd_headline_kw_has_homicide"
     },
@@ -6731,7 +6731,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L295",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_article_stop_words_is_frozenset()",
       "id": "tests_test_apd_poller_testconstants_test_article_stop_words_is_frozenset"
     },
@@ -6740,7 +6740,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L298",
-      "community": 31,
+      "community": 30,
       "norm_label": ".test_lock_is_threading_lock()",
       "id": "tests_test_apd_poller_testconstants_test_lock_is_threading_lock"
     },
@@ -7127,7 +7127,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L484",
-      "community": 17,
+      "community": 10,
       "norm_label": "test_source_rss_tier_resolves_when_title_matches()",
       "id": "tests_test_apd_poller_test_source_rss_tier_resolves_when_title_matches"
     },
@@ -7136,7 +7136,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L504",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_cse_tier_used_when_source_rss_fails()",
       "id": "tests_test_apd_poller_test_cse_tier_used_when_source_rss_fails"
     },
@@ -7145,7 +7145,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L517",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_cse_returns_link_when_configured()",
       "id": "tests_test_apd_poller_test_cse_returns_link_when_configured"
     },
@@ -7190,7 +7190,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L552",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_returns_empty_on_non_200_status()",
       "id": "tests_test_apd_poller_test_returns_empty_on_non_200_status"
     },
@@ -7199,7 +7199,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L560",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_extracts_address_from_article_text()",
       "id": "tests_test_apd_poller_test_extracts_address_from_article_text"
     },
@@ -7208,7 +7208,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L573",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_returns_empty_on_network_error()",
       "id": "tests_test_apd_poller_test_returns_empty_on_network_error"
     },
@@ -7226,7 +7226,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L585",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_pi_fetch_result_used_when_available()",
       "id": "tests_test_apd_poller_test_pi_fetch_result_used_when_available"
     },
@@ -7235,7 +7235,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L593",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_falls_back_to_direct_fetch()",
       "id": "tests_test_apd_poller_test_falls_back_to_direct_fetch"
     },
@@ -7244,7 +7244,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L605",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_returns_empty_on_fetch_failure()",
       "id": "tests_test_apd_poller_test_returns_empty_on_fetch_failure"
     },
@@ -7253,7 +7253,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L613",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_extracts_address_from_direct_html()",
       "id": "tests_test_apd_poller_test_extracts_address_from_direct_html"
     },
@@ -7262,7 +7262,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L629",
-      "community": 40,
+      "community": 41,
       "norm_label": "testmatcharticletoincident",
       "id": "tests_test_apd_poller_testmatcharticletoincident"
     },
@@ -7271,7 +7271,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L630",
-      "community": 30,
+      "community": 33,
       "norm_label": ".setup()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_setup"
     },
@@ -7280,7 +7280,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L634",
-      "community": 40,
+      "community": 41,
       "norm_label": ".teardown()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_teardown"
     },
@@ -7289,7 +7289,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L638",
-      "community": 40,
+      "community": 41,
       "norm_label": "._insert_incident()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_insert_incident"
     },
@@ -7298,7 +7298,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L647",
-      "community": 40,
+      "community": 41,
       "norm_label": ".test_returns_none_when_no_incidents()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_test_returns_none_when_no_incidents"
     },
@@ -7307,7 +7307,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L652",
-      "community": 40,
+      "community": 41,
       "norm_label": ".test_returns_single_candidate_with_score_ge_1()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_test_returns_single_candidate_with_score_ge_1"
     },
@@ -7316,7 +7316,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L663",
-      "community": 40,
+      "community": 41,
       "norm_label": ".test_location_token_boosts_score()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_test_location_token_boosts_score"
     },
@@ -7325,7 +7325,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L673",
-      "community": 40,
+      "community": 41,
       "norm_label": ".test_skips_existing_press_release_incidents()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_test_skips_existing_press_release_incidents"
     },
@@ -7334,7 +7334,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L686",
-      "community": 40,
+      "community": 41,
       "norm_label": ".test_itype_mismatch_reduces_match_probability()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_test_itype_mismatch_reduces_match_probability"
     },
@@ -7343,7 +7343,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L695",
-      "community": 40,
+      "community": 41,
       "norm_label": ".test_old_incident_outside_window_not_matched()",
       "id": "tests_test_apd_poller_testmatcharticletoincident_test_old_incident_outside_window_not_matched"
     },
@@ -7352,7 +7352,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L708",
-      "community": 42,
+      "community": 40,
       "norm_label": "teststorearticlelink",
       "id": "tests_test_apd_poller_teststorearticlelink"
     },
@@ -7361,7 +7361,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L709",
-      "community": 30,
+      "community": 40,
       "norm_label": ".setup()",
       "id": "tests_test_apd_poller_teststorearticlelink_setup"
     },
@@ -7370,7 +7370,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L720",
-      "community": 42,
+      "community": 40,
       "norm_label": ".teardown()",
       "id": "tests_test_apd_poller_teststorearticlelink_teardown"
     },
@@ -7379,7 +7379,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L724",
-      "community": 42,
+      "community": 40,
       "norm_label": ".test_inserts_row_in_incident_articles()",
       "id": "tests_test_apd_poller_teststorearticlelink_test_inserts_row_in_incident_articles"
     },
@@ -7388,7 +7388,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L731",
-      "community": 42,
+      "community": 40,
       "norm_label": ".test_sets_article_url_on_incident()",
       "id": "tests_test_apd_poller_teststorearticlelink_test_sets_article_url_on_incident"
     },
@@ -7397,7 +7397,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L739",
-      "community": 42,
+      "community": 40,
       "norm_label": ".test_does_not_overwrite_existing_article_url()",
       "id": "tests_test_apd_poller_teststorearticlelink_test_does_not_overwrite_existing_article_url"
     },
@@ -7406,7 +7406,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L749",
-      "community": 42,
+      "community": 40,
       "norm_label": ".test_stores_row_with_none_incident_id()",
       "id": "tests_test_apd_poller_teststorearticlelink_test_stores_row_with_none_incident_id"
     },
@@ -7415,7 +7415,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L757",
-      "community": 42,
+      "community": 40,
       "norm_label": ".test_snippet_truncated_to_300_chars()",
       "id": "tests_test_apd_poller_teststorearticlelink_test_snippet_truncated_to_300_chars"
     },
@@ -7433,7 +7433,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L772",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_posts_to_each_room()",
       "id": "tests_test_apd_poller_test_posts_to_each_room"
     },
@@ -7442,7 +7442,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L778",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_includes_message_in_payload()",
       "id": "tests_test_apd_poller_test_includes_message_in_payload"
     },
@@ -7451,7 +7451,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L787",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_uses_basic_auth()",
       "id": "tests_test_apd_poller_test_uses_basic_auth"
     },
@@ -7460,7 +7460,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L795",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_does_not_raise_on_network_error()",
       "id": "tests_test_apd_poller_test_does_not_raise_on_network_error"
     },
@@ -7469,7 +7469,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L804",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_no_rooms_makes_no_requests()",
       "id": "tests_test_apd_poller_test_no_rooms_makes_no_requests"
     },
@@ -7478,7 +7478,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L809",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_missing_talk_base_makes_no_requests()",
       "id": "tests_test_apd_poller_test_missing_talk_base_makes_no_requests"
     },
@@ -7487,7 +7487,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L814",
-      "community": 17,
+      "community": 20,
       "norm_label": "test_empty_room_token_is_skipped()",
       "id": "tests_test_apd_poller_test_empty_room_token_is_skipped"
     },
@@ -7496,7 +7496,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L823",
-      "community": 12,
+      "community": 10,
       "norm_label": "testpollapdpressreleases",
       "id": "tests_test_apd_poller_testpollapdpressreleases"
     },
@@ -7505,7 +7505,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L830",
-      "community": 30,
+      "community": 33,
       "norm_label": ".setup()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_setup"
     },
@@ -7514,7 +7514,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L834",
-      "community": 12,
+      "community": 10,
       "norm_label": ".teardown()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_teardown"
     },
@@ -7523,7 +7523,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L837",
-      "community": 12,
+      "community": 10,
       "norm_label": "._run_poll()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_run_poll"
     },
@@ -7532,7 +7532,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L871",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_new_article_inserted_into_apd_seen()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_new_article_inserted_into_apd_seen"
     },
@@ -7541,7 +7541,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L879",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_already_seen_article_not_reprocessed()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_already_seen_article_not_reprocessed"
     },
@@ -7550,7 +7550,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L891",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_headline_without_keyword_is_skipped()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_headline_without_keyword_is_skipped"
     },
@@ -7559,7 +7559,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L901",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_no_pub_ts_article_is_skipped()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_no_pub_ts_article_is_skipped"
     },
@@ -7568,7 +7568,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L916",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_stale_article_is_skipped()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_stale_article_is_skipped"
     },
@@ -7577,7 +7577,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L928",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_unmatched_article_creates_new_incident()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_unmatched_article_creates_new_incident"
     },
@@ -7586,7 +7586,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L936",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_unmatched_incident_description_contains_press_release_tag()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_unmatched_incident_description_contains_press_release_tag"
     },
@@ -7595,7 +7595,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L944",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_unmatched_article_sends_dm_alert()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_unmatched_article_sends_dm_alert"
     },
@@ -7604,7 +7604,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L950",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_matched_article_links_to_existing_incident()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_matched_article_links_to_existing_incident"
     },
@@ -7613,7 +7613,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L970",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_atak_marker_posted_when_coords_available()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_atak_marker_posted_when_coords_available"
     },
@@ -7622,7 +7622,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1008",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_rss_fetch_error_does_not_raise()",
       "id": "tests_test_apd_poller_testpollapdpressreleases_test_rss_fetch_error_does_not_raise"
     },
@@ -7631,7 +7631,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1030",
-      "community": 12,
+      "community": 10,
       "norm_label": "testpolltrafficnews",
       "id": "tests_test_apd_poller_testpolltrafficnews"
     },
@@ -7640,7 +7640,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1031",
-      "community": 30,
+      "community": 33,
       "norm_label": ".setup()",
       "id": "tests_test_apd_poller_testpolltrafficnews_setup"
     },
@@ -7649,7 +7649,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1035",
-      "community": 12,
+      "community": 10,
       "norm_label": ".teardown()",
       "id": "tests_test_apd_poller_testpolltrafficnews_teardown"
     },
@@ -7658,7 +7658,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1038",
-      "community": 12,
+      "community": 10,
       "norm_label": "._run_poll()",
       "id": "tests_test_apd_poller_testpolltrafficnews_run_poll"
     },
@@ -7667,7 +7667,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1060",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_already_seen_traffic_article_not_reprocessed()",
       "id": "tests_test_apd_poller_testpolltrafficnews_test_already_seen_traffic_article_not_reprocessed"
     },
@@ -7676,7 +7676,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1074",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_traffic_article_without_fatal_keyword_skipped()",
       "id": "tests_test_apd_poller_testpolltrafficnews_test_traffic_article_without_fatal_keyword_skipped"
     },
@@ -7685,7 +7685,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1082",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_traffic_article_with_no_pub_ts_is_skipped()",
       "id": "tests_test_apd_poller_testpolltrafficnews_test_traffic_article_with_no_pub_ts_is_skipped"
     },
@@ -7694,7 +7694,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1098",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_matched_traffic_article_stored_as_incident_article()",
       "id": "tests_test_apd_poller_testpolltrafficnews_test_matched_traffic_article_stored_as_incident_article"
     },
@@ -7703,7 +7703,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1118",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_traffic_rss_fetch_error_does_not_raise()",
       "id": "tests_test_apd_poller_testpolltrafficnews_test_traffic_rss_fetch_error_does_not_raise"
     },
@@ -7712,7 +7712,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1130",
-      "community": 12,
+      "community": 10,
       "norm_label": ".test_traffic_coordinates_update_incident_location()",
       "id": "tests_test_apd_poller_testpolltrafficnews_test_traffic_coordinates_update_incident_location"
     },
@@ -7748,7 +7748,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1194",
-      "community": 30,
+      "community": 33,
       "norm_label": "testconcurrentdedup",
       "id": "tests_test_apd_poller_testconcurrentdedup"
     },
@@ -7757,7 +7757,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1198",
-      "community": 30,
+      "community": 33,
       "norm_label": ".setup()",
       "id": "tests_test_apd_poller_testconcurrentdedup_setup"
     },
@@ -7766,7 +7766,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1201",
-      "community": 30,
+      "community": 33,
       "norm_label": ".teardown()",
       "id": "tests_test_apd_poller_testconcurrentdedup_teardown"
     },
@@ -7775,7 +7775,7 @@
       "file_type": "code",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1204",
-      "community": 30,
+      "community": 33,
       "norm_label": ".test_concurrent_inserts_do_not_corrupt_db()",
       "id": "tests_test_apd_poller_testconcurrentdedup_test_concurrent_inserts_do_not_corrupt_db"
     },
@@ -7784,7 +7784,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1",
-      "community": 17,
+      "community": 20,
       "norm_label": "tests/test_apd_poller.py ~~~~~~~~~~~~~~~~~~~~~~~~ unit test suite for modules/po",
       "id": "tests_test_apd_poller_rationale_1"
     },
@@ -7793,7 +7793,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L51",
-      "community": 17,
+      "community": 20,
       "norm_label": "register a lightweight stub for *name* in sys.modules without touching     any p",
       "id": "tests_test_apd_poller_rationale_51"
     },
@@ -7802,7 +7802,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L71",
-      "community": 17,
+      "community": 20,
       "norm_label": "expose a directly loaded/stubbed module on its parent package.      importlib no",
       "id": "tests_test_apd_poller_rationale_71"
     },
@@ -7811,7 +7811,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L194",
-      "community": 30,
+      "community": 33,
       "norm_label": "create the minimal schema tables required by apd_news.",
       "id": "tests_test_apd_poller_rationale_194"
     },
@@ -7820,7 +7820,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L231",
-      "community": 30,
+      "community": 33,
       "norm_label": "return a path to a fresh temp db file (caller responsible for cleanup).",
       "id": "tests_test_apd_poller_rationale_231"
     },
@@ -7829,7 +7829,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L243",
-      "community": 12,
+      "community": 10,
       "norm_label": "build a minimal google news rss xml string from a list of item dicts.",
       "id": "tests_test_apd_poller_rationale_243"
     },
@@ -7874,7 +7874,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L750",
-      "community": 42,
+      "community": 40,
       "norm_label": "unmatched articles (incident_id=none) should still be stored.",
       "id": "tests_test_apd_poller_rationale_750"
     },
@@ -7883,7 +7883,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L824",
-      "community": 12,
+      "community": 10,
       "norm_label": "integration tests for the apd press-release sub-poll.      all network i/o (urlo",
       "id": "tests_test_apd_poller_rationale_824"
     },
@@ -7892,7 +7892,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L838",
-      "community": 12,
+      "community": 10,
       "norm_label": "run _poll_apd_press_releases with mocked network and stubs.",
       "id": "tests_test_apd_poller_rationale_838"
     },
@@ -7901,7 +7901,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L902",
-      "community": 12,
+      "community": 10,
       "norm_label": "articles with no pubdate should be skipped (no pub_ts).",
       "id": "tests_test_apd_poller_rationale_902"
     },
@@ -7910,7 +7910,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L917",
-      "community": 12,
+      "community": 10,
       "norm_label": "articles older than _article_max_age_secs should be skipped.",
       "id": "tests_test_apd_poller_rationale_917"
     },
@@ -7919,7 +7919,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1009",
-      "community": 12,
+      "community": 10,
       "norm_label": "network errors during rss fetch should be caught silently.",
       "id": "tests_test_apd_poller_rationale_1009"
     },
@@ -7946,7 +7946,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L1195",
-      "community": 30,
+      "community": 33,
       "norm_label": "verify that the _apd_news_lock prevents race conditions when multiple     poller",
       "id": "tests_test_apd_poller_rationale_1195"
     },
@@ -7955,7 +7955,7 @@
       "file_type": "rationale",
       "source_file": "tests/test_apd_poller.py",
       "source_location": "L103",
-      "community": 17,
+      "community": 20,
       "norm_label": "# important: we do not pre-register any parent package (\"modules\",",
       "id": "tests_test_apd_poller_rationale_103"
     },
@@ -9503,7 +9503,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L1",
-      "community": 32,
+      "community": 31,
       "norm_label": "contributing.md",
       "id": "contributing_md"
     },
@@ -9512,7 +9512,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L1",
-      "community": 32,
+      "community": 31,
       "norm_label": "contributing",
       "id": "battle_buddy_contributing_contributing"
     },
@@ -9521,7 +9521,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L5",
-      "community": 32,
+      "community": 31,
       "norm_label": "development setup",
       "id": "battle_buddy_contributing_development_setup"
     },
@@ -9530,7 +9530,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L7",
-      "community": 32,
+      "community": 31,
       "norm_label": "code:bash (git clone https://github.com/mkultrausa/battle_buddy.git)",
       "id": "battle_buddy_contributing_codeblock_1"
     },
@@ -9539,7 +9539,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L20",
-      "community": 32,
+      "community": 31,
       "norm_label": "branch workflow",
       "id": "battle_buddy_contributing_branch_workflow"
     },
@@ -9548,7 +9548,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L27",
-      "community": 32,
+      "community": 31,
       "norm_label": "code:bash (git checkout -b feature/my-change)",
       "id": "battle_buddy_contributing_codeblock_2"
     },
@@ -9557,7 +9557,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L33",
-      "community": 32,
+      "community": 31,
       "norm_label": "code style",
       "id": "battle_buddy_contributing_code_style"
     },
@@ -9566,7 +9566,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L41",
-      "community": 32,
+      "community": 31,
       "norm_label": "testing expectations",
       "id": "battle_buddy_contributing_testing_expectations"
     },
@@ -9575,7 +9575,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L53",
-      "community": 32,
+      "community": 31,
       "norm_label": "security expectations",
       "id": "battle_buddy_contributing_security_expectations"
     },
@@ -9584,7 +9584,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L57",
-      "community": 32,
+      "community": 31,
       "norm_label": "code:bash (git grep -n -i -e \"api[_-]?key|secret|token|password|passwd|)",
       "id": "battle_buddy_contributing_codeblock_3"
     },
@@ -9593,7 +9593,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L63",
-      "community": 32,
+      "community": 31,
       "norm_label": "code:bash (gitleaks detect --source . --verbose)",
       "id": "battle_buddy_contributing_codeblock_4"
     },
@@ -9602,7 +9602,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L69",
-      "community": 32,
+      "community": 31,
       "norm_label": "pull request checklist",
       "id": "battle_buddy_contributing_pull_request_checklist"
     },
@@ -9611,7 +9611,7 @@
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L71",
-      "community": 32,
+      "community": 31,
       "norm_label": "code:text ([ ] the change is focused and documented)",
       "id": "battle_buddy_contributing_codeblock_5"
     },
@@ -9665,7 +9665,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L1",
-      "community": 10,
+      "community": 11,
       "norm_label": "changelog.md",
       "id": "changelog_md"
     },
@@ -9674,7 +9674,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L1",
-      "community": 10,
+      "community": 11,
       "norm_label": "battle buddy \u2014 changelog",
       "id": "battle_buddy_changelog_battle_buddy_changelog"
     },
@@ -9683,7 +9683,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L5",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.8.2] \u2014 2026-03-13",
       "id": "battle_buddy_changelog_0_8_2_2026_03_13"
     },
@@ -9692,7 +9692,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L7",
-      "community": 10,
+      "community": 11,
       "norm_label": "added",
       "id": "battle_buddy_changelog_added"
     },
@@ -9701,7 +9701,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L30",
-      "community": 10,
+      "community": 11,
       "norm_label": "fixed",
       "id": "battle_buddy_changelog_fixed"
     },
@@ -9710,7 +9710,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L38",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.8.1] \u2014 2026-03-12",
       "id": "battle_buddy_changelog_0_8_1_2026_03_12"
     },
@@ -9719,7 +9719,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L40",
-      "community": 10,
+      "community": 11,
       "norm_label": "added",
       "id": "battle_buddy_changelog_added_40"
     },
@@ -9728,7 +9728,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L57",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.8.0] \u2014 2026-03-12",
       "id": "battle_buddy_changelog_0_8_0_2026_03_12"
     },
@@ -9737,7 +9737,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L59",
-      "community": 10,
+      "community": 11,
       "norm_label": "added",
       "id": "battle_buddy_changelog_added_59"
     },
@@ -9746,7 +9746,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L72",
-      "community": 10,
+      "community": 11,
       "norm_label": "changed",
       "id": "battle_buddy_changelog_changed"
     },
@@ -9755,7 +9755,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L79",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.7.8] \u2014 2026-03-09",
       "id": "battle_buddy_changelog_0_7_8_2026_03_09"
     },
@@ -9764,7 +9764,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L81",
-      "community": 10,
+      "community": 11,
       "norm_label": "fixed",
       "id": "battle_buddy_changelog_fixed_81"
     },
@@ -9773,7 +9773,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L95",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.7.7] \u2014 2026-03-09",
       "id": "battle_buddy_changelog_0_7_7_2026_03_09"
     },
@@ -9782,7 +9782,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L97",
-      "community": 10,
+      "community": 11,
       "norm_label": "fixed",
       "id": "battle_buddy_changelog_fixed_97"
     },
@@ -9791,7 +9791,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L108",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.7.6] \u2014 2026-03-09",
       "id": "battle_buddy_changelog_0_7_6_2026_03_09"
     },
@@ -9800,7 +9800,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L110",
-      "community": 10,
+      "community": 11,
       "norm_label": "fixed",
       "id": "battle_buddy_changelog_fixed_110"
     },
@@ -9809,7 +9809,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L122",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.6.0] \u2014 2026-03-09",
       "id": "battle_buddy_changelog_0_6_0_2026_03_09"
     },
@@ -9818,7 +9818,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L124",
-      "community": 10,
+      "community": 11,
       "norm_label": "added",
       "id": "battle_buddy_changelog_added_124"
     },
@@ -9827,7 +9827,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L139",
-      "community": 10,
+      "community": 11,
       "norm_label": "changed",
       "id": "battle_buddy_changelog_changed_139"
     },
@@ -9836,7 +9836,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L145",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.5.0] \u2014 2026-03-01 (approx.)",
       "id": "battle_buddy_changelog_0_5_0_2026_03_01_approx"
     },
@@ -9845,7 +9845,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L147",
-      "community": 10,
+      "community": 11,
       "norm_label": "features at this version",
       "id": "battle_buddy_changelog_features_at_this_version"
     },
@@ -9854,7 +9854,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L176",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.7.3] \u2014 2026-03-09",
       "id": "battle_buddy_changelog_0_7_3_2026_03_09"
     },
@@ -9863,7 +9863,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L178",
-      "community": 10,
+      "community": 11,
       "norm_label": "fixed",
       "id": "battle_buddy_changelog_fixed_178"
     },
@@ -9872,7 +9872,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L191",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.7.2] \u2014 2026-03-09",
       "id": "battle_buddy_changelog_0_7_2_2026_03_09"
     },
@@ -9881,7 +9881,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L193",
-      "community": 10,
+      "community": 11,
       "norm_label": "fixed",
       "id": "battle_buddy_changelog_fixed_193"
     },
@@ -9890,7 +9890,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L204",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.7.1] \u2014 2026-03-09",
       "id": "battle_buddy_changelog_0_7_1_2026_03_09"
     },
@@ -9899,7 +9899,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L206",
-      "community": 10,
+      "community": 11,
       "norm_label": "added",
       "id": "battle_buddy_changelog_added_206"
     },
@@ -9908,7 +9908,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L215",
-      "community": 10,
+      "community": 11,
       "norm_label": "changed",
       "id": "battle_buddy_changelog_changed_215"
     },
@@ -9917,7 +9917,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L223",
-      "community": 10,
+      "community": 11,
       "norm_label": "[0.7.0] \u2014 2026-03-09",
       "id": "battle_buddy_changelog_0_7_0_2026_03_09"
     },
@@ -9926,7 +9926,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L225",
-      "community": 10,
+      "community": 11,
       "norm_label": "added",
       "id": "battle_buddy_changelog_added_225"
     },
@@ -9935,7 +9935,7 @@
       "file_type": "document",
       "source_file": "CHANGELOG.md",
       "source_location": "L237",
-      "community": 10,
+      "community": 11,
       "norm_label": "changed",
       "id": "battle_buddy_changelog_changed_237"
     },
@@ -10052,7 +10052,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L1",
-      "community": 41,
+      "community": 42,
       "norm_label": "architecture.md",
       "id": "docs_architecture_md"
     },
@@ -10061,7 +10061,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L1",
-      "community": 41,
+      "community": 42,
       "norm_label": "architecture",
       "id": "docs_architecture_architecture"
     },
@@ -10070,7 +10070,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L5",
-      "community": 41,
+      "community": 42,
       "norm_label": "high-level flow",
       "id": "docs_architecture_high_level_flow"
     },
@@ -10079,7 +10079,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L7",
-      "community": 41,
+      "community": 42,
       "norm_label": "code:text (radio system / sdr)",
       "id": "docs_architecture_codeblock_1"
     },
@@ -10088,7 +10088,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L29",
-      "community": 41,
+      "community": 42,
       "norm_label": "capture node",
       "id": "docs_architecture_capture_node"
     },
@@ -10097,7 +10097,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L41",
-      "community": 41,
+      "community": 42,
       "norm_label": "server node",
       "id": "docs_architecture_server_node"
     },
@@ -10106,7 +10106,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L56",
-      "community": 41,
+      "community": 42,
       "norm_label": "external integrations",
       "id": "docs_architecture_external_integrations"
     },
@@ -10115,7 +10115,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L68",
-      "community": 41,
+      "community": 42,
       "norm_label": "data stores",
       "id": "docs_architecture_data_stores"
     },
@@ -10124,7 +10124,7 @@
       "file_type": "document",
       "source_file": "docs/architecture.md",
       "source_location": "L77",
-      "community": 41,
+      "community": 42,
       "norm_label": "security boundaries",
       "id": "docs_architecture_security_boundaries"
     },
@@ -10454,6 +10454,503 @@
     }
   ],
   "links": [
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L114",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_fetch_url_with_retry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L138",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_apd_parse_rss",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L176",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_resolve_article_url",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L235",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_apd_fetch_article",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L279",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_pi_fetch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L334",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_match_article_to_incident",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L384",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_store_article_link",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L442",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_reddit_matches",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L450",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_reddit_match_incident",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L519",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_nominatim_geocode",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L536",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_extract_tip_location",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L575",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_reddit_tip_recheck",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L681",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_adsb_check_orbit",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L762",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_traffic_issue_to_itype",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L768",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_traffic_post_to_talk",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L812",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_atxfloods_post_to_talk",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L850",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_austin_events_load",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L859",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_austin_events_upcoming",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L875",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_austin_events_state_load",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L883",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_austin_events_state_save",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L891",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_austin_events_format",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L914",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_austin_events_post_to_talk",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L960",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_cad_init_db",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L1000",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_cad_fetch_and_store",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "pollers_legacy.py",
+      "source_location": "L1068",
+      "weight": 1.0,
+      "source": "pollers_legacy_py",
+      "target": "modules_pollers_legacy_cad_match_and_harvest",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L748",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_nominatim_geocode",
+      "target": "modules_pollers_legacy_fetch_url_with_retry"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L1510",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_cad_fetch_and_store",
+      "target": "modules_pollers_legacy_fetch_url_with_retry"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L117",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_117",
+      "target": "modules_pollers_legacy_fetch_url_with_retry"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L139",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_139",
+      "target": "modules_pollers_legacy_apd_parse_rss"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L177",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_177",
+      "target": "modules_pollers_legacy_resolve_article_url"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L241",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_apd_fetch_article",
+      "target": "modules_pollers_legacy_pi_fetch"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L236",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_236",
+      "target": "modules_pollers_legacy_apd_fetch_article"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L280",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_280",
+      "target": "modules_pollers_legacy_pi_fetch"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L335",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_335",
+      "target": "modules_pollers_legacy_match_article_to_incident"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L386",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_386",
+      "target": "modules_pollers_legacy_store_article_link"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L855",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_reddit_tip_recheck",
+      "target": "modules_pollers_legacy_reddit_match_incident"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L451",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_451",
+      "target": "modules_pollers_legacy_reddit_match_incident"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L776",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_extract_tip_location",
+      "target": "modules_pollers_legacy_nominatim_geocode"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L520",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_520",
+      "target": "modules_pollers_legacy_nominatim_geocode"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L537",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_537",
+      "target": "modules_pollers_legacy_extract_tip_location"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L576",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_576",
+      "target": "modules_pollers_legacy_reddit_tip_recheck"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L846",
+      "weight": 1.0,
+      "source": "modules_pollers_legacy_reddit_tip_recheck",
+      "target": "modules_incident_engine_haversine_km"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L682",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_682",
+      "target": "modules_pollers_legacy_adsb_check_orbit"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L953",
+      "weight": 1.0,
+      "source": "modules_pollers_legacy_adsb_check_orbit",
+      "target": "impl_adsb_air_asset_km"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L763",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_763",
+      "target": "modules_pollers_legacy_traffic_issue_to_itype"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L769",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_769",
+      "target": "modules_pollers_legacy_traffic_post_to_talk"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L961",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_961",
+      "target": "modules_pollers_legacy_cad_init_db"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L1001",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_1001",
+      "target": "modules_pollers_legacy_cad_fetch_and_store"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "modules/pollers_legacy.py",
+      "source_location": "L1069",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "modules_pollers_legacy_rationale_1069",
+      "target": "modules_pollers_legacy_cad_match_and_harvest"
+    },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
@@ -12388,503 +12885,6 @@
       "confidence_score": 1.0,
       "source": "impl_adsb_air_asset_near_known_airport",
       "target": "impl_adsb_air_asset_km"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L953",
-      "weight": 1.0,
-      "source": "modules_pollers_legacy_adsb_check_orbit",
-      "target": "impl_adsb_air_asset_km"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L114",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_fetch_url_with_retry"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L138",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_apd_parse_rss"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L176",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_resolve_article_url"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L235",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_apd_fetch_article"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L279",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_pi_fetch"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L334",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_match_article_to_incident"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L384",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_store_article_link"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L666",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_reddit_matches"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L674",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_reddit_match_incident"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L743",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_nominatim_geocode"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L760",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_extract_tip_location"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L799",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_reddit_tip_recheck"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L922",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_adsb_check_orbit"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1036",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_traffic_issue_to_itype"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1042",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_traffic_post_to_talk"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1170",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_atxfloods_post_to_talk"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1289",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_austin_events_load"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1298",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_austin_events_upcoming"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1314",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_austin_events_state_load"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1322",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_austin_events_state_save"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1330",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_austin_events_format"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1353",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_austin_events_post_to_talk"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1463",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_cad_init_db"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1503",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_cad_fetch_and_store"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1571",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_py",
-      "target": "modules_pollers_legacy_cad_match_and_harvest"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L748",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_nominatim_geocode",
-      "target": "modules_pollers_legacy_fetch_url_with_retry"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1510",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_cad_fetch_and_store",
-      "target": "modules_pollers_legacy_fetch_url_with_retry"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L117",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_117",
-      "target": "modules_pollers_legacy_fetch_url_with_retry"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L139",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_139",
-      "target": "modules_pollers_legacy_apd_parse_rss"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L177",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_177",
-      "target": "modules_pollers_legacy_resolve_article_url"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L241",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_apd_fetch_article",
-      "target": "modules_pollers_legacy_pi_fetch"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L236",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_236",
-      "target": "modules_pollers_legacy_apd_fetch_article"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L280",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_280",
-      "target": "modules_pollers_legacy_pi_fetch"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L335",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_335",
-      "target": "modules_pollers_legacy_match_article_to_incident"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L386",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_386",
-      "target": "modules_pollers_legacy_store_article_link"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L855",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_reddit_tip_recheck",
-      "target": "modules_pollers_legacy_reddit_match_incident"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L451",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_451",
-      "target": "modules_pollers_legacy_reddit_match_incident"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L776",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_extract_tip_location",
-      "target": "modules_pollers_legacy_nominatim_geocode"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L520",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_520",
-      "target": "modules_pollers_legacy_nominatim_geocode"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L537",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_537",
-      "target": "modules_pollers_legacy_extract_tip_location"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L576",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_576",
-      "target": "modules_pollers_legacy_reddit_tip_recheck"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L846",
-      "weight": 1.0,
-      "source": "modules_pollers_legacy_reddit_tip_recheck",
-      "target": "modules_incident_engine_haversine_km"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L682",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_682",
-      "target": "modules_pollers_legacy_adsb_check_orbit"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L763",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_763",
-      "target": "modules_pollers_legacy_traffic_issue_to_itype"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L769",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_769",
-      "target": "modules_pollers_legacy_traffic_post_to_talk"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L961",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_961",
-      "target": "modules_pollers_legacy_cad_init_db"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1001",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_1001",
-      "target": "modules_pollers_legacy_cad_fetch_and_store"
-    },
-    {
-      "relation": "rationale_for",
-      "confidence": "EXTRACTED",
-      "source_file": "modules/pollers_legacy.py",
-      "source_location": "L1069",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "modules_pollers_legacy_rationale_1069",
-      "target": "modules_pollers_legacy_cad_match_and_harvest"
     },
     {
       "relation": "contains",
@@ -26585,5 +26585,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "5098d7273730acac8dc2e6a0b782d4d438b98ed0"
+  "built_at_commit": "f9022d852371db87eac5ca9de70c0e81e408be10"
 }
