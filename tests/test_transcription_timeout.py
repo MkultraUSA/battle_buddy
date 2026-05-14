@@ -94,6 +94,7 @@ class TestTranscribeWithTimeout(unittest.TestCase):
         """Patch _get_fw_model and _fw_model_lock to avoid real model loading."""
         fake_segment = MagicMock()
         fake_segment.text = "hello world"
+        fake_segment.avg_logprob = -0.5
 
         if transcribe_side_effect is not None:
             mock_model = MagicMock()
@@ -113,26 +114,28 @@ class TestTranscribeWithTimeout(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_success_returns_transcript(self):
-        """transcribe_with_timeout returns transcript text on success."""
+        """transcribe_with_timeout returns (transcript, accuracy) tuple on success."""
         fake_segment = MagicMock()
         fake_segment.text = "unit test"
+        fake_segment.avg_logprob = -1.2
         mock_model = MagicMock()
         mock_model.transcribe.return_value = ([fake_segment], None)
 
         with patch.object(transcription_mod, "_get_fw_model", return_value=mock_model), \
              patch.object(transcription_mod, "_fw_model_lock", threading.Lock()):
-            result = transcription_mod.transcribe_with_timeout(
+            transcript, accuracy = transcription_mod.transcribe_with_timeout(
                 self._make_wav_bytes(), timeout=10
             )
 
-        self.assertEqual(result, "unit test")
+        self.assertEqual(transcript, "unit test")
+        self.assertEqual(accuracy, -1.2)
 
     # ------------------------------------------------------------------
     # Test: thread timeout / hang detection
     # ------------------------------------------------------------------
 
     def test_timeout_returns_empty_string(self):
-        """transcribe_with_timeout returns '' when the worker hangs beyond timeout."""
+        """transcribe_with_timeout returns ('', 0.0) when the worker hangs beyond timeout."""
         hang_event = threading.Event()
 
         def _hanging_transcribe(*args, **kwargs):
@@ -145,13 +148,14 @@ class TestTranscribeWithTimeout(unittest.TestCase):
         try:
             with patch.object(transcription_mod, "_get_fw_model", return_value=mock_model), \
                  patch.object(transcription_mod, "_fw_model_lock", threading.Lock()):
-                result = transcription_mod.transcribe_with_timeout(
+                transcript, accuracy = transcription_mod.transcribe_with_timeout(
                     self._make_wav_bytes(), timeout=1  # short timeout for test speed
                 )
         finally:
             hang_event.set()  # unblock the daemon thread so the test exits cleanly
 
-        self.assertEqual(result, "", "Expected empty string on timeout")
+        self.assertEqual(transcript, "")
+        self.assertEqual(accuracy, 0.0)
 
     def test_timeout_resets_watchdog(self):
         """Watchdog is reset (not in-progress) after a timeout."""
@@ -186,17 +190,18 @@ class TestTranscribeWithTimeout(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_exception_in_worker_returns_empty_string(self):
-        """transcribe_with_timeout returns '' when the worker raises an exception."""
+        """transcribe_with_timeout returns ('', 0.0) when the worker raises an exception."""
         mock_model = MagicMock()
         mock_model.transcribe.side_effect = RuntimeError("model exploded")
 
         with patch.object(transcription_mod, "_get_fw_model", return_value=mock_model), \
              patch.object(transcription_mod, "_fw_model_lock", threading.Lock()):
-            result = transcription_mod.transcribe_with_timeout(
+            transcript, accuracy = transcription_mod.transcribe_with_timeout(
                 self._make_wav_bytes(), timeout=10
             )
 
-        self.assertEqual(result, "")
+        self.assertEqual(transcript, "")
+        self.assertEqual(accuracy, 0.0)
 
     # ------------------------------------------------------------------
     # Test: public transcribe() delegates correctly
@@ -205,12 +210,13 @@ class TestTranscribeWithTimeout(unittest.TestCase):
     def test_transcribe_delegates_to_timeout_wrapper(self):
         """The public transcribe() function delegates to transcribe_with_timeout."""
         with patch.object(
-            transcription_mod, "transcribe_with_timeout", return_value="delegated"
+            transcription_mod, "transcribe_with_timeout", return_value=("delegated", -0.8)
         ) as mock_fn:
-            result = transcription_mod.transcribe(b"wav")
+            transcript, accuracy = transcription_mod.transcribe(b"wav")
 
         mock_fn.assert_called_once_with(b"wav", timeout=transcription_mod.TRANSCRIPTION_TIMEOUT)
-        self.assertEqual(result, "delegated")
+        self.assertEqual(transcript, "delegated")
+        self.assertEqual(accuracy, -0.8)
 
 
 if __name__ == "__main__":

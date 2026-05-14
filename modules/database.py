@@ -28,6 +28,10 @@ def init_db():
         conn.execute("ALTER TABLE calls ADD COLUMN coords_approx INTEGER DEFAULT 0")
     except Exception:
         pass
+    try:
+        conn.execute("ALTER TABLE calls ADD COLUMN accuracy REAL")
+    except Exception:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS incidents (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,12 +174,12 @@ def remove_subscription(username: str, beat: str = "all"):
     conn.close()
 
 
-def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx=0) -> int:
+def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx=0, accuracy=None) -> int:
     conn = sqlite3.connect(DB_PATH, timeout=5.0)
     cur  = conn.execute(
-        "INSERT INTO calls (ts,tgid,tag,category,node,duration,transcript,lat,lon,location,coords_approx) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx)
+        "INSERT INTO calls (ts,tgid,tag,category,node,duration,transcript,lat,lon,location,coords_approx,accuracy) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx, accuracy)
     )
     row_id = cur.lastrowid
     conn.commit()
