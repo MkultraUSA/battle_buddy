@@ -212,6 +212,7 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
     result_container: list[str] = []
     exception_container: list[Exception] = []
     status_container: list[str] = []
+    accuracy_container: list[float] = []
     audio_seconds = _wav_duration_seconds(wav_bytes)
     metrics_started = _record_transcription_start()
 
@@ -230,9 +231,18 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
             try:
                 model = _get_fw_model()
                 segments, _ = model.transcribe(tmp, language="en", beam_size=1, vad_filter=True)
-                text = " ".join(s.text for s in segments).strip()
+                seg_texts = []
+                seg_logprobs = []
+                for s in segments:
+                    seg_texts.append(s.text)
+                    seg_logprobs.append(s.avg_logprob)
+                text = " ".join(seg_texts).strip()
                 status_container.append("success" if text else "empty")
                 result_container.append(text)
+                if seg_logprobs:
+                    accuracy_container.append(sum(seg_logprobs) / len(seg_logprobs))
+                else:
+                    accuracy_container.append(0.0)
             finally:
                 if lock_held:
                     try:
@@ -262,23 +272,27 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
         )
         _watchdog.reset()
         _record_transcription_done("timeout", metrics_started, audio_seconds)
-        return ""
+        return "", 0.0
 
     _watchdog.mark_done()
 
     status = status_container[0] if status_container else "empty"
     transcript = result_container[0] if result_container else ""
+    accuracy = accuracy_container[0] if accuracy_container else 0.0
     _record_transcription_done(status, metrics_started, audio_seconds, len(transcript))
 
     if exception_container:
-        return ""
-    return transcript
+        return "", 0.0
+    return transcript, accuracy
 
 
-def transcribe(wav_bytes: bytes) -> str:
+def transcribe(wav_bytes: bytes) -> tuple[str, float]:
     """Transcribe audio bytes using Whisper.
 
     This is the public API used by the rest of the application.
     Internally delegates to ``transcribe_with_timeout`` to guard against hangs.
+
+    Returns (transcript_text, avg_logprob) where avg_logprob is Whisper's
+    per-segment confidence averaged across all segments (higher = more confident).
     """
     return transcribe_with_timeout(wav_bytes, timeout=TRANSCRIPTION_TIMEOUT)

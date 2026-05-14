@@ -159,7 +159,7 @@ def receive():
         try:
 
             _state['last_call_ts'] = time.time()
-            transcript = transcribe(wav_bytes)
+            transcript, accuracy = transcribe(wav_bytes)
             if not transcript.strip() and node != "pi5":
                 # Broadcastify-derived clips are the noisiest source and can flood
                 # the DB with empty rows during contention; drop empties early.
@@ -173,7 +173,7 @@ def receive():
             else:
                 coords_approx = 0
             print(f"[recv] {tag}: {transcript[:80]}", flush=True)
-            call_id = insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx)
+            call_id = insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx, accuracy)
             call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag, category=category,
                         transcript=transcript, lat=lat, lon=lon, location=location)
             recent = calls_since(ts - 15 * 60)
