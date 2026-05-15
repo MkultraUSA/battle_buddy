@@ -103,6 +103,7 @@ _backlog_lock = threading.Lock()
 _BACKLOG_MAX_ITEMS = 200
 _BACKLOG_SOFT_CAP = 50      # start dropping when queue exceeds this
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
+_backlog_completed: int = 0   # total completions across all workers
 
 
 def _should_backlog() -> bool:
@@ -336,6 +337,7 @@ def api_backlog_complete():
         call["llm"] = llm_analyze(call, recent)
         analyze_for_incident(call)
         post_to_talk(call)
+        _backlog_completed += 1
     except Exception as e:
         print(f"[backlog] error processing result: {e}", flush=True)
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -579,6 +581,13 @@ try:
                 )
                 g_backlog.add_metric([], float(_backlog_depth))
                 yield g_backlog
+
+                g_backlog_done = CounterMetricFamily(
+                    "battlebuddy_backlog_completed_total",
+                    "Total backlog items completed by remote workers (cumulative)",
+                )
+                g_backlog_done.add_metric([], float(_backlog_completed))
+                yield g_backlog_done
 
                 # --- transcript reliability / ASR quality metrics ---
                 _quality_windows = [
