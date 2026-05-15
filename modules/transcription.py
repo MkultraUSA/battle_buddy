@@ -221,7 +221,7 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
             f.write(wav_bytes)
             tmp = f.name
         try:
-            acquired = _fw_model_lock.acquire(timeout=20)
+            acquired = _fw_model_lock.acquire(timeout=TRANSCRIPTION_TIMEOUT)
             if not acquired:
                 print("[whisper] TIMEOUT waiting for model lock - dropping call", flush=True)
                 status_container.append("lock_timeout")
