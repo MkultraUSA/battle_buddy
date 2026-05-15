@@ -570,6 +570,16 @@ try:
                 g_calls.add_metric([], float(calls_24h))
                 yield g_calls
 
+                # --- backlog overflow metrics ---
+                with _backlog_lock:
+                    _backlog_depth = len(_backlog_queue)
+                g_backlog = GaugeMetricFamily(
+                    "battlebuddy_backlog_queue_depth",
+                    "Number of audio clips waiting in the backlog queue for remote workers (pie3)",
+                )
+                g_backlog.add_metric([], float(_backlog_depth))
+                yield g_backlog
+
                 # --- transcript reliability / ASR quality metrics ---
                 _quality_windows = [
                     ("15m", _now - (15 * 60)),
