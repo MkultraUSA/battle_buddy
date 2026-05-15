@@ -23,6 +23,8 @@ import ssl
 import threading
 import time
 import urllib.request
+import uuid
+from collections import deque
 
 import modules.space_weather as space_weather_mod
 import modules.weather as weather_mod
@@ -95,6 +97,12 @@ app.register_blueprint(public_bp)
 from modules.tips import tips_bp  # noqa: E402, I001
 app.register_blueprint(tips_bp)
 
+# --- Backlog queue for remote overflow workers (pie3) ---
+_backlog_queue: deque = deque()
+_backlog_lock = threading.Lock()
+_BACKLOG_MAX_ITEMS = 200
+_backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
+
 
 @app.route("/receive", methods=["POST"])
 def receive():
@@ -151,9 +159,23 @@ def receive():
     if not _process_sem.acquire(blocking=False):
         if is_broadcastify:
             _broadcastify_sem.release()
+        # Push to remote backlog queue instead of dropping
         src_label = "pi5" if node == "pi5" else "broadcastify"
-        print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_MAX_PROCESS_THREADS} active)", flush=True)
-        return jsonify({"status": "backlog_full"}), 202
+        with _backlog_lock:
+            if len(_backlog_queue) < _BACKLOG_MAX_ITEMS:
+                _backlog_queue.append({
+                    "id": uuid.uuid4().hex,
+                    "audio_b64": data["audio_b64"],
+                    "tgid": tgid,
+                    "tag": tag,
+                    "node": node,
+                    "duration": duration,
+                    "received_ts": ts,
+                })
+                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [{src_label}] — queued for remote worker ({len(_backlog_queue)} total)", flush=True)
+            else:
+                print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_BACKLOG_MAX_ITEMS})", flush=True)
+        return jsonify({"status": "backlogged"}), 202
 
     def process():
         try:
@@ -199,10 +221,88 @@ def receive():
 
 @app.route("/api/backlog/claim", methods=["POST"])
 def api_backlog_claim():
-    """Compatibility endpoint for external backlog workers.
-    Current pipeline is push-driven; no claimable backlog jobs are exposed.
-    """
-    return jsonify({"ok": True, "job": None, "status": "no_work"}), 200
+    """Claim a backlogged audio item for remote transcription (pie3 overflow)."""
+    data = request.get_json(force=True) or {}
+    token = (data.get("token") or request.headers.get("Authorization", "").replace("Bearer ", ""))
+    if _backlog_token and token != _backlog_token:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    with _backlog_lock:
+        if not _backlog_queue:
+            return jsonify({"ok": True, "item": None, "status": "no_work"}), 200
+        item = _backlog_queue.popleft()
+    return jsonify({"ok": True, "item": item, "status": "ok"}), 200
+
+
+@app.route("/api/backlog/complete", methods=["POST"])
+def api_backlog_complete():
+    """Receive transcription result from a remote backlog worker."""
+    data = request.get_json(force=True) or {}
+    token = (data.get("token") or request.headers.get("Authorization", "").replace("Bearer ", ""))
+    if _backlog_token and token != _backlog_token:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    item_id = data.get("item_id", "")
+    transcript = data.get("transcript", "")
+    action = data.get("action", "complete")
+    tgid = int(data.get("tgid", 0))
+    tag = data.get("tag", "backlog")
+    node = data.get("node", "pie3-backlog")
+    duration = float(data.get("duration", 0))
+    accuracy = float(data.get("accuracy", 0.0))
+
+    if action == "retry":
+        # Put back at end of queue
+        retry_audio = data.get("audio_b64", "")
+        if retry_audio:
+            with _backlog_lock:
+                _backlog_queue.append({
+                    "id": item_id,
+                    "audio_b64": retry_audio,
+                    "tgid": tgid,
+                    "tag": tag,
+                    "node": node,
+                    "duration": duration,
+                    "received_ts": time.time(),
+                })
+        return jsonify({"ok": True, "status": "requeued"}), 200
+
+    if not transcript.strip():
+        print(f"[backlog] empty transcript from worker for {tag} id={item_id}", flush=True)
+        return jsonify({"ok": True, "status": "empty"}), 200
+
+    # Process the transcription result just like a local call
+    meta = TGID_META.get(tgid, {})
+    def_lat = meta.get("lat")
+    def_lon = meta.get("lon")
+    location = None
+    coords_approx = 1
+    try:
+        lat, lon, loc = extract_location(transcript)
+        if lat is not None:
+            def_lat, def_lon = lat, lon
+            location = loc
+            coords_approx = 0
+    except Exception:
+        pass
+
+    ts = time.time()
+    print(f"[backlog] {tag}: {transcript[:80]}", flush=True)
+    try:
+        call_id = insert_call(ts, tgid, tag, meta.get("cat", "Unknown"), node,
+                              duration, transcript, def_lat, def_lon, location, coords_approx, accuracy)
+        call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag,
+                    category=meta.get("cat", "Unknown"),
+                    transcript=transcript, lat=def_lat, lon=def_lon, location=location)
+        recent = calls_since(ts - 15 * 60)
+        call["llm"] = llm_analyze(call, recent)
+        analyze_for_incident(call)
+        post_to_talk(call)
+    except Exception as e:
+        print(f"[backlog] error processing result: {e}", flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    return jsonify({"ok": True, "status": "processed"}), 200
 
 
 @app.route("/watchdog_event", methods=["POST"])
