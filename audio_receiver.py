@@ -154,8 +154,22 @@ def receive():
     # available for OP25 audio from the Pi.
     is_broadcastify = node != "pi5"
     if is_broadcastify and not _broadcastify_sem.acquire(blocking=False):
-        print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — broadcastify cap ({_BROADCASTIFY_MAX}) reached", flush=True)
-        return jsonify({"status": "backlog_full"}), 202
+        # Push to remote backlog queue instead of dropping
+        with _backlog_lock:
+            if len(_backlog_queue) < _BACKLOG_MAX_ITEMS:
+                _backlog_queue.append({
+                    "id": uuid.uuid4().hex,
+                    "audio_b64": data["audio_b64"],
+                    "tgid": tgid,
+                    "tag": tag,
+                    "node": node,
+                    "duration": duration,
+                    "received_ts": ts,
+                })
+                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [broadcastify] — cap reached, queued for remote ({len(_backlog_queue)} total)", flush=True)
+            else:
+                print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — backlog queue full ({_BACKLOG_MAX_ITEMS})", flush=True)
+        return jsonify({"status": "backlogged"}), 202
     if not _process_sem.acquire(blocking=False):
         if is_broadcastify:
             _broadcastify_sem.release()
