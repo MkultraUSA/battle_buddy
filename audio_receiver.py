@@ -101,7 +101,25 @@ app.register_blueprint(tips_bp)
 _backlog_queue: deque = deque()
 _backlog_lock = threading.Lock()
 _BACKLOG_MAX_ITEMS = 200
+_BACKLOG_SOFT_CAP = 50      # start dropping when queue exceeds this
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
+
+
+def _should_backlog() -> bool:
+    """Decide whether to queue a call or drop it, based on queue depth.
+
+    Adaptive throttling: when the backlog is shallow we accept everything;
+    as it deepens we drop increasingly aggressively so pie3 can catch up.
+    """
+    with _backlog_lock:
+        depth = len(_backlog_queue)
+    if depth <= 5:
+        return True                     # accept everything
+    if depth <= 20:
+        return __import__("random").random() > 0.3   # drop 30%
+    if depth <= _BACKLOG_SOFT_CAP:
+        return __import__("random").random() > 0.6   # drop 60%
+    return False                        # drop everything over soft cap
 
 
 @app.route("/receive", methods=["POST"])
@@ -154,7 +172,10 @@ def receive():
     # available for OP25 audio from the Pi.
     is_broadcastify = node != "pi5"
     if is_broadcastify and not _broadcastify_sem.acquire(blocking=False):
-        # Push to remote backlog queue instead of dropping
+        # Push to remote backlog queue (with adaptive throttling)
+        if not _should_backlog():
+            print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — backlog throttled", flush=True)
+            return jsonify({"status": "throttled"}), 202
         with _backlog_lock:
             if len(_backlog_queue) < _BACKLOG_MAX_ITEMS:
                 _backlog_queue.append({
@@ -173,8 +194,11 @@ def receive():
     if not _process_sem.acquire(blocking=False):
         if is_broadcastify:
             _broadcastify_sem.release()
-        # Push to remote backlog queue instead of dropping
+        # Push to remote backlog queue (with adaptive throttling)
         src_label = "pi5" if node == "pi5" else "broadcastify"
+        if not _should_backlog():
+            print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog throttled", flush=True)
+            return jsonify({"status": "throttled"}), 202
         with _backlog_lock:
             if len(_backlog_queue) < _BACKLOG_MAX_ITEMS:
                 _backlog_queue.append({
