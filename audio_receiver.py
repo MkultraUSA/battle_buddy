@@ -276,6 +276,7 @@ def api_backlog_claim():
 @app.route("/api/backlog/complete", methods=["POST"])
 def api_backlog_complete():
     """Receive transcription result from a remote backlog worker."""
+    global _backlog_completed
     data = request.get_json(force=True) or {}
     token = (data.get("token") or request.headers.get("Authorization", "").replace("Bearer ", ""))
     if _backlog_token and token != _backlog_token:
