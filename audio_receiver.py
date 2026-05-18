@@ -75,7 +75,8 @@ from modules.pi_watchdog import (  # noqa: E402
     _pi_command_queue,
     _pi_watchdog_alert,
 )
-from modules.pollers import *  # noqa: E402
+from modules.pollers import *
+from modules.pollers.impl.adsb_air_asset import ADSB_TRAIL_SECS  # noqa: E402
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
@@ -734,6 +735,29 @@ try:
                     yield _metric
 
                 # --- STT-stage observability from modules.transcription ---
+                # Add scrape sample counter (total number of metric collections)
+                g_scrape_counter = CounterMetricFamily(
+                    "battlebuddy_scrape_samples_total",
+                    "Total number of times Prometheus scraped metrics from this exporter",
+                )
+                g_scrape_counter.add_metric([], 1)
+                yield g_scrape_counter
+
+                # Compute error ratio: sum of non-success statuses / total requests
+                _error_counts = sum(
+                    _stt.get("totals", {}).get(status, 0)
+                    for status in ["empty", "timeout", "exception", "lock_timeout"]
+                )
+                _total_counts = sum(_stt.get("totals", {}).values()) - _stt.get("totals", {}).get("started", 0)
+                _error_ratio = (float(_error_counts) / float(_total_counts)) if _total_counts > 0 else 0.0
+                g_error_ratio = GaugeMetricFamily(
+                    "battlebuddy_transcription_error_ratio",
+                    "Ratio of transcription errors (empty, timeout, exception, lock_timeout) to total requests",
+                )
+                g_error_ratio.add_metric([], _error_ratio)
+                yield g_error_ratio
+
+                # --- existing STT metrics follow ---
                 _stt = get_transcription_observability(_now)
                 g_stt_in_progress = GaugeMetricFamily(
                     "battlebuddy_transcription_in_progress",
