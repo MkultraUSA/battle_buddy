@@ -23,6 +23,8 @@ import ssl
 import threading
 import time
 import urllib.request
+import uuid
+from collections import deque
 
 import modules.space_weather as space_weather_mod
 import modules.weather as weather_mod
@@ -74,14 +76,15 @@ from modules.pi_watchdog import (  # noqa: E402
     _pi_watchdog_alert,
 )
 from modules.pollers import *  # noqa: E402
+from modules.pollers.impl.adsb_air_asset import ADSB_TRAIL_SECS  # noqa: E402
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
 from modules.talkgroups import *  # noqa: E402
 from modules.transcription import *  # noqa: E402
 from modules.transcription import (  # noqa: E402
-    _BROADCASTIFY_MAX,
-    _MAX_PROCESS_THREADS,
+    _BROADCASTIFY_MAX,  # noqa: F401
+    _MAX_PROCESS_THREADS,  # noqa: F401
     _broadcastify_sem,
     _get_fw_model,
     _process_sem,
@@ -94,6 +97,31 @@ from modules.public import public_bp  # noqa: E402, I001
 app.register_blueprint(public_bp)
 from modules.tips import tips_bp  # noqa: E402, I001
 app.register_blueprint(tips_bp)
+
+# --- Backlog queue for remote overflow workers (pie3) ---
+_backlog_queue: deque = deque()
+_backlog_lock = threading.Lock()
+_BACKLOG_MAX_ITEMS = 200
+_BACKLOG_SOFT_CAP = 50      # start dropping when queue exceeds this
+_backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
+_backlog_completed: int = 0   # total completions across all workers
+
+
+def _should_backlog() -> bool:
+    """Decide whether to queue a call or drop it, based on queue depth.
+
+    Adaptive throttling: when the backlog is shallow we accept everything;
+    as it deepens we drop increasingly aggressively so pie3 can catch up.
+    """
+    with _backlog_lock:
+        depth = len(_backlog_queue)
+    if depth <= 5:
+        return True                     # accept everything
+    if depth <= 20:
+        return __import__("random").random() > 0.3   # drop 30%
+    if depth <= _BACKLOG_SOFT_CAP:
+        return __import__("random").random() > 0.6   # drop 60%
+    return False                        # drop everything over soft cap
 
 
 @app.route("/receive", methods=["POST"])
@@ -146,14 +174,48 @@ def receive():
     # available for OP25 audio from the Pi.
     is_broadcastify = node != "pi5"
     if is_broadcastify and not _broadcastify_sem.acquire(blocking=False):
-        print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — broadcastify cap ({_BROADCASTIFY_MAX}) reached", flush=True)
-        return jsonify({"status": "backlog_full"}), 202
+        # Push to remote backlog queue (with adaptive throttling)
+        if not _should_backlog():
+            print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — backlog throttled", flush=True)
+            return jsonify({"status": "throttled"}), 202
+        with _backlog_lock:
+            if len(_backlog_queue) < _BACKLOG_MAX_ITEMS:
+                _backlog_queue.append({
+                    "id": uuid.uuid4().hex,
+                    "audio_b64": data["audio_b64"],
+                    "tgid": tgid,
+                    "tag": tag,
+                    "node": node,
+                    "duration": duration,
+                    "received_ts": ts,
+                })
+                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [broadcastify] — cap reached, queued for remote ({len(_backlog_queue)} total)", flush=True)
+            else:
+                print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — backlog queue full ({_BACKLOG_MAX_ITEMS})", flush=True)
+        return jsonify({"status": "backlogged"}), 202
     if not _process_sem.acquire(blocking=False):
         if is_broadcastify:
             _broadcastify_sem.release()
+        # Push to remote backlog queue (with adaptive throttling)
         src_label = "pi5" if node == "pi5" else "broadcastify"
-        print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_MAX_PROCESS_THREADS} active)", flush=True)
-        return jsonify({"status": "backlog_full"}), 202
+        if not _should_backlog():
+            print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog throttled", flush=True)
+            return jsonify({"status": "throttled"}), 202
+        with _backlog_lock:
+            if len(_backlog_queue) < _BACKLOG_MAX_ITEMS:
+                _backlog_queue.append({
+                    "id": uuid.uuid4().hex,
+                    "audio_b64": data["audio_b64"],
+                    "tgid": tgid,
+                    "tag": tag,
+                    "node": node,
+                    "duration": duration,
+                    "received_ts": ts,
+                })
+                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [{src_label}] — queued for remote worker ({len(_backlog_queue)} total)", flush=True)
+            else:
+                print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_BACKLOG_MAX_ITEMS})", flush=True)
+        return jsonify({"status": "backlogged"}), 202
 
     def process():
         try:
@@ -199,10 +261,90 @@ def receive():
 
 @app.route("/api/backlog/claim", methods=["POST"])
 def api_backlog_claim():
-    """Compatibility endpoint for external backlog workers.
-    Current pipeline is push-driven; no claimable backlog jobs are exposed.
-    """
-    return jsonify({"ok": True, "job": None, "status": "no_work"}), 200
+    """Claim a backlogged audio item for remote transcription (pie3 overflow)."""
+    data = request.get_json(force=True) or {}
+    token = (data.get("token") or request.headers.get("Authorization", "").replace("Bearer ", ""))
+    if _backlog_token and token != _backlog_token:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    with _backlog_lock:
+        if not _backlog_queue:
+            return jsonify({"ok": True, "item": None, "status": "no_work"}), 200
+        item = _backlog_queue.popleft()
+    return jsonify({"ok": True, "item": item, "status": "ok"}), 200
+
+
+@app.route("/api/backlog/complete", methods=["POST"])
+def api_backlog_complete():
+    """Receive transcription result from a remote backlog worker."""
+    global _backlog_completed
+    data = request.get_json(force=True) or {}
+    token = (data.get("token") or request.headers.get("Authorization", "").replace("Bearer ", ""))
+    if _backlog_token and token != _backlog_token:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    item_id = data.get("item_id", "")
+    transcript = data.get("transcript", "")
+    action = data.get("action", "complete")
+    tgid = int(data.get("tgid", 0))
+    tag = data.get("tag", "backlog")
+    node = data.get("node", "pie3-backlog")
+    duration = float(data.get("duration", 0))
+    accuracy = float(data.get("accuracy", 0.0))
+
+    if action == "retry":
+        # Put back at end of queue
+        retry_audio = data.get("audio_b64", "")
+        if retry_audio:
+            with _backlog_lock:
+                _backlog_queue.append({
+                    "id": item_id,
+                    "audio_b64": retry_audio,
+                    "tgid": tgid,
+                    "tag": tag,
+                    "node": node,
+                    "duration": duration,
+                    "received_ts": time.time(),
+                })
+        return jsonify({"ok": True, "status": "requeued"}), 200
+
+    if not transcript.strip():
+        print(f"[backlog] empty transcript from worker for {tag} id={item_id}", flush=True)
+        return jsonify({"ok": True, "status": "empty"}), 200
+
+    # Process the transcription result just like a local call
+    meta = TGID_META.get(tgid, {})
+    def_lat = meta.get("lat")
+    def_lon = meta.get("lon")
+    location = None
+    coords_approx = 1
+    try:
+        lat, lon, loc = extract_location(transcript)
+        if lat is not None:
+            def_lat, def_lon = lat, lon
+            location = loc
+            coords_approx = 0
+    except Exception:
+        pass
+
+    ts = time.time()
+    print(f"[backlog] {tag}: {transcript[:80]}", flush=True)
+    try:
+        call_id = insert_call(ts, tgid, tag, meta.get("cat", "Unknown"), node,
+                              duration, transcript, def_lat, def_lon, location, coords_approx, accuracy)
+        call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag,
+                    category=meta.get("cat", "Unknown"),
+                    transcript=transcript, lat=def_lat, lon=def_lon, location=location)
+        recent = calls_since(ts - 15 * 60)
+        call["llm"] = llm_analyze(call, recent)
+        analyze_for_incident(call)
+        post_to_talk(call)
+        _backlog_completed += 1
+    except Exception as e:
+        print(f"[backlog] error processing result: {e}", flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    return jsonify({"ok": True, "status": "processed"}), 200
 
 
 @app.route("/watchdog_event", methods=["POST"])
@@ -432,6 +574,23 @@ try:
                 g_calls.add_metric([], float(calls_24h))
                 yield g_calls
 
+                # --- backlog overflow metrics ---
+                with _backlog_lock:
+                    _backlog_depth = len(_backlog_queue)
+                g_backlog = GaugeMetricFamily(
+                    "battlebuddy_backlog_queue_depth",
+                    "Number of audio clips waiting in the backlog queue for remote workers (pie3)",
+                )
+                g_backlog.add_metric([], float(_backlog_depth))
+                yield g_backlog
+
+                g_backlog_done = CounterMetricFamily(
+                    "battlebuddy_backlog_completed_total",
+                    "Total backlog items completed by remote workers (cumulative)",
+                )
+                g_backlog_done.add_metric([], float(_backlog_completed))
+                yield g_backlog_done
+
                 # --- transcript reliability / ASR quality metrics ---
                 _quality_windows = [
                     ("15m", _now - (15 * 60)),
@@ -576,6 +735,29 @@ try:
                     yield _metric
 
                 # --- STT-stage observability from modules.transcription ---
+                # Add scrape sample counter (total number of metric collections)
+                g_scrape_counter = CounterMetricFamily(
+                    "battlebuddy_scrape_samples_total",
+                    "Total number of times Prometheus scraped metrics from this exporter",
+                )
+                g_scrape_counter.add_metric([], 1)
+                yield g_scrape_counter
+
+                # Compute error ratio: sum of non-success statuses / total requests
+                _error_counts = sum(
+                    _stt.get("totals", {}).get(status, 0)
+                    for status in ["empty", "timeout", "exception", "lock_timeout"]
+                )
+                _total_counts = sum(_stt.get("totals", {}).values()) - _stt.get("totals", {}).get("started", 0)
+                _error_ratio = (float(_error_counts) / float(_total_counts)) if _total_counts > 0 else 0.0
+                g_error_ratio = GaugeMetricFamily(
+                    "battlebuddy_transcription_error_ratio",
+                    "Ratio of transcription errors (empty, timeout, exception, lock_timeout) to total requests",
+                )
+                g_error_ratio.add_metric([], _error_ratio)
+                yield g_error_ratio
+
+                # --- existing STT metrics follow ---
                 _stt = get_transcription_observability(_now)
                 g_stt_in_progress = GaugeMetricFamily(
                     "battlebuddy_transcription_in_progress",
