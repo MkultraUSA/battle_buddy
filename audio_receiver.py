@@ -75,8 +75,12 @@ from modules.pi_watchdog import (  # noqa: E402
     _pi_command_queue,
     _pi_watchdog_alert,
 )
+<<<<<<< HEAD
 from modules.pollers import *
 from modules.pollers.impl.adsb_air_asset import ADSB_TRAIL_SECS  # noqa: E402
+=======
+from modules.pollers import *  # noqa: E402
+>>>>>>> origin/main
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
