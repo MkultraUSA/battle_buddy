@@ -142,3 +142,4 @@ __marimo__/
 # Backups
 *.bak*
 bugs.md
+graphify-out/cache/
