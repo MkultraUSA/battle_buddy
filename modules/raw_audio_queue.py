@@ -5,7 +5,6 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-
 RAW_AUDIO_QUEUE_DIR = Path(
     os.environ.get("BB_RAW_AUDIO_QUEUE_DIR", "/opt/battlebuddy/raw_audio_queue")
 )

@@ -4,7 +4,6 @@ Run before starting the service to catch ImportError bugs that would otherwise
 cause silent runtime failures. Exit 1 if any import fails.
 """
 import sys
-import traceback
 
 FAILURES = []
 
