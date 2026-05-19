@@ -54,6 +54,7 @@ KNOWN_AIR_ASSETS = {
     "a064fb": ("APD Air Support (N1240W)", True),
     "a33eb6": ("STAR Flight 2 (N308TC)", False),
     "a3426d": ("STAR Flight 3 (N309TC)", False),
+    "a06653": ("APD Air (N125AP)", True),
 }
 
 

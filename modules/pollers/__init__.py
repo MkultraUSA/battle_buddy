@@ -54,3 +54,5 @@ from modules.pollers.impl.austin_events import AustinEventsPoller  # noqa: F401
 from modules.pollers.impl.reddit_intel import RedditIntelPoller  # noqa: F401
 from modules.pollers.impl.traffic_open_data import TrafficOpenDataPoller  # noqa: F401
 from modules.talk_post import post_to_talk  # noqa: F401
+from modules.alerts import send_dm_alert  # noqa: F401
+from modules.pollers.impl.adsb_air_asset import ADSB_TRAIL_SECS  # noqa: F401
