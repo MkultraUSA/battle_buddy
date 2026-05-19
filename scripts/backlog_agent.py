@@ -9,13 +9,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.transcription import transcribe  # noqa: E402
-
 
 BB_BASE_URL = os.environ.get("BB_BACKLOG_BASE_URL", "http://127.0.0.1:9001")
 BB_TOKEN = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
