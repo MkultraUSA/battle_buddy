@@ -1,0 +1,378 @@
+{
+  "/opt/data/battle_buddy/bb-query.py": {
+    "mtime": 1778511476.1488988,
+    "hash": "fce44e4cb87b23506f1e446500153c5e"
+  },
+  "/opt/data/battle_buddy/booking_poller.py": {
+    "mtime": 1778511476.1488988,
+    "hash": "88074b0a4375354ad9fe55bb4ba9d489"
+  },
+  "/opt/data/battle_buddy/schema.sql": {
+    "mtime": 1778511476.1578987,
+    "hash": "afe65854e7b634670ba7944cb3005054"
+  },
+  "/opt/data/battle_buddy/bb-data.py": {
+    "mtime": 1778511476.1488988,
+    "hash": "bf3f5748b6788c2fb5b5c02c65001ff4"
+  },
+  "/opt/data/battle_buddy/audio_receiver.py": {
+    "mtime": 1778636817.199594,
+    "hash": "e5e2d2c11d9d9a4bf2c856328aadfc81"
+  },
+  "/opt/data/battle_buddy/mine_locations.py": {
+    "mtime": 1778511476.1498988,
+    "hash": "b007fc833dd2e5e74ee507dcbb880dea"
+  },
+  "/opt/data/battle_buddy/github_poller.py": {
+    "mtime": 1778511476.1488988,
+    "hash": "4b817696e883613afb998534166ed08b"
+  },
+  "/opt/data/battle_buddy/stream_recorder.py": {
+    "mtime": 1778511476.1838987,
+    "hash": "57b6e88c4d58ece7c79b0155225cb1b9"
+  },
+  "/opt/data/battle_buddy/bb_detection_ci.py": {
+    "mtime": 1778511476.1488988,
+    "hash": "06ac6a6ea695de2d229df8753ec8d0fb"
+  },
+  "/opt/data/battle_buddy/modules/tips.py": {
+    "mtime": 1778511476.1578987,
+    "hash": "d32bb668c38ec31696848a03a4cdd300"
+  },
+  "/opt/data/battle_buddy/modules/premium.py": {
+    "mtime": 1778511476.1538987,
+    "hash": "315e6a242201219734215a0d1473343c"
+  },
+  "/opt/data/battle_buddy/modules/stripe_billing.py": {
+    "mtime": 1778511476.1568987,
+    "hash": "2d920e4b2d90dc88f6add639c494cb56"
+  },
+  "/opt/data/battle_buddy/modules/__init__.py": {
+    "mtime": 1778511476.1498988,
+    "hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "/opt/data/battle_buddy/modules/weather.py": {
+    "mtime": 1778511476.1578987,
+    "hash": "c48d2f9b257a5f940716e7c657f09811"
+  },
+  "/opt/data/battle_buddy/modules/talk_post.py": {
+    "mtime": 1778528311.767561,
+    "hash": "f6ced7359a09c9e1adc2e39fd2fa911f"
+  },
+  "/opt/data/battle_buddy/modules/atak.py": {
+    "mtime": 1778511476.1498988,
+    "hash": "1412427e4fae881d4668844097901154"
+  },
+  "/opt/data/battle_buddy/modules/space_weather.py": {
+    "mtime": 1778511476.154899,
+    "hash": "e6fe7e87ba5ee29efe6be884721cf21e"
+  },
+  "/opt/data/battle_buddy/modules/public.py": {
+    "mtime": 1778511476.154899,
+    "hash": "c8ef2a4e73e66b3def6d8a3e3b821327"
+  },
+  "/opt/data/battle_buddy/modules/audio_dedup.py": {
+    "mtime": 1778511476.1498988,
+    "hash": "8099a3e96ee9dee0139548eb38830340"
+  },
+  "/opt/data/battle_buddy/modules/pollers_legacy.py": {
+    "mtime": 1778637103.7838295,
+    "hash": "2d697a9a1a446894e948d881a9ded52f"
+  },
+  "/opt/data/battle_buddy/modules/talkgroups.py": {
+    "mtime": 1778511476.1568987,
+    "hash": "0ad549d5dafa90a6b1eb4cb8a83d59e5"
+  },
+  "/opt/data/battle_buddy/modules/database.py": {
+    "mtime": 1778511476.1498988,
+    "hash": "e5dff279905d448a9c4cbe35c1ddd395"
+  },
+  "/opt/data/battle_buddy/modules/llm.py": {
+    "mtime": 1778518272.3780775,
+    "hash": "9184f820a55cfdfbcc20dabdc47a1574"
+  },
+  "/opt/data/battle_buddy/modules/transcription.py": {
+    "mtime": 1778511476.1578987,
+    "hash": "dd6b14c33fd7edcc2ea16dbe12fc7a21"
+  },
+  "/opt/data/battle_buddy/modules/config.py": {
+    "mtime": 1778511476.1498988,
+    "hash": "cce806c4c6952d1aabd60b98c1b4053e"
+  },
+  "/opt/data/battle_buddy/modules/geocoding.py": {
+    "mtime": 1778511476.1508987,
+    "hash": "00f302d2ebfe895b2d8d56956aa83080"
+  },
+  "/opt/data/battle_buddy/modules/commute.py": {
+    "mtime": 1778511476.1498988,
+    "hash": "d13367c6c9a7c595602755a572a4b179"
+  },
+  "/opt/data/battle_buddy/modules/alerts.py": {
+    "mtime": 1778511476.1498988,
+    "hash": "d2aabb567c3cb98bb849ebce35673d39"
+  },
+  "/opt/data/battle_buddy/modules/pi_watchdog.py": {
+    "mtime": 1778511476.1508987,
+    "hash": "89b28e2dfef2d06dd063c565d1b847ac"
+  },
+  "/opt/data/battle_buddy/modules/talk.py": {
+    "mtime": 1778511476.1568987,
+    "hash": "c97dd6d23fe0351788e226ddaa368350"
+  },
+  "/opt/data/battle_buddy/modules/sitrep.py": {
+    "mtime": 1778511476.154899,
+    "hash": "2ee50c3241dbca64d1a02c55ccf9dba6"
+  },
+  "/opt/data/battle_buddy/modules/incident_engine.py": {
+    "mtime": 1778511476.1508987,
+    "hash": "e57b5467a52f2eccce5e1479da54099c"
+  },
+  "/opt/data/battle_buddy/modules/pollers/apd_news.py": {
+    "mtime": 1778511476.1508987,
+    "hash": "5040c01718f483429bf003e544853de5"
+  },
+  "/opt/data/battle_buddy/modules/pollers/__init__.py": {
+    "mtime": 1778528311.8635604,
+    "hash": "abb56868c67228f31808fc00356e5056"
+  },
+  "/opt/data/battle_buddy/modules/pollers/base.py": {
+    "mtime": 1778511476.1508987,
+    "hash": "57e255a575f0df9502868cc2a6af5623"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/apd_cad.py": {
+    "mtime": 1778511476.1508987,
+    "hash": "42b949d3f51df2de02faa18a3a12fb82"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/adsb_air_asset.py": {
+    "mtime": 1778636823.5895529,
+    "hash": "6cf8d3e6bb21ddfd933635521f20d382"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/reddit_intel.py": {
+    "mtime": 1778511476.1518989,
+    "hash": "7696d7274495dc9e95f29b73417127e5"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/austin_events.py": {
+    "mtime": 1778511476.1518989,
+    "hash": "e74f322bfd1ae723b2a36d26113def8f"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/apd_news.py": {
+    "mtime": 1778511476.1518989,
+    "hash": "a9a1636b7fe2f9a2d424851fda14034a"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/__init__.py": {
+    "mtime": 1778511476.1508987,
+    "hash": "4e8f607713746f3a7b7793346a03aac4"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/traffic_open_data.py": {
+    "mtime": 1778511476.1518989,
+    "hash": "dcc8a1a16419461ff21a30d07f9be6a3"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/atxfloods.py": {
+    "mtime": 1778511476.1518989,
+    "hash": "21f901ec152d75f27b18ccfa23b6b340"
+  },
+  "/opt/data/battle_buddy/modules/pollers/impl/afd_news.py": {
+    "mtime": 1778511476.1508987,
+    "hash": "48f685286ee0e60b03bb28de0a726a9c"
+  },
+  "/opt/data/battle_buddy/tests/test_traffic_open_data_poller.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "cbcf2bdc703766aa04a68c9dcb66230c"
+  },
+  "/opt/data/battle_buddy/tests/test_release_artifacts.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "bbc58d788defc43a042e6761ecbc8896"
+  },
+  "/opt/data/battle_buddy/tests/test_dm_alerts.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "75aa180cad2e270836caf096ad07e231"
+  },
+  "/opt/data/battle_buddy/tests/test_apd_cad_poller.py": {
+    "mtime": 1778511476.1838987,
+    "hash": "24f47baf86728be5922f8bd051344773"
+  },
+  "/opt/data/battle_buddy/tests/test_atxfloods_poller.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "2f18cdfe2f6f0a9e0837c06f29f0600b"
+  },
+  "/opt/data/battle_buddy/tests/test_austin_events_poller.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "480b6ea9571af3aaf086b3b913bff845"
+  },
+  "/opt/data/battle_buddy/tests/test_smoke.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "0ab80027cce97e0294dd0ff3629c71dc"
+  },
+  "/opt/data/battle_buddy/tests/test_pi_watchdog.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "eb7406a1ba5307cbf738ac649647f6bd"
+  },
+  "/opt/data/battle_buddy/tests/test_sitrep.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "72f5ccde56429ff86d243186b576f6ae"
+  },
+  "/opt/data/battle_buddy/tests/test_afd_open_data_poller.py": {
+    "mtime": 1778511476.1838987,
+    "hash": "98a9c6af9217ce49aeaec9a622b2be56"
+  },
+  "/opt/data/battle_buddy/tests/test_audio_dedup.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "ad825bd568841de88e61117bebfc3834"
+  },
+  "/opt/data/battle_buddy/tests/test_apd_poller.py": {
+    "mtime": 1778511476.1838987,
+    "hash": "90b8c8c2f65d6679ffc538de7e7c70c1"
+  },
+  "/opt/data/battle_buddy/tests/test_config.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "0c9ed588955ca5f642364020c44f31ac"
+  },
+  "/opt/data/battle_buddy/tests/test_reddit_intel_poller.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "313b87b1c015a06cb003a2297dad7540"
+  },
+  "/opt/data/battle_buddy/tests/test_adsb_air_asset_poller.py": {
+    "mtime": 1778511476.1838987,
+    "hash": "7711cb358b3e455bc9b7997ad74d041b"
+  },
+  "/opt/data/battle_buddy/tests/test_transcription_timeout.py": {
+    "mtime": 1778511476.1848986,
+    "hash": "397b85a92d3641886f730975b9677b74"
+  },
+  "/opt/data/battle_buddy/pi/groq_relay.py": {
+    "mtime": 1778511476.1578987,
+    "hash": "2a19f37422c06afaa32c6854cbd75077"
+  },
+  "/opt/data/battle_buddy/pi/collector.py": {
+    "mtime": 1778511476.1578987,
+    "hash": "10e71901d08b22dd4c8b6ccacfd20abd"
+  },
+  "/opt/data/battle_buddy/pi/call_recorder.py": {
+    "mtime": 1778511476.1578987,
+    "hash": "0aeb30ce38c243dae0c7aad08d359707"
+  },
+  "/opt/data/battle_buddy/migrations/001_initial_schema.sql": {
+    "mtime": 1778511476.1488988,
+    "hash": "0832707b131757faba358ac38231557d"
+  },
+  "/opt/data/battle_buddy/fixtures/sample_calls.sql": {
+    "mtime": 1778511476.1488988,
+    "hash": "4c4abf7b9c654f5da5d86293f743c3f0"
+  },
+  "/opt/data/battle_buddy/scripts/nightly_review.py": {
+    "mtime": 1778511476.1578987,
+    "hash": "8f2f89e934415ff6e20acbfe9e73ccfd"
+  },
+  "/opt/data/battle_buddy/requirements.txt": {
+    "mtime": 1778511476.1578987,
+    "hash": "78c8cb4811236f4461e40e6bbeaa1250"
+  },
+  "/opt/data/battle_buddy/README.md": {
+    "mtime": 1778511476.1468987,
+    "hash": "a0dfee0f29e7ad5c5b82bd0aaa7a0da4"
+  },
+  "/opt/data/battle_buddy/SECURITY.md": {
+    "mtime": 1778511476.1468987,
+    "hash": "1b8b17537a9b636abdcf0fc51738f4cd"
+  },
+  "/opt/data/battle_buddy/AGENTS.md": {
+    "mtime": 1778511570.7243106,
+    "hash": "da79aa9343cd2b362206f03762160abc"
+  },
+  "/opt/data/battle_buddy/INSTALL.md": {
+    "mtime": 1778511476.1468987,
+    "hash": "171ea035621f688a804009e97569e3aa"
+  },
+  "/opt/data/battle_buddy/TODO.md": {
+    "mtime": 1778511476.1468987,
+    "hash": "79808ed04db403357478fbc727e232fb"
+  },
+  "/opt/data/battle_buddy/requirements-dev.txt": {
+    "mtime": 1778511476.1578987,
+    "hash": "4c8de2a2382fe5b0a8d190ccdfedfa46"
+  },
+  "/opt/data/battle_buddy/CONTRIBUTING.md": {
+    "mtime": 1778511476.1468987,
+    "hash": "4259cc0c0d624f9171a5cd8ad5318bdc"
+  },
+  "/opt/data/battle_buddy/CHANGES.md": {
+    "mtime": 1778511476.1468987,
+    "hash": "d35f3a7031d3450821368729c3897133"
+  },
+  "/opt/data/battle_buddy/CHANGELOG.md": {
+    "mtime": 1778511476.1468987,
+    "hash": "6a421f4eba4d6fa39adff7fbce68b1be"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/README.md": {
+    "mtime": 1778511476.1578987,
+    "hash": "fced4b2604632a0ab9995a2232987173"
+  },
+  "/opt/data/battle_buddy/docs/api-security.md": {
+    "mtime": 1778511476.1488988,
+    "hash": "afc3f2cc23e0731e4c41b2e5bd010893"
+  },
+  "/opt/data/battle_buddy/docs/architecture.md": {
+    "mtime": 1778511476.1488988,
+    "hash": "cdc53812e3ffeef786ee4a3aa0bc9def"
+  },
+  "/opt/data/battle_buddy/docs/release-checklist.md": {
+    "mtime": 1778511476.1488988,
+    "hash": "458dc5aef3b859954f71af8c2ac01b26"
+  },
+  "/opt/data/battle_buddy/docs/testing.md": {
+    "mtime": 1778511476.1488988,
+    "hash": "1ceb8b8907a23302c3da7c741c889af9"
+  },
+  "/opt/data/battle_buddy/static/bgbattlebuddy.png": {
+    "mtime": 1778511476.1808987,
+    "hash": "85f05df456c08adf3cd7e3f4e3cf7ef3"
+  },
+  "/opt/data/battle_buddy/static/atak_screenshot.png": {
+    "mtime": 1778511476.1628988,
+    "hash": "fcc09bfad7ad5b612f2d08582802f32b"
+  },
+  "/opt/data/battle_buddy/static/nextcloud_ecosystem.png": {
+    "mtime": 1778511476.1838987,
+    "hash": "b7a1be1adbe06266316dfcee81cea21a"
+  },
+  "/opt/data/battle_buddy/static/tips/22c30a39cea54ceaa808aebdb3c4a1b2.png": {
+    "mtime": 1778511476.1838987,
+    "hash": "689716026b822943eb84095136e03568"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/police_light.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "75d4b26f49bb1c46bff96bef3819fb52"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/medical_helicopter.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "0c6110df63b10a57991a7254b0a134fb"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/accident.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "2342ecc6f0b95921b5249aa3a5e3446d"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/ems.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "57fae84aaa41e24d7f0233fa7782fda8"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/brush_fire.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "227b2e519456a3077431a70811350734"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/law_enforcement_air.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "7692ebb0f9df3a466b6fc1dec9cda7b7"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/law_enforcement.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "a0445d650ec7bebd3bdb04f0748a42ac"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/structure_fire.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "f63ad7b8be101a0275d704ef9cac3bab"
+  },
+  "/opt/data/battle_buddy/static/atak-icons/battle-buddy-response-icons/helicopter.png": {
+    "mtime": 1778511476.1588988,
+    "hash": "c2a13c7f44188aad17d4cb2013c7d9d4"
+  }
+}

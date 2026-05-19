@@ -468,7 +468,7 @@ from modules.atak import _atak_clear_marker, _atak_post_marker  # noqa: E402, F4
 
 
 def _create_incident(itype: str, desc: str, call: dict, ts: float):
-    from modules.pollers_legacy import create_deck_card, post_banner, send_dm_alert
+    from modules.alerts import create_deck_card, post_banner, send_dm_alert
     cat    = call.get("category", "Unknown")
     tgid   = call.get("tgid")
     agencies = json.dumps([cat])
@@ -537,7 +537,7 @@ def _update_incident(inc_id: int, call: dict, ts: float, desc: str, new_itype: s
 
 def incident_cleanup_thread():
     """Mark incidents as cleared when they've had no updates for their type's timeout."""
-    from modules.pollers_legacy import clear_banner
+    from modules.alerts import clear_banner
     while True:
         time.sleep(60)
         now = time.time()

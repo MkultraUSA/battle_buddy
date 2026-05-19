@@ -14,7 +14,6 @@ from modules.config import (
     OPENROUTER_API_BASE,
     OPENROUTER_API_KEY,
     OPENROUTER_ENABLED,
-    OPENROUTER_MODEL,
     OPENROUTER_MODEL_CACHE_SECS,
     OPENROUTER_RECOMMENDATIONS_URL,
     TALK_BASE,
@@ -40,36 +39,79 @@ _recommendations_cache: dict = {}
 _recommendations_cache_ts: float = 0.0
 _recommendations_lock = threading.Lock()
 
-# Models that are known to be unreliable even if they appear in the list
+# Models that are known to be unreliable even if they appear in the list.
+# Hard-deny only models PROVEN broken through repeated observation.
+# Everything else: let the runtime ban + health system handle it adaptively.
 _MODEL_DENYLIST = {
-    "openrouter/free",           # meta-router, unpredictable routing
-    "openrouter/owl-alpha",      # returns HTTP 200 with JSON error, not real 429
-    "minimax/minimax-m2.5:free", # claims supports_json but returns null content
+    "openrouter/free",                # meta-router, unpredictable routing
+    "minimax/minimax-m2.5:free",      # returns null content for JSON (proven repeatedly)
 }
 
-# ── Runtime denylist ────────────────────────────────────────────────────────
-# Models that were rate-limited (HTTP 429) get a temporary ban so the system
-# automatically rotates to the next-best model instead of hammering the same
-# rate-limited endpoint for 15 minutes.
+# ── Adaptive runtime bans with escalating backoff ───────────────────────────
+# Instead of a flat 5-min ban, each repeat offense DOUBLES the ban duration
+# (base 2 min, capped at 1 hour).  Offense counts reset after the model
+# works successfully for _HEALTH_GRACE_WINDOW seconds.
 # ────────────────────────────────────────────────────────────────────────────
-_runtime_bans: dict[str, float] = {}       # model_id → ban_until_ts
-_RUNTIME_BAN_SECS = 300                     # 5-minute cooldown after 429
+_runtime_bans: dict[str, float] = {}          # model_id → ban_until_ts
+_ban_offenses: dict[str, int] = {}            # model_id → consecutive offense count
+_BASE_BAN_SECS = 120                           # base: 2 minutes
+_MAX_BAN_SECS = 3600                           # cap: 1 hour
+_HEALTH_GRACE_WINDOW = 900                     # 15 min of good behavior resets offense count
+
+# ── Per-model health tracking ───────────────────────────────────────────────
+# Track recent success/fail to prefer models with better track records.
+# ────────────────────────────────────────────────────────────────────────────
+_model_health: dict[str, dict] = {}            # model_id → {"success": N, "fail": N, "last_success_ts": t}
+_HEALTH_MAX_SAMPLES = 20                       # sliding window of recent outcomes
+
+
+def _record_model_success(model_id: str) -> None:
+    """Record a successful call — resets offense count after grace window."""
+    h = _model_health.setdefault(model_id, {"success": 0, "fail": 0, "last_success_ts": 0.0})
+    h["success"] = min(h["success"] + 1, _HEALTH_MAX_SAMPLES)
+    h["last_success_ts"] = time.time()
+    # Reset offense count after sustained good behavior
+    if model_id in _ban_offenses:
+        if time.time() - (_runtime_bans.get(model_id, 0) + _HEALTH_GRACE_WINDOW) > 0:
+            del _ban_offenses[model_id]
+
+
+def _record_model_failure(model_id: str) -> None:
+    """Record a failed call."""
+    h = _model_health.setdefault(model_id, {"success": 0, "fail": 0, "last_success_ts": 0.0})
+    h["fail"] = min(h["fail"] + 1, _HEALTH_MAX_SAMPLES)
+
+
+def _model_success_ratio(model_id: str) -> float:
+    """Return 0.0–1.0 success ratio from recent health window, or 0.5 for unknown."""
+    h = _model_health.get(model_id)
+    if not h:
+        return 0.5
+    total = h["success"] + h["fail"]
+    return h["success"] / total if total > 0 else 0.5
 
 
 def _is_runtime_banned(model_id: str) -> bool:
-    """True if *model_id* is currently serving a 429 cool-down."""
+    """True if *model_id* is currently serving a cool-down."""
     now = time.time()
-    # Purge expired entries
     stale = [mid for mid, until in _runtime_bans.items() if now >= until]
     for mid in stale:
         del _runtime_bans[mid]
+        # Don't clear offense count on natural expiry — only on success
     return model_id in _runtime_bans
 
 
-def _runtime_ban_model(model_id: str) -> None:
-    """Ban *model_id* for _RUNTIME_BAN_SECS after a rate-limit."""
-    _runtime_bans[model_id] = time.time() + _RUNTIME_BAN_SECS
-    print(f"[llm] runtime-ban {model_id} for {_RUNTIME_BAN_SECS}s (rate limited)",
+def _runtime_ban_model(model_id: str, reason: str = "rate limited") -> None:
+    """Ban *model_id* with escalating duration.  Each repeat offense doubles the ban."""
+    offenses = _ban_offenses.get(model_id, 0) + 1
+    _ban_offenses[model_id] = offenses
+    duration = min(_BASE_BAN_SECS * (2 ** (offenses - 1)), _MAX_BAN_SECS)
+    if duration >= 600:
+        duration_str = f"{duration}s ({duration//60}min)"
+    else:
+        duration_str = f"{duration}s"
+    _runtime_bans[model_id] = time.time() + duration
+    print(f"[llm] runtime-ban {model_id} for {duration_str} (offense #{offenses}, reason: {reason})",
           flush=True)
 
 
@@ -103,25 +145,38 @@ def _fetch_recommendations() -> dict:
 def _pick_best_model(recommendations: dict) -> str | None:
     """Pick the best available free model from the recommendations list.
     Filters out denylisted models, runtime-banned models, and those with
-    status != 'online'.  Returns the model_id string or None if nothing
-    suitable found.
+    status != 'online'.  Among eligible models, prefers higher probe score
+    and better recent health (success ratio).
+    Returns the model_id string or None if nothing suitable found.
     """
     recs = recommendations.get("recommendations") or []
 
-    # Pass 1 — strict filtering (respect all bans)
+    # Gather all eligible models with their scores
+    eligible: list[tuple[float, str]] = []  # (composite_score, model_id)
     for rec in recs:
         model_id = rec.get("model_id") or ""
-        status = rec.get("status") or ""
         if model_id in _MODEL_DENYLIST:
             continue
         if _is_runtime_banned(model_id):
             continue
-        if status != "online":
+        if rec.get("status") != "online" and rec.get("status") != "catalog_only":
             continue
-        # Must support JSON output for our structured prompts
         if not rec.get("supports_json"):
             continue
-        return model_id
+        # Composite score: probe score (0-100) * health ratio + health bonus
+        probe_score = rec.get("score", 50)
+        health_ratio = _model_success_ratio(model_id)
+        # Weight: 70% probe score, 30% health (favors models that actually work)
+        composite = (probe_score * 0.7) + (health_ratio * 100 * 0.3)
+        eligible.append((composite, model_id))
+
+    if eligible:
+        eligible.sort(reverse=True)
+        best_score, best_model = eligible[0]
+        if len(eligible) > 1:
+            runners = ", ".join(f"{m}({s:.0f})" for s, m in eligible[:3])
+            print(f"[llm] model candidates: {runners}", flush=True)
+        return best_model
 
     # Pass 2 — all eligible models are runtime-banned; clear bans and retry
     if _runtime_bans:
@@ -132,7 +187,7 @@ def _pick_best_model(recommendations: dict) -> str | None:
             model_id = rec.get("model_id") or ""
             if model_id in _MODEL_DENYLIST:
                 continue
-            if rec.get("status") != "online":
+            if rec.get("status") not in ("online", "catalog_only"):
                 continue
             if not rec.get("supports_json"):
                 continue
@@ -144,15 +199,68 @@ def _pick_best_model(recommendations: dict) -> str | None:
 def _get_effective_model() -> str:
     """Pick the best available free model from the recommendations endpoint.
     Falls back to a hardcoded safe model if no recommendation is available.
-    owl-alpha is permanently denylisted (returns HTTP 200 error JSON)."""
-    SAFE_FALLBACK = "openai/gpt-oss-20b:free"
+    Now includes catalog_only models (not just online) since many valid
+    free models appear as catalog_only in the probe data.
+    """
     recs = _fetch_recommendations()
     model = _pick_best_model(recs)
     if model:
         print(f"[llm] auto-selected model: {model}", flush=True)
         return model
-    print(f"[llm] no suitable model found — falling back to {SAFE_FALLBACK}", flush=True)
+    # No model from recommendations — try to find any model that supports JSON
+    for rec in recs.get("recommendations") or []:
+        if rec.get("status") in ("online", "catalog_only") and rec.get("supports_json"):
+            mid = rec.get("model_id", "")
+            if mid not in _MODEL_DENYLIST and not _is_runtime_banned(mid):
+                print(f"[llm] fallback to JSON model: {mid}", flush=True)
+                return mid
+    # Absolute last resort: use a known free model even if it may not support JSON.
+    SAFE_FALLBACK = "openai/gpt-oss-20b:free"
+    print(f"[llm] no suitable JSON model found — falling back to {SAFE_FALLBACK}", flush=True)
     return SAFE_FALLBACK
+
+
+# ── Inter-call throttling for free models ───────────────────────────────────
+# Free models get rate-limited aggressively.  Track per-model call timing
+# and enforce a minimum interval that adapts based on recent 429s.
+# ────────────────────────────────────────────────────────────────────────────
+_last_call_time: dict[str, float] = {}          # model_id → timestamp of last call
+_inter_call_delay: dict[str, float] = {}        # model_id → current minimum delay (seconds)
+_BASE_FREE_DELAY = 2.0                           # minimum 2s between free-model calls
+_PENALTY_DELAY = 5.0                             # increased delay after 429
+_DELAY_DECAY = 0.9                               # decay factor per successful call
+_throttle_lock = threading.Lock()
+
+
+def _throttle_free_model(model_id: str) -> None:
+    """Sleep if needed to respect per-model inter-call delay for free models.
+    Only applies to models with ':free' in the name.
+    """
+    if ":free" not in model_id:
+        return
+    with _throttle_lock:
+        delay = _inter_call_delay.get(model_id, _BASE_FREE_DELAY)
+        last = _last_call_time.get(model_id, 0)
+        elapsed = time.time() - last
+        if elapsed < delay:
+            sleep_for = delay - elapsed
+            time.sleep(sleep_for)
+        _last_call_time[model_id] = time.time()
+
+
+def _adjust_throttle(model_id: str, success: bool) -> None:
+    """Adjust inter-call delay: increase on failure, decay on success."""
+    if ":free" not in model_id:
+        return
+    with _throttle_lock:
+        current = _inter_call_delay.get(model_id, _BASE_FREE_DELAY)
+        if success:
+            # Decay toward base delay
+            new_delay = max(_BASE_FREE_DELAY, current * _DELAY_DECAY)
+        else:
+            # Increase delay after 429 / failure
+            new_delay = min(current + _PENALTY_DELAY, 15.0)
+        _inter_call_delay[model_id] = new_delay
 
 
 
@@ -161,31 +269,34 @@ def _get_effective_model() -> str:
 # ---------------------------------------------------------------------------
 
 def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3) -> dict:
-    """Call OpenRouter chat/completions with exponential-backoff retry.
-    Re-selects the best model on each retry so that rate-limited models
-    are automatically rotated out via the runtime ban list.
+    """Call OpenRouter chat/completions with adaptive backoff retry.
+    Applies inter-call throttling for free models, records health outcomes
+    for model selection, and uses escalating runtime bans on failure.
     """
     last_exc = None
-    model = None          # set on first attempt, may change on retry
+    model = None
     for attempt in range(max_retries):
         model = _get_effective_model()
-        payload = json.dumps({
-            "model":           model,
-            "messages":        [
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_msg},
-            ],
-            "max_tokens":      300,
-            "temperature":     0.1,
-            "response_format": {"type": "json_object"},
-        }).encode()
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type":  "application/json",
-            "User-Agent":    "Mozilla/5.0",
-            "HTTP-Referer":  "https://battlebuddy.news",
-        }
+        # Throttle before calling — prevents hammering free models
+        _throttle_free_model(model)
+        success = False
         try:
+            payload = json.dumps({
+                "model":           model,
+                "messages":        [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_msg},
+                ],
+                "max_tokens":      300,
+                "temperature":     0.1,
+                "response_format": {"type": "json_object"},
+            }).encode()
+            headers = {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type":  "application/json",
+                "User-Agent":    "Mozilla/5.0",
+                "HTTP-Referer":  "https://battlebuddy.news",
+            }
             req = urllib.request.Request(
                 f"{OPENROUTER_API_BASE}/chat/completions",
                 data=payload,
@@ -199,18 +310,31 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
                 err_msg = err.get("message", str(err))
                 err_code = err.get("code", 0)
                 if err_code == 429 or "429" in str(err_msg) or "rate" in str(err_msg).lower():
-                    _runtime_ban_model(model)
+                    _runtime_ban_model(model, reason="HTTP 429")
+                    _record_model_failure(model)
+                    _adjust_throttle(model, False)
                     raise Exception(f"429 rate limit: {err_msg}")
                 raise Exception(f"API error ({err_code}): {err_msg}")
             content = data["choices"][0]["message"]["content"]
             if content is None:
-                _runtime_ban_model(model)
+                _runtime_ban_model(model, reason="null content")
+                _record_model_failure(model)
+                _adjust_throttle(model, False)
                 raise Exception(f"model returned null content (does not support JSON output): {model}")
-            return json.loads(content)
+            result = json.loads(content)
+            success = True
+            _record_model_success(model)
+            _adjust_throttle(model, True)
+            return result
         except Exception as exc:
             last_exc = exc
+            if not success:  # only record failure if we didn't already above
+                if "429" in str(exc) or "null content" in str(exc):
+                    pass  # already recorded in the specific handler
+                else:
+                    _record_model_failure(model)
+                    _adjust_throttle(model, False)
             if "429" in str(exc):
-                _runtime_ban_model(model)
                 wait = (2 ** attempt) * 5
                 print(f"[llm] 429 rate limited (attempt {attempt+1}/{max_retries}), waiting {wait}s", flush=True)
                 time.sleep(wait)
@@ -220,7 +344,7 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
                 time.sleep(wait)
             else:
                 raise
-    raise last_exc  # should not reach here, but just in case
+    raise last_exc
 
 
 # ---------------------------------------------------------------------------

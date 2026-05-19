@@ -48,64 +48,28 @@ urllib.request.install_opener(
 )
 
 # ---------------------------------------------------------------------------
-# Dynamic model selection from Libertas probe service
-# ---------------------------------------------------------------------------
-_RECOMMENDATIONS_URL = "https://hermes.libertas.mobi/free-model-status/recommendations.json"
-_MODEL_CACHE_TTL = 900
-_model_cache = {"model": None, "fetched_at": 0}
-
-def _get_recommended_model():
-    import json as _json
-    import time as _time
-    import urllib.request as _req
-
-    now = _time.time()
-    if _model_cache["model"] and (now - _model_cache["fetched_at"]) < _MODEL_CACHE_TTL:
-        return _model_cache["model"]
-
-    try:
-        r = _req.Request(_RECOMMENDATIONS_URL, headers={"User-Agent": "battlebuddy/1.0"})
-        with _req.urlopen(r, timeout=10) as resp:
-            data = _json.loads(resp.read())
-        for entry in data.get("recommendations", []):
-            if entry.get("status") != "online":
-                continue
-            if not entry.get("supports_tools"):
-                continue
-            if entry.get("score", 0) < 70:
-                continue
-            mid = entry.get("model_id", "")
-            if mid in {"meta-llama/llama-3.2-3b-instruct:free",
-                       "nousresearch/hermes-3-llama-3.1-405b:free",
-                       "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"}:
-                continue
-            _model_cache["model"] = mid
-            _model_cache["fetched_at"] = now
-            return mid
-    except Exception:
-        pass
-
-    return os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-flash")
-
 # LLM providers
 # ---------------------------------------------------------------------------
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = _get_recommended_model()
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-flash")
 OPENROUTER_ENABLED = bool(OPENROUTER_API_KEY)
 OPENROUTER_API_BASE = os.environ.get("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
 
-# OpenRouter free-model auto-switching
-# URL for machine-readable model status and recommendations (updated every 15 min)
+# Keep compatibility with newer llm.py while using fixed model selection
 OPENROUTER_RECOMMENDATIONS_URL = os.environ.get(
     "OPENROUTER_RECOMMENDATIONS_URL",
     "https://hermes.libertas.mobi/free-model-status/recommendations.json",
 )
-# How long to cache the recommendations before re-fetching (seconds)
 OPENROUTER_MODEL_CACHE_SECS = int(os.environ.get("OPENROUTER_MODEL_CACHE_SECS", "900"))
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_ENABLED = bool(ANTHROPIC_API_KEY) and (_anthropic is not None)
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_BASE = os.environ.get("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_ENABLED = bool(GROQ_API_KEY)
 
 # ---------------------------------------------------------------------------
 # Nextcloud / Talk / Deck
@@ -143,9 +107,6 @@ TALK_ROOMS = {
     "apd":       os.environ.get("TALK_ROOM_APD", ""),
     "fire-ems":  os.environ.get("TALK_ROOM_FIRE_EMS", ""),
     "general":   os.environ.get("TALK_ROOM_GENERAL", TALK_ROOM),
-    "war-room":  os.environ.get("TALK_ROOM_WAR_ROOM", os.environ.get("TALK_ROOM_WARMODE", "")),
-    "warmode":   os.environ.get("TALK_ROOM_WARMODE", os.environ.get("TALK_ROOM_WAR_ROOM", "")),
-    "bot-talk":  os.environ.get("TALK_ROOM_BOT_TALK", ""),
 }
 
 CATEGORY_ROOM = {

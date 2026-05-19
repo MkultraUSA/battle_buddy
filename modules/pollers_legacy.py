@@ -1,6 +1,6 @@
 import base64
 import json
-import os
+import os  # noqa: F401
 import re
 import sqlite3
 import threading
@@ -13,29 +13,29 @@ from zoneinfo import ZoneInfo
 from modules.alerts import send_dm_alert  # noqa: F401
 from modules.config import (
     DB_PATH,
-    DECK_BASE,
-    DECK_BOARD_ID,
-    DECK_LABELS,
-    DECK_STACK_NEW,
+    DECK_BASE,  # noqa: F401
+    DECK_BOARD_ID,  # noqa: F401
+    DECK_LABELS,  # noqa: F401
+    DECK_STACK_NEW,  # noqa: F401
     GOOGLE_CSE_API_KEY,
     GOOGLE_CSE_ID,
     PI_FETCH_ENABLED,
     PI_FETCH_TOKEN,
     PI_FETCH_URL,
     TALK_BASE,
-    TALK_ENABLED,
+    TALK_ENABLED,  # noqa: F401
     TALK_PASS,
     TALK_ROOMS,
     TALK_USER,
-    _room_for_call,
+    _room_for_call,  # noqa: F401
 )
-from modules.geocoding import _geocode_address
+from modules.geocoding import _geocode_address  # noqa: F401
 from modules.incident_engine import (
-    _active_incidents,
-    _atak_clear_marker,
-    _atak_post_marker,
+    _active_incidents,  # noqa: F401
+    _atak_clear_marker,  # noqa: F401
+    _atak_post_marker,  # noqa: F401
     _haversine_km,
-    _incident_lock,
+    _incident_lock,  # noqa: F401
 )
 from modules.pi_watchdog import (  # noqa: F401
     PI1_OP25_CMD_URL,
@@ -55,10 +55,10 @@ from modules.sitrep import build_sitrep  # noqa: F401
 from modules.talkgroups import (
     IGNORE_TGIDS,
     TGID_META,
-    detect_air_asset,
-    detect_dps_assets,
-    is_capitol_area,
-    mentions_dps,
+    detect_air_asset,  # noqa: F401
+    detect_dps_assets,  # noqa: F401
+    is_capitol_area,  # noqa: F401
+    mentions_dps,  # noqa: F401
 )
 
 _CDT = ZoneInfo("America/Chicago")
@@ -400,230 +400,6 @@ def _store_article_link(incident_id: int | None, ts: float, headline: str,
     conn.close()
 
 
-def apd_news_thread():
-    """Poll APD press release page for new homicide/shooting announcements."""
-    global _APD_NEWS_SEEN
-    print("[apd-news] APD press release poller started", flush=True)
-    while True:
-        time.sleep(APD_NEWS_INTERVAL)
-        try:
-            xml_text = _fetch_url_with_retry(
-                APD_NEWS_URL,
-                headers={"User-Agent": "BattleBuddy/2.0",
-                         "Accept": "application/rss+xml, application/xml, text/xml"},
-                timeout=15, label="apd-news",
-            ).decode("utf-8", errors="replace")
-        except Exception as e:
-            print(f"[apd-news] fetch error: {e}", flush=True)
-            continue
-
-        articles = _apd_parse_rss(xml_text)
-        # Dedup against DB — persistent across restarts
-        with _APD_NEWS_LOCK:
-            conn_d = sqlite3.connect(DB_PATH)
-            existing = {row[0] for row in conn_d.execute("SELECT url FROM apd_seen")}
-            new_articles = [a for a in articles if a["link"] not in existing]
-            if new_articles:
-                conn_d.executemany(
-                    "INSERT OR IGNORE INTO apd_seen (url, ts) VALUES (?,?)",
-                    [(a["link"], time.time()) for a in new_articles]
-                )
-                conn_d.commit()
-            conn_d.close()
-        for article in new_articles:
-            title = article["title"].lower()
-            if not any(kw in title for kw in _APD_HEADLINE_KW):
-                continue
-
-            print(f"[apd-news] NEW: {article['title']}", flush=True)
-            url     = _resolve_article_url(
-                article.get("source_url", ""), article["title"], article["link"]
-            )
-            detail  = _apd_fetch_article(url)
-            address = detail.get("address")
-            summary = detail.get("summary", article["title"])
-
-            lat, lon = None, None
-            if address:
-                coords = _geocode_address(address)
-                if coords:
-                    lat, lon = coords
-
-            # Determine itype from title
-            t = article["title"].lower()
-            if "homicide" in t or "murder" in t:
-                itype = "HOMICIDE"
-            elif "fatal" in t and any(w in t for w in ("crash","accident","hit","pedestrian","collision")):
-                itype = "FATAL CRASH"
-            elif "shooting" in t or " shot" in t:
-                itype = "SHOOTING"
-            elif "stab" in t:
-                itype = "STABBING"
-            elif "robbery" in t or "aggravated assault" in t:
-                itype = "WEAPONS"
-            elif "crash" in t or "collision" in t or "pedestrian" in t:
-                itype = "CRASH/COLLISION"
-            else:
-                itype = "SHOOTING"
-
-            pub_ts = article.get("pub_ts")
-            if not pub_ts:
-                print(f"[news] SKIP apd_pr (no pub_ts): {article['title']}", flush=True)
-                continue
-            if time.time() - pub_ts > _ARTICLE_MAX_AGE_SECS:
-                age_h = (time.time() - pub_ts) / 3600
-                print(f"[news] SKIP apd_pr (stale {age_h:.1f}h): {article['title']}", flush=True)
-                continue
-            ts   = pub_ts
-            desc = f"[APD Press Release] {article['title']}. {summary[:200]}"
-
-            # Try to match article to an existing radio-detected incident
-            matched_id, match_score = _match_article_to_incident(article["title"], itype, ts)
-
-            if matched_id:
-                # Article links to a radio incident — store the link and notify
-                _store_article_link(matched_id, ts, article["title"], url, "apd_pr",
-                                    summary[:300], match_score)
-                print(f"[apd-news] LINKED: '{article['title']}' → incident {matched_id} "
-                      f"(score={match_score:.1f})", flush=True)
-                loc_str = f" @ {address}" if address else ""
-                msg = (
-                    f"\U0001f4f0 [PRESS COVERAGE] Radio incident #{matched_id} now in the news\n"
-                    f"\U0001f4f0 {article['title']}\n"
-                    f"\U0001f517 {url}\n"
-                    f"\U0001f4cd{loc_str}"
-                )
-                payload = json.dumps({"message": msg}).encode()
-                creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-                headers = {"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
-                           "Content-Type": "application/json"}
-                for room in [TALK_ROOMS["apd"], TALK_ROOMS["incidents"]]:
-                    req2 = urllib.request.Request(
-                        f"{TALK_BASE}/chat/{room}",
-                        data=payload, headers=headers, method="POST"
-                    )
-                    try:
-                        urllib.request.urlopen(req2, timeout=10)
-                    except Exception as e:
-                        print(f"[apd-news] Talk post (match) failed: {e}", flush=True)
-            else:
-                # No radio match — create a new incident from the press release
-                conn = sqlite3.connect(DB_PATH)
-                cur  = conn.execute(
-                    "INSERT INTO incidents (ts_start, ts_updated, itype, description, agencies, "
-                    "tgids, location, lat, lon, article_url, status) VALUES (?,?,?,?,?,?,?,?,?,?,'active')",
-                    (ts, ts, itype, desc, '["APD"]', '[]',
-                     address, lat, lon, url)
-                )
-                inc_id = cur.lastrowid
-                conn.commit()
-                conn.close()
-                _store_article_link(inc_id, ts, article["title"], url, "apd_pr",
-                                    summary[:300], 0.0)
-                loc_str  = f" @ {address}" if address else ""
-                msg = (
-                    f"\U0001f6a8 [APD PRESS RELEASE] {article['title']}\n"
-                    f"\U0001f517 {url}\n"
-                    f"\U0001f4cd{loc_str}\n"
-                    f"{summary[:300]}"
-                )
-                payload = json.dumps({"message": msg}).encode()
-                creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-                headers = {"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
-                           "Content-Type": "application/json"}
-                for room in [TALK_ROOMS["apd"], TALK_ROOMS["incidents"]]:
-                    req2 = urllib.request.Request(
-                        f"{TALK_BASE}/chat/{room}",
-                        data=payload, headers=headers, method="POST"
-                    )
-                    try:
-                        urllib.request.urlopen(req2, timeout=10)
-                    except Exception as e:
-                        print(f"[apd-news] Talk post failed: {e}", flush=True)
-                threading.Thread(
-                    target=send_dm_alert,
-                    args=(itype, desc, address, "APD", "APD"),
-                    daemon=True
-                ).start()
-                if lat is not None and lon is not None:
-                    threading.Thread(
-                        target=_atak_post_marker,
-                        args=(inc_id, lat, lon, itype, address, desc),
-                        daemon=True
-                    ).start()
-
-        # --- Traffic/crash news — link to existing radio incidents only -------
-        try:
-            treq = urllib.request.Request(
-                TRAFFIC_NEWS_URL,
-                headers={"User-Agent": "BattleBuddy/2.0",
-                         "Accept": "application/rss+xml, application/xml, text/xml"}
-            )
-            txml_text = urllib.request.urlopen(treq, timeout=15).read().decode("utf-8", errors="replace")
-        except Exception as e:
-            print(f"[traffic-news] fetch error: {e}", flush=True)
-            txml_text = None
-
-        if txml_text:
-            tarticles = _apd_parse_rss(txml_text)
-            with _APD_NEWS_LOCK:
-                conn_t = sqlite3.connect(DB_PATH)
-                t_existing = {row[0] for row in conn_t.execute("SELECT url FROM apd_seen")}
-                t_new = [a for a in tarticles if a["link"] not in t_existing]
-                if t_new:
-                    conn_t.executemany(
-                        "INSERT OR IGNORE INTO apd_seen (url, ts) VALUES (?,?)",
-                        [(a["link"], time.time()) for a in t_new]
-                    )
-                    conn_t.commit()
-                conn_t.close()
-            for ta in t_new:
-                ttitle = ta["title"].lower()
-                if not any(kw in ttitle for kw in
-                           ("fatal", "killed", "pedestrian", "hit-and-run", "deadly")):
-                    continue
-                turl = _resolve_article_url(
-                    ta.get("source_url", ""), ta["title"], ta["link"])
-                art_itype = "FATAL CRASH" if any(
-                    w in ttitle for w in ("fatal","killed","dead","deadly")) else "CRASH/COLLISION"
-                tts = ta.get("pub_ts")
-                if not tts:
-                    print(f"[news] SKIP traffic-news (no pub_ts): {ta['title']}", flush=True)
-                    continue
-                if time.time() - tts > _ARTICLE_MAX_AGE_SECS:
-                    age_h = (time.time() - tts) / 3600
-                    print(f"[news] SKIP traffic-news (stale {age_h:.1f}h): {ta['title']}", flush=True)
-                    continue
-                t_inc_id, t_score = _match_article_to_incident(ta["title"], art_itype, tts)
-                if t_inc_id:
-                    t_detail  = _apd_fetch_article(turl)
-                    t_snippet = t_detail.get("summary", "")
-                    t_address = t_detail.get("address")
-                    if t_address:
-                        t_coords = _geocode_address(t_address)
-                        if t_coords:
-                            conn_ta = sqlite3.connect(DB_PATH)
-                            conn_ta.execute(
-                                "UPDATE incidents SET location=?, lat=?, lon=? "
-                                "WHERE id=? AND (location IS NULL OR location='')",
-                                (t_address, t_coords[0], t_coords[1], t_inc_id)
-                            )
-                            conn_ta.commit()
-                            conn_ta.close()
-                    _store_article_link(t_inc_id, tts, ta["title"], turl,
-                                        "traffic-news", t_snippet, t_score)
-                    print(f"[traffic-news] LINKED: '{ta['title']}' → "
-                          f"incident {t_inc_id} (score={t_score:.1f})"
-                          f"{f' addr={t_address}' if t_address else ''}", flush=True)
-
-
-# ---------------------------------------------------------------------------
-# ADS-B air asset tracker — adsb.lol (no rate limit, 30s poll)
-# Detects helicopters and law enforcement aircraft over Austin
-# Stores 30-min position trails in aircraft_positions table
-# ---------------------------------------------------------------------------
-
-# adsb.lol /v2/lat/{lat}/lon/{lon}/dist/{nm} — aircraft within dist nautical miles
 _ADSB_LOL_URL    = "https://api.adsb.lol/v2/lat/30.2672/lon/-97.7431/dist/52"
 ADSB_INTERVAL    = 30    # poll every 30 seconds
 ADSB_MAX_ALT_FT  = 5000  # only track aircraft below 5,000 ft AGL
@@ -899,23 +675,6 @@ def _reddit_tip_recheck(db_path):
 
 
 
-def reddit_intel_thread():
-    """Deprecated compatibility wrapper for the extracted Reddit intel poller."""
-    import warnings
-
-    from modules.pollers.impl.reddit_intel import RedditIntelPoller
-
-    warnings.warn(
-        "reddit_intel_thread() is deprecated; use RedditIntelPoller().start() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    poller = RedditIntelPoller()
-    poller.start()
-    while not poller.stop_event.is_set():
-        time.sleep(60)
-
-
 _adsb_lock       = threading.Lock()
 
 
@@ -962,39 +721,6 @@ def _adsb_check_orbit(icao24: str, now: float) -> bool:
     return span >= 180
 
 
-
-def adsb_air_asset_thread():
-    """Deprecated compatibility wrapper for the extracted ADS-B air asset poller."""
-    import warnings
-
-    from modules.pollers.impl.adsb_air_asset import ADSBAirAssetPoller
-
-    warnings.warn(
-        "adsb_air_asset_thread() is deprecated; use ADSBAirAssetPoller().start() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    poller = ADSBAirAssetPoller()
-    poller.start()
-    while not poller.stop_event.is_set():
-        time.sleep(60)
-
-# ---------------------------------------------------------------------------
-# AFD Open Data poller — MOVED to modules/pollers/impl/afd_news.py
-# ---------------------------------------------------------------------------
-# afd_open_data_thread() and all helpers (_afd_post_to_talk, _afd_issue_to_itype,
-# _afd_active_ids, _afd_lock, AFD_OPEN_DATA_URL, AFD_POLL_INTERVAL, _AFD_ITYPE_MAP)
-# have been refactored into the AFDOpenDataPoller BasePoller subclass.
-#
-# Use:  from modules.pollers.impl.afd_news import AFDOpenDataPoller
-#       AFDOpenDataPoller().start()
-#
-# A backward-compatible afd_open_data_thread() shim is available in
-# modules/pollers/__init__.py for callers that have not yet been updated.
-# ---------------------------------------------------------------------------
-
-# Austin Open Data — Real-Time Traffic Incidents poller
-# ---------------------------------------------------------------------------
 
 TRAFFIC_OPEN_DATA_URL = (
     "https://data.austintexas.gov/resource/dx9v-zd7x.json"
@@ -1076,90 +802,6 @@ def _traffic_post_to_talk(incident: dict, itype: str, matched_bb_id: int | None)
         print(f"[traffic] Talk post failed: {e}", flush=True)
 
 
-def traffic_open_data_thread():
-    """Poll Austin Open Data for active traffic incidents and cross-reference with scanner."""
-    print("[traffic] Traffic Open Data poller started", flush=True)
-    while True:
-        time.sleep(TRAFFIC_POLL_INTERVAL)
-        try:
-            raw = _fetch_url_with_retry(
-                TRAFFIC_OPEN_DATA_URL,
-                headers={"Accept": "application/json"},
-                timeout=15, label="traffic",
-            )
-            incidents = json.loads(raw)
-        except Exception as e:
-            print(f"[traffic] fetch error: {e}", flush=True)
-            continue
-
-        with _traffic_lock:
-            current_ids = {inc["traffic_report_id"] for inc in incidents}
-
-            # Detect incidents that just went ARCHIVED (were active, now gone)
-            cleared = set(_traffic_active_ids.keys()) - current_ids
-            for rid in cleared:
-                old = _traffic_active_ids.pop(rid)
-                print(f"[traffic] CLEARED: {old.get('issue_reported')} @ {old.get('address')}", flush=True)
-                t_mid = old.get("atak_marker_id")
-                if t_mid is not None:
-                    threading.Thread(target=_atak_clear_marker, args=(t_mid,), daemon=True).start()
-
-            # Process new active incidents
-            for inc in incidents:
-                rid = inc["traffic_report_id"]
-                if rid in _traffic_active_ids:
-                    continue  # already processed
-
-                _traffic_active_ids[rid] = inc
-                itype   = _traffic_issue_to_itype(inc.get("issue_reported", ""))
-                lat     = float(inc["latitude"])  if inc.get("latitude")  else None
-                lon     = float(inc["longitude"]) if inc.get("longitude") else None
-                address = inc.get("address", "")
-
-                if lat is None or lon is None:
-                    print(f"[traffic] skipping (no coords): {inc.get('issue_reported')} @ {address}", flush=True)
-                    continue
-
-                # Cross-reference against active scanner incidents
-                matched_id = None
-                with _incident_lock:
-                    for iid, bb_inc in _active_incidents.items():
-                        blat = bb_inc.get("lat")
-                        blon = bb_inc.get("lon")
-                        if blat is None or blon is None:
-                            continue
-                        if _haversine_km(lat, lon, blat, blon) < 0.5:
-                            matched_id = iid
-                            break
-
-                print(f"[traffic] NEW {'(matched #'+str(matched_id)+')' if matched_id else '(unmatched)'}: "
-                      f"{inc.get('issue_reported')} @ {address}", flush=True)
-
-                # Post to Talk for significant types or scanner cross-references
-                if itype in _TRAFFIC_TALK_ITYPES or matched_id is not None:
-                    threading.Thread(
-                        target=_traffic_post_to_talk,
-                        args=(inc, itype, matched_id),
-                        daemon=True
-                    ).start()
-
-                # ATAK marker for all unmatched incidents
-                # Offset range -(100001..200000) avoids collision with AFD range -(0..99999)
-                if matched_id is None:
-                    t_marker_id = -(abs(hash(rid)) % 100000) - 100001
-                    _traffic_active_ids[rid]["atak_marker_id"] = t_marker_id
-                    threading.Thread(
-                        target=_atak_post_marker,
-                        args=(t_marker_id, lat, lon, itype, address),
-                        daemon=True
-                    ).start()
-
-
-
-# ---------------------------------------------------------------------------
-# ATXFloods — Low-water-crossing closures poller (api.atxfloods.com)
-# ---------------------------------------------------------------------------
-
 ATXFLOODS_URL = "https://api.atxfloods.com/api/crossings"
 ATXFLOODS_POLL_INTERVAL = 300  # 5 minutes
 
@@ -1198,87 +840,6 @@ def _atxfloods_post_to_talk(crossing: dict, new_status: str, old_status):
     except Exception as e:
         print(f"[atxfloods] Talk post failed: {e}", flush=True)
 
-
-def atxfloods_thread():
-    """Poll ATXFloods and alert on state transitions (first sighting silent)."""
-    print("[atxfloods] ATXFloods poller started", flush=True)
-    while True:
-        try:
-            raw = _fetch_url_with_retry(
-                ATXFLOODS_URL,
-                headers={"Accept": "application/json"},
-                timeout=20, label="atxfloods",
-            )
-            payload = json.loads(raw)
-        except Exception as e:
-            print(f"[atxfloods] fetch error: {e}", flush=True)
-            time.sleep(ATXFLOODS_POLL_INTERVAL)
-            continue
-
-        crossings = payload.get("attributes", []) if isinstance(payload, dict) else []
-        if not crossings:
-            print("[atxfloods] empty response", flush=True)
-            time.sleep(ATXFLOODS_POLL_INTERVAL)
-            continue
-
-        transitions = 0
-        with _atxfloods_lock:
-            for c in crossings:
-                try:
-                    cid = int(c["id"])
-                except (KeyError, ValueError, TypeError):
-                    continue
-                status = (c.get("status") or "").lower()
-                if status not in ("open", "closed", "caution"):
-                    continue
-
-                prev = _atxfloods_state.get(cid)
-                if prev is None:
-                    # First sighting — seed state silently, no alert, no marker
-                    _atxfloods_state[cid] = {"status": status, "marker_id": None}
-                    continue
-                if prev["status"] == status:
-                    continue
-
-                old_status = prev["status"]
-                prev["status"] = status
-                transitions += 1
-                _atxfloods_post_to_talk(c, status, old_status)
-
-                try:
-                    lat = float(c["lat"]); lon = float(c["lon"])  # noqa: E702
-                except (KeyError, ValueError, TypeError):
-                    lat = lon = None
-
-                if status == "open" and prev.get("marker_id") is not None:
-                    threading.Thread(target=_atak_clear_marker,
-                                     args=(prev["marker_id"],), daemon=True).start()
-                    prev["marker_id"] = None
-                elif status in ("closed", "caution") and lat is not None and lon is not None:
-                    marker_id = -(abs(cid) % 100000) - 200001
-                    prev["marker_id"] = marker_id
-                    label = f"{c.get('name','')} {c.get('address','')}".strip()
-                    threading.Thread(
-                        target=_atak_post_marker,
-                        args=(marker_id, lat, lon, "FLOODING", label),
-                        daemon=True,
-                    ).start()
-
-        if transitions:
-            print(f"[atxfloods] {transitions} state transition(s) this cycle", flush=True)
-        time.sleep(ATXFLOODS_POLL_INTERVAL)
-
-
-
-
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# Austin major events — weekly "this week in Austin" digest
-# ---------------------------------------------------------------------------
-# Reads /opt/battlebuddy/austin_major_events.json and posts a summary to the
-# incidents Talk room when events are within 7 days. File is re-read every
-# poll cycle — edits take effect without a service restart.
-# ---------------------------------------------------------------------------
 
 AUSTIN_EVENTS_JSON   = "/opt/battlebuddy/austin_major_events.json"
 AUSTIN_EVENTS_STATE  = "/opt/battlebuddy/austin_events_state.json"
@@ -1363,70 +924,6 @@ def _austin_events_post_to_talk(msg):
     except Exception as e:
         print(f"[events] Talk post failed: {e}", flush=True)
 
-
-def austin_events_thread():
-    """Post a 'this week in Austin' digest when the 7-day window changes
-    or when >=7 days have passed since the last post."""
-    print("[events] Austin major events poller started", flush=True)
-    try:
-        import zoneinfo
-        austin_tz = zoneinfo.ZoneInfo("America/Chicago")
-    except Exception:
-        austin_tz = None
-    from datetime import date as _date
-    from datetime import datetime as _dt
-    while True:
-        try:
-            now_austin = _dt.now(austin_tz) if austin_tz else _dt.now()
-            today = now_austin.date()
-            doc = _austin_events_load()
-            events = _austin_events_upcoming(doc, today)
-            state = _austin_events_state_load()
-            current_ids = [e.get("id") for e in events]
-            last_date_s = state.get("last_post_date")
-            last_ids    = state.get("last_event_ids", [])
-            days_since = None
-            if last_date_s:
-                try:
-                    days_since = (today - _date.fromisoformat(last_date_s)).days
-                except Exception:
-                    days_since = None
-
-            should_post = False
-            reason = None
-            if events and current_ids != last_ids:
-                should_post = True
-                reason = "event list changed"
-            elif events and (days_since is None or days_since >= 7):
-                should_post = True
-                reason = "weekly cadence"
-
-            if should_post:
-                msg = _austin_events_format(events, today)
-                if msg:
-                    _austin_events_post_to_talk(msg)
-                    _austin_events_state_save({
-                        "last_post_date": today.isoformat(),
-                        "last_event_ids": current_ids,
-                    })
-                    print(f"[events] posted ({reason}): {len(events)} events", flush=True)
-            else:
-                print(f"[events] quiet: {len(events)} events in window, "
-                      f"last posted {last_date_s} ({days_since}d ago)", flush=True)
-        except Exception as e:
-            print(f"[events] cycle error: {e}", flush=True)
-        time.sleep(AUSTIN_EVENTS_POLL)
-
-
-# ---------------------------------------------------------------------------
-# Austin PD CAD — Retrospective enrichment poller
-# ---------------------------------------------------------------------------
-# Polls the APD Computer Aided Dispatch open data feed (~2 week lag) and
-# cross-references it against scanner incidents to:
-#   1. Enrich incidents with CAD final description, mental health flag,
-#      disposition, sector, and council district
-#   2. Harvest TGID→sector hints for unknown talkgroup identification
-# ---------------------------------------------------------------------------
 
 APD_CAD_URL = (
     "https://data.austintexas.gov/resource/22de-7rzg.json"
@@ -1730,244 +1227,14 @@ def _cad_match_and_harvest():
           f"{harvested_hints} TGID hints harvested", flush=True)
 
 
-def apd_cad_thread():
-    """Retrospective CAD enrichment — poll every 6 hours, match and harvest."""
-    print("[cad] APD CAD enrichment poller started", flush=True)
-    _cad_init_db()
-    while True:
-        _cad_fetch_and_store()
-        _cad_match_and_harvest()
-        time.sleep(APD_CAD_POLL_INTERVAL)
+
+BANNER_INCIDENT_TYPES = [
+    "structure fire", "mass casualty", "hostage", "barricade", "10-99",
+    "homicide", "body found", "found dead", "death investigation", "medical examiner"]
 
 
-
-
-# Unit/callsign patterns common in P25 traffic
-_UNIT_PATTERNS = [
-    re.compile(r'\b((?:engine|truck|medic|rescue|battalion|squad|ladder|unit)\s+\d{1,3})\b', re.I),
-    re.compile(r'\b([A-Z][a-z]+\s+\d{1,3})\b'),          # Adam 21, Baker 45
-    re.compile(r'\b([A-Z]-?\d{2,3})\b'),                  # A-21, B45
-    re.compile(r'\bunit[s]?\s+(\d{1,4})\b', re.I),
-]
-
-_HIGH_PRIORITY = {
-    "OFFICER DOWN", "SHOOTING", "STABBING", "AIRCRAFT EMERGENCY",
-    "MASS CASUALTY", "STRUCTURE FIRE", "HOSTAGE/BARRICADE",
-}
-_MED_PRIORITY = {
-    "CRASH/COLLISION", "HAZMAT", "FIRE DISPATCH",
-    "MULTI-AGENCY RESPONSE", "APD SURGE", "TRANSIT INCIDENT", "AIRPORT EMERGENCY",
-}
-_HIGH_KW = ["officer down", "shots fired", "shooting", "stabbing",
-            "structure fire", "mass casualty", "hostage", "barricade", "10-99",
-            "homicide", "body found", "found dead", "death investigation", "medical examiner"]
-_MED_KW  = ["crash", "collision", "hazmat", "fire", "rollover", "working fire"]
-
-
-def _extract_units(transcript: str) -> list[str]:
-    found, seen = [], set()
-    for pat in _UNIT_PATTERNS:
-        for m in pat.finditer(transcript):
-            unit = m.group(1).strip()
-            key  = unit.lower()
-            if key not in seen:
-                seen.add(key)
-                found.append(unit)
-    return found[:6]
-
-
-def post_to_talk(call: dict):
-    if not TALK_ENABLED:
-        return
-
-    ts         = datetime.fromtimestamp(call["ts"]).strftime("%H:%M")
-    tag        = call.get("tag") or f"TGID {call.get('tgid')}"
-    cat        = call.get("category", "Unknown")
-    loc        = f" @ {call['location']}" if call.get("location") else ""
-    transcript = call.get("transcript") or "(no transcript)"
-    tgid       = call.get("tgid")
-    text_lower = transcript.lower()
-
-    # Only post to Talk for genuinely high-danger calls — officer down, shots fired, etc.
-    # Incident-level alerts are handled by send_dm_alert when an incident is created.
-    # This prevents routine chatter from flooding the Talk room.
-    llm_pri_early = (call.get("llm") or {}).get("priority", "NONE")
-    has_high_kw = any(k in text_lower for k in _HIGH_KW)
-    if llm_pri_early != "HIGH" and not has_high_kw:
-        return
-
-    # --- Incident linkage ---
-    incident_line = ""
-    matched_itype = None
-    with _incident_lock:
-        for inc in _active_incidents.values():
-            if tgid in inc.get("tgids", set()) or cat in inc.get("agencies", set()):
-                age = int((time.time() - inc["ts_updated"]) / 60)
-                matched_itype = inc["itype"]  # noqa: F841
-                incident_line = f"\n⚡ INCIDENT: {inc['itype']} — active {age}m"
-                break
-
-    # All calls reaching this point are high-priority by definition (gated above)
-    priority = "🔴"
-
-    # --- Unit extraction ---
-    units = _extract_units(transcript)
-    units_line = f"\nUnits: {', '.join(units)}" if units else ""
-
-    # --- Air asset context ---
-    air_line = ""
-    air_context = detect_air_asset(tgid, transcript, cat)
-    if air_context:
-        air_line = f"\n🚁 AIR: {air_context}"
-
-    # --- DPS asset/Capitol context ---
-    dps_line = ""
-    if cat == "DPS" or mentions_dps(transcript):
-        assets = detect_dps_assets(transcript)
-        capitol = is_capitol_area(transcript, call.get("location"))
-        parts = []
-        if assets:
-            parts.append(", ".join(assets))
-        if capitol:
-            parts.append("Capitol area")
-        if parts:
-            dps_line = f"\n🏛 DPS: {' — '.join(parts)}"
-
-    message = (
-        f"{priority} [{ts}] {cat} — {tag}{loc}"
-        f"{incident_line}"
-        f"{air_line}"
-        f"{dps_line}"
-        f"{units_line}"
-        f"\n\"{transcript}\""
-    )
-
-    payload = json.dumps({"message": message}).encode()
-    creds   = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-    headers = {"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
-               "Content-Type": "application/json"}
-
-    for room_token in _room_for_call(call, priority):
-        url = f"{TALK_BASE}/chat/{room_token}"
-        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-        try:
-            urllib.request.urlopen(req, timeout=10)
-            print(f"[talk] posted {priority} {tag} → {room_token}: {transcript[:50]}", flush=True)
-        except Exception as e:
-            print(f"[talk] post failed → {room_token}: {e}", flush=True)
-
-
-# ---------------------------------------------------------------------------
-# Announcement banner — site-wide breaking alert for the most serious incidents
-# ---------------------------------------------------------------------------
-
-BANNER_BASE = os.environ.get("NEXTCLOUD_BANNER_BASE", "https://nextcloud.example.com/index.php/apps/announcementbanner/banners")
 
 # Only these incident types trigger a site-wide banner
-BANNER_ITYPES = {
-    "OFFICER DOWN", "SHOOTING", "STABBING", "MASS CASUALTY",
-    "STRUCTURE FIRE", "HOSTAGE/BARRICADE", "AIRCRAFT EMERGENCY",
-    "AIR ASSET ACTIVE",
-}
 
 _active_banner_id: str | None = None
-_banner_lock = threading.Lock()
 
-
-def _banner_api(path: str = "", data: dict | None = None, method: str | None = None):
-    if method is None:
-        method = "POST" if data is not None else "GET"
-    url = BANNER_BASE + (f"/{path}" if path else "")
-    creds = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(data).encode() if data is not None else None,
-        headers={"Authorization": f"Basic {creds}", "OCS-APIRequest": "true",
-                 "Content-Type": "application/json"},
-        method=method
-    )
-    resp = urllib.request.urlopen(req, timeout=10)
-    return json.loads(resp.read())
-
-
-def post_banner(itype: str, location: str | None, agencies: str):
-    """Post a site-wide breaking banner for serious incidents."""
-    global _active_banner_id
-    if itype not in BANNER_ITYPES:
-        return
-    loc_str = f" @ {location}" if location else ""
-    message  = f"🔴 BREAKING: {itype}{loc_str} — {agencies} responding"
-    with _banner_lock:
-        try:
-            # Remove previous banner if one exists
-            if _active_banner_id:
-                _banner_api(_active_banner_id, method="DELETE")
-            result = _banner_api(data={
-                "enabled": True, "message": message, "variant": "danger",
-                "dismissible": False, "readMoreText": "", "readMoreUrl": "",
-                "scheduleStart": "", "scheduleEnd": "",
-                "audienceTarget": "all", "audienceGroups": [],
-                "targetAppMode": "all", "targetApps": [],
-            })
-            _active_banner_id = result.get("id")
-            print(f"[banner] posted: {message}", flush=True)
-        except Exception as e:
-            print(f"[banner] failed: {e}", flush=True)
-
-
-def clear_banner(itype: str):
-    """Remove the site-wide banner when an incident clears."""
-    global _active_banner_id
-    if itype not in BANNER_ITYPES:
-        return
-    with _banner_lock:
-        if _active_banner_id:
-            try:
-                _banner_api(_active_banner_id, method="DELETE")
-                print(f"[banner] cleared for {itype}", flush=True)
-                _active_banner_id = None
-            except Exception as e:
-                print(f"[banner] clear failed: {e}", flush=True)
-
-
-
-def create_deck_card(incident: dict):
-    """Create a Deck card in the 🆕 New column when a new incident is detected."""
-    itype    = incident.get("itype", "INCIDENT")
-    desc     = incident.get("description", "")
-    location = incident.get("location")
-    agencies = ", ".join(json.loads(incident.get("agencies") or "[]"))
-    ts       = datetime.fromtimestamp(incident.get("ts_start", time.time())).strftime("%H:%M")
-
-    title = f"{itype}"
-    if location:
-        title += f" @ {location}"
-
-    body = (
-        f"**Time:** {ts}\n"
-        f"**Agencies:** {agencies or 'unknown'}\n"
-        f"**Details:** {desc}\n"
-    )
-
-    label_id = DECK_LABELS.get(itype, DECK_LABELS.get("SHOOTING"))  # fallback
-    creds    = base64.b64encode(f"{TALK_USER}:{TALK_PASS}".encode()).decode()
-    headers  = {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
-
-    # Create the card
-    card_url = f"{DECK_BASE}/boards/{DECK_BOARD_ID}/stacks/{DECK_STACK_NEW}/cards"
-    card_data = json.dumps({"title": title, "type": "plain", "order": 0,
-                            "description": body}).encode()
-    try:
-        req  = urllib.request.Request(card_url, data=card_data, headers=headers, method="POST")
-        resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
-        card_id = resp.get("id")
-        print(f"[deck] card created: {title} (id={card_id})", flush=True)
-
-        # Assign label if matched
-        if label_id and card_id:
-            label_url  = f"{DECK_BASE}/boards/{DECK_BOARD_ID}/stacks/{DECK_STACK_NEW}/cards/{card_id}/assignLabel"
-            label_data = json.dumps({"labelId": label_id}).encode()
-            req = urllib.request.Request(label_url, data=label_data, headers=headers, method="PUT")
-            urllib.request.urlopen(req, timeout=10)
-    except Exception as e:
-        print(f"[deck] card creation failed: {e}", flush=True)
