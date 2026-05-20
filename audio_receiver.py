@@ -735,6 +735,8 @@ try:
                     yield _metric
 
                 # --- STT-stage observability from modules.transcription ---
+                _stt = get_transcription_observability(_now)
+
                 # Add scrape sample counter (total number of metric collections)
                 g_scrape_counter = CounterMetricFamily(
                     "battlebuddy_scrape_samples_total",
@@ -757,8 +759,7 @@ try:
                 g_error_ratio.add_metric([], _error_ratio)
                 yield g_error_ratio
 
-                # --- existing STT metrics follow ---
-                _stt = get_transcription_observability(_now)
+                # --- existing STT window metrics follow ---
                 g_stt_in_progress = GaugeMetricFamily(
                     "battlebuddy_transcription_in_progress",
                     "Current in-process local faster-whisper transcription workers",
