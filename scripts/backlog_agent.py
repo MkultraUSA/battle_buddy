@@ -74,7 +74,8 @@ def main() -> int:
                 continue
 
             wav_bytes = base64.b64decode(item["audio_b64"])
-            transcript = transcribe(wav_bytes).strip()
+            transcript, _accuracy = transcribe(wav_bytes)
+            transcript = transcript.strip()
             if transcript:
                 complete_one(item["id"], transcript)
                 print(f"completed {item['id']} {item.get('tag', '')}", flush=True)
