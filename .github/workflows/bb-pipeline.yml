@@ -19,7 +19,6 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Write task and token to Hostinger
         env:
@@ -30,18 +29,18 @@ jobs:
         run: |
           set -euo pipefail
           printf 'GITHUB_TOKEN="%s"\n' "${WORKER_GH_TOKEN}" > /tmp/worker.env
-          scp -i ~/.ssh/id_ed25519 /tmp/worker.env "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/.worker.env"
+          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 /tmp/worker.env "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/.worker.env"
           printf '%s\n' "${TASK}" > /tmp/hermes_task.txt
-          scp -i ~/.ssh/id_ed25519 /tmp/hermes_task.txt "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/hermes_task.txt"
+          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 /tmp/hermes_task.txt "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/hermes_task.txt"
 
       - name: Trigger Coder via tmux
         env:
           HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
           sleep 2
-          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
             "tmux send-keys -t hermes-ci 'docker exec -it -u hermes --env-file /opt/hermes-data/.worker.env -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"I need to work on the Battle Buddy codebase in /opt/data/workspace/battle_buddy/. Please read /opt/data/hermes_task.txt and execute the requested improvement. This task requires the Coder -> Reviewer -> PR -> Merge -> Deploy -> Post-Deploy Tests pipeline. Steps: 1) Plan the change 2) Implement in a feature branch 3) Open a PR 4) Perform adversarial code review (delegate to independent reviewer) 5) Fix any issues found 6) Re-review until approved 7) Merge the PR 8) Deploy to production by merged SHA ONLY (no git pull): ssh root@kevcloud.ddns.net \\\"cd /opt/battlebuddy && git fetch origin main && git checkout main && git reset --hard <MERGED_SHA> && systemctl restart battlebuddy\\\" 9) Verify health (systemctl is-active battlebuddy) 10) Run post-deploy tests. Mandatory anti-blocker rules: if lint/tests fail, commit fixes to same branch and continue; if deploy drift/dirty tree detected, stop deploy and report exact git status/sha; if transient API/rate-limit errors happen, retry with backoff and continue from last step. Do NOT skip review or post-deploy tests. Before opening a PR, install dev requirements from requirements-dev.txt, run python -m ruff check . --fix, then run python -m ruff check . and relevant tests. Commit any Ruff fixes with the work. End with one machine-parseable line: BOT_RESULT:SUCCESS PR=<url> SHA=<sha> DEPLOYED_SHA=<sha> or BOT_RESULT:BLOCKED REASON=<reason> STEP=<step>.\"' Enter"
 
       - name: Poll tmux for PR URL
@@ -55,7 +54,7 @@ jobs:
           DEADLINE=$(( $(date +%s) + 30*60 ))
           while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
             sleep 30
-            PANE=$(ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux capture-pane -t hermes-ci -p -S -500" || true)
+            PANE=$(ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux capture-pane -t hermes-ci -p -S -500" || true)
             PR_URL=$(printf '%s' "${PANE}" | grep -oE 'https://github\.com/MkultraUSA/battle_buddy/pull/[0-9]+' | tail -1 || true)
             if [ -n "${PR_URL}" ]; then
               echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
@@ -76,7 +75,6 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Write reviewer task to Hostinger
         env:
@@ -96,18 +94,18 @@ jobs:
           7. Print REVIEW_APPROVED on its own line when done
           8. If rejected, print REVIEW_REJECTED with exact blocking reason and file:line
           EOF
-          scp -i ~/.ssh/id_ed25519 /tmp/hermes_task.txt "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/hermes_task.txt"
+          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 /tmp/hermes_task.txt "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/hermes_task.txt"
           printf 'GITHUB_TOKEN="%s"\n' "${WORKER_GH_TOKEN}" > /tmp/worker.env
-          scp -i ~/.ssh/id_ed25519 /tmp/worker.env "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/.worker.env"
+          scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 /tmp/worker.env "${HOSTINGER_USER}@${HOSTINGER_HOST}:/opt/hermes-data/.worker.env"
 
       - name: Trigger Reviewer via tmux
         env:
           HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
           sleep 2
-          ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" \
             "tmux send-keys -t hermes-ci 'docker exec -it -u hermes --env-file /opt/hermes-data/.worker.env -e HOME=/opt/data/home hermes /opt/hermes/.venv/bin/hermes chat --yolo --accept-hooks -q \"Read /opt/data/hermes_task.txt and perform the PR review, merge, and verification now.\" ' Enter"
 
       - name: Poll for review result
@@ -120,7 +118,7 @@ jobs:
           DEADLINE=$(( $(date +%s) + 20*60 ))
           while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
             sleep 30
-            PANE=$(ssh -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux capture-pane -t hermes-ci -p -S -500" || true)
+            PANE=$(ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux capture-pane -t hermes-ci -p -S -500" || true)
             if printf '%s' "${PANE}" | grep -q "REVIEW_APPROVED"; then
               echo "approved=true" >> "$GITHUB_OUTPUT"
               exit 0
