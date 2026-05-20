@@ -53,6 +53,25 @@
 - Production deploys only from merged GitHub commit SHA.
 - Server working tree must be clean before and after deploy.
 - If drift exists (dirty tree or non-matching SHA), deployment must fail and alert.
+- Deploy command standard (no `git pull`):  
+  `cd /opt/battlebuddy && git fetch origin main && git checkout main && git reset --hard <MERGED_SHA> && systemctl restart battlebuddy`
+
+## No-Blocker Execution Rules
+- Never stop at "cannot proceed" without emitting a concrete remediation attempt.
+- If blocked by dirty server tree, runbook is:
+  1. stop deploy
+  2. capture `git status --short` and `git rev-parse HEAD`
+  3. alert in PR + Telegram with exact drift
+  4. wait for explicit human override
+- If blocked by CI/lint/test failure, bot must push a fix commit to the same PR branch and re-run checks.
+- If blocked by model/provider rate limit or transient API failure:
+  - retry with exponential backoff (20s, 40s, 80s, max 300s)
+  - switch to configured fallback model
+  - continue from last completed step (no restart from scratch)
+- If blocked by missing secrets/permissions, bot must print exact missing secret name and the command that failed.
+- Every run must end with a machine-parseable status line:
+  - `BOT_RESULT:SUCCESS PR=<url> SHA=<sha> DEPLOYED_SHA=<sha>`
+  - or `BOT_RESULT:BLOCKED REASON=<reason> STEP=<step>`
 
 ## Rate Limits (Mandatory)
 - Run bots in low-throughput mode by default.
