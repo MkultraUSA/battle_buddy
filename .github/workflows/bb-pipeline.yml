@@ -17,13 +17,22 @@ jobs:
       - name: Install SSH key
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+
+      - name: Preflight SSH access
+        env:
+          TARGET_HOST: ${{ secrets.VPS_HOST }}
+          TARGET_USER: root
+        run: |
+          set -euo pipefail
+          test -n "${TARGET_HOST}" || (echo "Missing secret: VPS_HOST" && exit 1)
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${TARGET_USER}@${TARGET_HOST}" "hostname && date +%F_%T"
 
       - name: Write task and token to Hostinger
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
-          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          HOSTINGER_HOST: ${{ secrets.VPS_HOST }}
+          HOSTINGER_USER: root
           WORKER_GH_TOKEN: ${{ secrets.WORKER_GH_TOKEN }}
           TASK: ${{ inputs.task }}
         run: |
@@ -35,8 +44,8 @@ jobs:
 
       - name: Trigger Coder via tmux
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
-          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          HOSTINGER_HOST: ${{ secrets.VPS_HOST }}
+          HOSTINGER_USER: root
         run: |
           ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
           sleep 2
@@ -46,8 +55,8 @@ jobs:
       - name: Poll tmux for PR URL
         id: extract
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
-          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          HOSTINGER_HOST: ${{ secrets.VPS_HOST }}
+          HOSTINGER_USER: root
         run: |
           set -euo pipefail
           # Poll for 30 minutes
@@ -73,13 +82,13 @@ jobs:
       - name: Install SSH key
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
       - name: Write reviewer task to Hostinger
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
-          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          HOSTINGER_HOST: ${{ secrets.VPS_HOST }}
+          HOSTINGER_USER: root
           WORKER_GH_TOKEN: ${{ secrets.WORKER_GH_TOKEN }}
           PR_URL: ${{ needs.coder.outputs.pr_url }}
         run: |
@@ -100,8 +109,8 @@ jobs:
 
       - name: Trigger Reviewer via tmux
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
-          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          HOSTINGER_HOST: ${{ secrets.VPS_HOST }}
+          HOSTINGER_USER: root
         run: |
           ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_ed25519 "${HOSTINGER_USER}@${HOSTINGER_HOST}" "tmux send-keys -t hermes-ci C-c" || true
           sleep 2
@@ -111,8 +120,8 @@ jobs:
       - name: Poll for review result
         id: review
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
-          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+          HOSTINGER_HOST: ${{ secrets.VPS_HOST }}
+          HOSTINGER_USER: root
         run: |
           set -euo pipefail
           DEADLINE=$(( $(date +%s) + 20*60 ))
