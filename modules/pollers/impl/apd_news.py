@@ -135,7 +135,13 @@ def _append_homicide_json(
     lat: float | None,
     lon: float | None,
 ) -> None:
-    """Append a new confirmed homicide to homicides_2026.json (thread-safe)."""
+    """Append a new confirmed homicide to homicides_2026.json (thread-safe).
+
+    Enforces the canonical area-wide homicide counting policy:
+    - ``url`` must be a non-empty string (the source press-release link).
+      Entries without a URL are silently dropped — they cannot be verified.
+    - Deduplication is by exact URL match; the first entry for a given URL wins.
+    """
     if not url:
         return
     with _HOMICIDE_JSON_LOCK:
