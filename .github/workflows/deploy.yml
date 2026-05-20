@@ -19,11 +19,19 @@ jobs:
           script: |
             set -e
             cd /opt/battlebuddy
-            git pull --ff-only
+            git fetch origin main
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "ERROR: server drift detected (dirty working tree)"
+              git status --short
+              exit 1
+            fi
+            git checkout main
+            git reset --hard "${{ github.sha }}"
             /opt/battlebuddy/venv/bin/pip install -r requirements.txt -q
             systemctl restart battlebuddy
             sleep 5
-            systemctl is-active battlebuddy || (git revert HEAD --no-edit && systemctl restart battlebuddy && exit 1)
+            systemctl is-active battlebuddy
+            test -z "$(git status --porcelain)"
 
       - name: Notify Telegram — success
         if: success()

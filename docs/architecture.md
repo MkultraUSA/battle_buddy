@@ -53,6 +53,23 @@ Responsibilities:
 - Serve API endpoints and public pages
 - Export metrics for monitoring
 
+## Overflow Transcription Worker
+
+Battle Buddy can offload transcript backlog processing to a faster secondary device.
+
+Responsibilities:
+
+- Pull or receive backlog audio work from the server-side queue
+- Transcribe queued audio with higher throughput hardware
+- Return transcript payloads/results to the main server pipeline
+- Keep retries and lease/attempt controls bounded to avoid duplicate processing
+
+Network model:
+
+- Join server, capture nodes, and overflow worker on the same Tailscale network
+- Keep backlog/agent endpoints private to the VPN network
+- Authenticate worker actions with `BB_BACKLOG_AGENT_TOKEN`
+
 ## External Integrations
 
 | Integration | Purpose | Secret Handling |

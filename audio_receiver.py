@@ -23,6 +23,8 @@ import ssl
 import threading
 import time
 import urllib.request
+import uuid
+from collections import deque
 
 import modules.weather as weather_mod
 import modules.space_weather as space_weather_mod
@@ -95,6 +97,118 @@ from modules.tips import tips_bp  # noqa: E402, I001
 app.register_blueprint(tips_bp)
 
 
+_backlog_lock = threading.Lock()
+_backlog_queue = deque()
+_backlog_items = {}
+_backlog_metrics = {
+    "queued_total": 0,
+    "claimed_total": 0,
+    "completed_total": 0,
+    "retried_total": 0,
+    "dropped_total": 0,
+}
+
+
+def _backlog_metric_inc(key: str, amount: int = 1) -> None:
+    with _backlog_lock:
+        _backlog_metrics[key] = int(_backlog_metrics.get(key, 0)) + int(amount)
+
+
+def _backlog_auth_ok(req) -> bool:
+    """Validate bearer token if BB_BACKLOG_AGENT_TOKEN is configured."""
+    if not BB_BACKLOG_AGENT_TOKEN:
+        return True
+    token = req.headers.get("Authorization", "").replace("Bearer ", "").strip()
+    return hmac.compare_digest(token, BB_BACKLOG_AGENT_TOKEN)
+
+
+def _enqueue_backlog(call_ctx: dict, wav_bytes: bytes) -> bool:
+    """Queue a call for remote transcription workers."""
+    if not BB_BACKLOG_ENABLED:
+        return False
+    if not wav_bytes or len(wav_bytes) > BB_BACKLOG_MAX_AUDIO_BYTES:
+        return False
+
+    now = time.time()
+    item = {
+        "id": uuid.uuid4().hex,
+        "created_ts": now,
+        "available_ts": now,
+        "lease_expires_ts": 0.0,
+        "state": "pending",
+        "attempts": 0,
+        "audio_b64": base64.b64encode(wav_bytes).decode(),
+        "meta": dict(call_ctx),
+    }
+    with _backlog_lock:
+        if len(_backlog_items) >= BB_BACKLOG_MAX_ITEMS:
+            return False
+        _backlog_items[item["id"]] = item
+        _backlog_queue.append(item["id"])
+        _backlog_metrics["queued_total"] += 1
+    return True
+
+
+def _refresh_expired_leases(now: float) -> None:
+    for item in _backlog_items.values():
+        if item["state"] == "leased" and item["lease_expires_ts"] <= now:
+            item["state"] = "pending"
+            item["available_ts"] = now
+            item["lease_expires_ts"] = 0.0
+            _backlog_queue.append(item["id"])
+
+
+def _finalize_transcribed_call(call_ctx: dict, transcript: str) -> None:
+    """Apply normal post-STT pipeline using call metadata and transcript text."""
+    tag = call_ctx["tag"]
+    duration = call_ctx["duration"]
+    node = call_ctx["node"]
+
+    if not transcript.strip() and node != "pi5":
+        print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — empty transcript", flush=True)
+        return
+
+    lat, lon, location = extract_location(transcript)
+    if lat is None:
+        lat, lon = call_ctx["def_lat"], call_ctx["def_lon"]
+        location = None
+        coords_approx = 1
+    else:
+        coords_approx = 0
+    print(f"[recv] {tag}: {transcript[:80]}", flush=True)
+    call_id = insert_call(
+        call_ctx["ts"],
+        call_ctx["tgid"],
+        tag,
+        call_ctx["category"],
+        node,
+        duration,
+        transcript,
+        lat,
+        lon,
+        location,
+        coords_approx,
+    )
+    call = dict(
+        id=call_id,
+        ts=call_ctx["ts"],
+        tgid=call_ctx["tgid"],
+        tag=tag,
+        category=call_ctx["category"],
+        transcript=transcript,
+        lat=lat,
+        lon=lon,
+        location=location,
+    )
+    recent = calls_since(call_ctx["ts"] - 15 * 60)
+    call["llm"] = llm_analyze(call, recent)
+    if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
+        threading.Thread(target=llm_identify_tgid, args=(call_ctx["tgid"], transcript),
+                         daemon=True).start()
+    analyze_for_incident(call)
+    post_to_talk(call)
+
+
 @app.route("/receive", methods=["POST"])
 def receive():
     data = request.get_json(force=True)
@@ -121,6 +235,16 @@ def receive():
     category = meta.get("cat", "Unknown")
     def_lat  = meta.get("lat")
     def_lon  = meta.get("lon")
+    call_ctx = {
+        "ts": ts,
+        "tgid": tgid,
+        "tag": tag,
+        "node": node,
+        "category": category,
+        "def_lat": def_lat,
+        "def_lon": def_lon,
+        "duration": 0.0,
+    }
 
     try:
         with __import__('wave').open(__import__('io').BytesIO(wav_bytes)) as wf:
@@ -129,6 +253,7 @@ def receive():
         duration = 0.0
 
     print(f"[recv] {tag} ({duration:.1f}s) from {node}", flush=True)
+    call_ctx["duration"] = duration
 
     # Skip clips too short to contain real speech — saves Whisper CPU
     if duration < 0.5:
@@ -145,11 +270,17 @@ def receive():
     # available for OP25 audio from the Pi.
     is_broadcastify = node != "pi5"
     if is_broadcastify and not _broadcastify_sem.acquire(blocking=False):
+        if BB_BACKLOG_ENABLED and _enqueue_backlog(call_ctx, wav_bytes):
+            print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [broadcastify] — cap reached", flush=True)
+            return jsonify({"status": "backlog_queued"}), 202
         print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — broadcastify cap ({_BROADCASTIFY_MAX}) reached", flush=True)
         return jsonify({"status": "backlog_full"}), 202
     if not _process_sem.acquire(blocking=False):
         if is_broadcastify:
             _broadcastify_sem.release()
+            if BB_BACKLOG_ENABLED and _enqueue_backlog(call_ctx, wav_bytes):
+                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [broadcastify] — active workers full", flush=True)
+                return jsonify({"status": "backlog_queued"}), 202
         src_label = "pi5" if node == "pi5" else "broadcastify"
         print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_MAX_PROCESS_THREADS} active)", flush=True)
         return jsonify({"status": "backlog_full"}), 202
@@ -159,30 +290,7 @@ def receive():
 
             _state['last_call_ts'] = time.time()
             transcript = transcribe(wav_bytes)
-            if not transcript.strip() and node != "pi5":
-                # Broadcastify-derived clips are the noisiest source and can flood
-                # the DB with empty rows during contention; drop empties early.
-                print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — empty transcript", flush=True)
-                return
-            lat, lon, location = extract_location(transcript)
-            if lat is None:
-                lat, lon = def_lat, def_lon
-                location = None
-                coords_approx = 1
-            else:
-                coords_approx = 0
-            print(f"[recv] {tag}: {transcript[:80]}", flush=True)
-            call_id = insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx)
-            call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag, category=category,
-                        transcript=transcript, lat=lat, lon=lon, location=location)
-            recent = calls_since(ts - 15 * 60)
-            call["llm"] = llm_analyze(call, recent)
-            # If this is an unknown talkgroup, ask the LLM to identify it
-            if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
-                threading.Thread(target=llm_identify_tgid, args=(tgid, transcript),
-                                 daemon=True).start()
-            analyze_for_incident(call)
-            post_to_talk(call)
+            _finalize_transcribed_call(call_ctx, transcript)
         except Exception as _proc_exc:
             import traceback as _tb
             print(f"[recv] PROCESS ERROR for {tag}: {_proc_exc}", flush=True)
@@ -198,10 +306,95 @@ def receive():
 
 @app.route("/api/backlog/claim", methods=["POST"])
 def api_backlog_claim():
-    """Compatibility endpoint for external backlog workers.
-    Current pipeline is push-driven; no claimable backlog jobs are exposed.
-    """
-    return jsonify({"ok": True, "job": None, "status": "no_work"}), 200
+    """Claim one queued transcription item for a remote worker."""
+    if not BB_BACKLOG_ENABLED:
+        return jsonify({"status": "disabled"}), 404
+    if not _backlog_auth_ok(request):
+        return jsonify({"status": "unauthorized"}), 401
+
+    data = request.get_json(silent=True) or {}
+    worker_id = str(data.get("worker_id", "unknown"))[:120]
+    lease_seconds = int(data.get("lease_seconds", BB_BACKLOG_LEASE_SECONDS) or BB_BACKLOG_LEASE_SECONDS)
+    lease_seconds = max(60, min(3600, lease_seconds))
+    now = time.time()
+
+    with _backlog_lock:
+        _refresh_expired_leases(now)
+        while _backlog_queue:
+            item_id = _backlog_queue.popleft()
+            item = _backlog_items.get(item_id)
+            if not item:
+                continue
+            if item["state"] != "pending" or item["available_ts"] > now:
+                continue
+
+            item["state"] = "leased"
+            item["lease_expires_ts"] = now + lease_seconds
+            item["worker_id"] = worker_id
+            item["attempts"] += 1
+
+            if item["attempts"] > BB_BACKLOG_MAX_ATTEMPTS:
+                del _backlog_items[item_id]
+                _backlog_metrics["dropped_total"] += 1
+                print(f"[backlog] DROP {item_id} — exceeded attempts", flush=True)
+                continue
+            _backlog_metrics["claimed_total"] += 1
+
+            payload = {
+                "id": item["id"],
+                "audio_b64": item["audio_b64"],
+                "tag": item["meta"]["tag"],
+                "tgid": item["meta"]["tgid"],
+                "node": item["meta"]["node"],
+                "created_ts": item["created_ts"],
+                "attempts": item["attempts"],
+            }
+            return jsonify({"status": "ok", "item": payload}), 200
+
+    return jsonify({"status": "no_work"}), 200
+
+
+@app.route("/api/backlog/complete", methods=["POST"])
+def api_backlog_complete():
+    """Complete or retry a previously-claimed backlog item."""
+    if not BB_BACKLOG_ENABLED:
+        return jsonify({"status": "disabled"}), 404
+    if not _backlog_auth_ok(request):
+        return jsonify({"status": "unauthorized"}), 401
+
+    data = request.get_json(force=True)
+    item_id = str(data.get("item_id", "")).strip()
+    action = str(data.get("action", "complete")).strip().lower()
+    retry_delay_seconds = int(data.get("retry_delay_seconds", 180) or 180)
+
+    if not item_id:
+        return jsonify({"status": "error", "error": "missing item_id"}), 400
+    if action not in {"complete", "retry"}:
+        return jsonify({"status": "error", "error": "invalid action"}), 400
+
+    with _backlog_lock:
+        item = _backlog_items.get(item_id)
+        if not item:
+            return jsonify({"status": "missing"}), 404
+        if action == "retry":
+            item["state"] = "pending"
+            item["lease_expires_ts"] = 0.0
+            item["available_ts"] = time.time() + max(5, min(1800, retry_delay_seconds))
+            _backlog_queue.append(item_id)
+            _backlog_metrics["retried_total"] += 1
+            return jsonify({"status": "ok"}), 200
+        del _backlog_items[item_id]
+
+    try:
+        transcript = str(data.get("transcript", ""))
+        _state["last_call_ts"] = time.time()
+        _finalize_transcribed_call(item["meta"], transcript)
+        _backlog_metric_inc("completed_total")
+    except Exception as exc:
+        print(f"[backlog] COMPLETE ERROR for {item_id}: {exc}", flush=True)
+        return jsonify({"status": "error", "error": "processing_failed"}), 500
+
+    return jsonify({"status": "ok"}), 200
 
 
 @app.route("/watchdog_event", methods=["POST"])
@@ -575,7 +768,17 @@ try:
                     yield _metric
 
                 # --- STT-stage observability from modules.transcription ---
-                _stt = get_transcription_observability(_now)
+                _stt = {
+                    "provider": "unknown",
+                    "model": "unknown",
+                    "in_progress": 0,
+                    "totals": {},
+                    "windows": {},
+                }
+                try:
+                    _stt = get_transcription_observability(_now) or _stt
+                except Exception as _stt_e:
+                    print(f"[metrics] stt observability error: {_stt_e}", flush=True)
                 g_stt_in_progress = GaugeMetricFamily(
                     "battlebuddy_transcription_in_progress",
                     "Current in-process local faster-whisper transcription workers",
@@ -623,16 +826,85 @@ try:
                         "Share of completed local faster-whisper transcription attempts producing non-empty text by rolling window",
                         labels=["window"],
                     ),
+                    "error_ratio": GaugeMetricFamily(
+                        "battlebuddy_transcription_error_ratio",
+                        "Share of completed local faster-whisper transcription attempts that failed by rolling window",
+                        labels=["window"],
+                    ),
+                    "whisper_error_rate": GaugeMetricFamily(
+                        "battlebuddy_whisper_error_rate",
+                        "Compatibility metric: local faster-whisper error ratio by rolling window",
+                        labels=["window"],
+                    ),
+                    "whiper_error_rate": GaugeMetricFamily(
+                        "battlebuddy_whiper_error_rate",
+                        "Backward-compatibility alias for misspelled whisper error ratio metric",
+                        labels=["window"],
+                    ),
+                    "whisper_error_count": GaugeMetricFamily(
+                        "battlebuddy_whisper_error_count",
+                        "Compatibility metric: local faster-whisper error count by rolling window",
+                        labels=["window"],
+                    ),
+                    "whiper_error_count": GaugeMetricFamily(
+                        "battlebuddy_whiper_error_count",
+                        "Backward-compatibility alias for misspelled whisper error count metric",
+                        labels=["window"],
+                    ),
                 }
                 for _label, _stats in _stt.get("windows", {}).items():
-                    for _status in ["success", "empty", "timeout", "exception", "lock_timeout"]:
+                    for _status in ["success", "empty", "timeout", "exception", "lock_timeout", "error"]:
                         _stt_window_metrics["completed"].add_metric([_label, _status], float(_stats.get(_status, 0)))
                     _stt_window_metrics["audio"].add_metric([_label], float(_stats.get("audio_seconds", 0)))
                     _stt_window_metrics["latency_avg"].add_metric([_label], float(_stats.get("avg_latency_seconds", 0)))
                     _stt_window_metrics["latency_p95"].add_metric([_label], float(_stats.get("p95_latency_seconds", 0)))
                     _stt_window_metrics["success_ratio"].add_metric([_label], float(_stats.get("success_ratio", 0)))
+                    _error_ratio = float(_stats.get("error_ratio", 0))
+                    _stt_window_metrics["error_ratio"].add_metric([_label], _error_ratio)
+                    _stt_window_metrics["whisper_error_rate"].add_metric([_label], _error_ratio)
+                    _stt_window_metrics["whiper_error_rate"].add_metric([_label], _error_ratio)
+                    _stt_window_metrics["whisper_error_count"].add_metric([_label], float(_stats.get("error", 0)))
+                    _stt_window_metrics["whiper_error_count"].add_metric([_label], float(_stats.get("error", 0)))
                 for _metric in _stt_window_metrics.values():
                     yield _metric
+
+                with _backlog_lock:
+                    _depth = float(len(_backlog_items))
+                    _pending = float(sum(1 for _i in _backlog_items.values() if _i.get("state") == "pending"))
+                    _leased = float(sum(1 for _i in _backlog_items.values() if _i.get("state") == "leased"))
+                    _queued = float(_backlog_metrics.get("queued_total", 0))
+                    _claimed = float(_backlog_metrics.get("claimed_total", 0))
+                    _completed = float(_backlog_metrics.get("completed_total", 0))
+                    _retried = float(_backlog_metrics.get("retried_total", 0))
+                    _dropped = float(_backlog_metrics.get("dropped_total", 0))
+
+                g_backlog_depth = GaugeMetricFamily(
+                    "battlebuddy_backlog_depth",
+                    "Current in-memory backlog item count",
+                )
+                g_backlog_depth.add_metric([], _depth)
+                yield g_backlog_depth
+
+                g_backlog_state = GaugeMetricFamily(
+                    "battlebuddy_backlog_items",
+                    "Current in-memory backlog item count by state",
+                    labels=["state"],
+                )
+                g_backlog_state.add_metric(["pending"], _pending)
+                g_backlog_state.add_metric(["leased"], _leased)
+                yield g_backlog_state
+
+                c_backlog = CounterMetricFamily(
+                    "battlebuddy_backlog_events_total",
+                    "Backlog lifecycle events since process start",
+                    labels=["event"],
+                )
+                c_backlog.add_metric(["queued"], _queued)
+                c_backlog.add_metric(["claimed"], _claimed)
+                c_backlog.add_metric(["completed"], _completed)
+                c_backlog.add_metric(["retried"], _retried)
+                c_backlog.add_metric(["dropped"], _dropped)
+                yield c_backlog
 
                 cur.execute(
                     "SELECT COALESCE(tag,'unknown') AS tag, "

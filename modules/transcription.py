@@ -11,10 +11,22 @@ from faster_whisper import WhisperModel as _FasterWhisperModel
 
 _fw_model            = None
 _fw_model_lock       = threading.Lock()
-_MAX_PROCESS_THREADS = 8
-_BROADCASTIFY_MAX    = 4
+_MAX_PROCESS_THREADS = max(1, int(os.environ.get("BB_MAX_PROCESS_THREADS", "4")))
+_BROADCASTIFY_MAX    = int(
+    os.environ.get(
+        "BB_BROADCASTIFY_MAX",
+        str(min(4, _MAX_PROCESS_THREADS)),
+    )
+)
+if _MAX_PROCESS_THREADS > 1:
+    _BROADCASTIFY_MAX = min(_BROADCASTIFY_MAX, _MAX_PROCESS_THREADS - 1)
+_BROADCASTIFY_MAX = max(1, _BROADCASTIFY_MAX)
+_MODEL_LOCK_TIMEOUT = max(5, int(os.environ.get("BB_MODEL_LOCK_TIMEOUT", "90")))
 _process_sem         = threading.Semaphore(_MAX_PROCESS_THREADS)
 _broadcastify_sem    = threading.Semaphore(_BROADCASTIFY_MAX)
+_WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "large-v3")
+_WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
+_WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 
 
 _METRICS_RETENTION_SECONDS = 86400
@@ -108,6 +120,11 @@ def get_transcription_observability(now: Optional[float] = None) -> dict:
         }
         for event in subset:
             status_counts[event["status"]] = status_counts.get(event["status"], 0) + 1
+        error_count = (
+            status_counts.get("timeout", 0)
+            + status_counts.get("exception", 0)
+            + status_counts.get("lock_timeout", 0)
+        )
         by_window[label] = {
             "completed": count,
             "success": status_counts.get("success", 0),
@@ -115,16 +132,24 @@ def get_transcription_observability(now: Optional[float] = None) -> dict:
             "timeout": status_counts.get("timeout", 0),
             "exception": status_counts.get("exception", 0),
             "lock_timeout": status_counts.get("lock_timeout", 0),
+            "error": error_count,
             "audio_seconds": sum(event["audio_seconds"] for event in subset),
             "transcript_chars": sum(event["transcript_chars"] for event in subset),
             "avg_latency_seconds": (sum(latencies) / count) if count else 0.0,
             "p95_latency_seconds": latencies[int((count - 1) * 0.95)] if count else 0.0,
             "success_ratio": (status_counts.get("success", 0) / count) if count else 0.0,
+            "error_ratio": (error_count / count) if count else 0.0,
         }
+
+    totals["error"] = (
+        totals.get("timeout", 0)
+        + totals.get("exception", 0)
+        + totals.get("lock_timeout", 0)
+    )
 
     return {
         "provider": "local_faster_whisper",
-        "model": "distil-large-v3",
+        "model": _WHISPER_MODEL,
         "in_progress": in_progress,
         "totals": totals,
         "windows": by_window,
@@ -138,9 +163,17 @@ TRANSCRIPTION_TIMEOUT = 300
 def _get_fw_model() -> _FasterWhisperModel:
     global _fw_model
     if _fw_model is None:
-        print("[whisper] loading faster-whisper large-v3-turbo int8...", flush=True)
-        _fw_model = _FasterWhisperModel("distil-large-v3", device="cpu", compute_type="int8",
-                                        cpu_threads=2, num_workers=1)
+        print(
+            f"[whisper] loading faster-whisper {_WHISPER_MODEL} {_WHISPER_COMPUTE_TYPE} on {_WHISPER_DEVICE}...",
+            flush=True,
+        )
+        _fw_model = _FasterWhisperModel(
+            _WHISPER_MODEL,
+            device=_WHISPER_DEVICE,
+            compute_type=_WHISPER_COMPUTE_TYPE,
+            cpu_threads=2,
+            num_workers=1,
+        )
         print("[whisper] model ready", flush=True)
     return _fw_model
 
@@ -220,7 +253,7 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
             f.write(wav_bytes)
             tmp = f.name
         try:
-            acquired = _fw_model_lock.acquire(timeout=20)
+            acquired = _fw_model_lock.acquire(timeout=min(timeout, _MODEL_LOCK_TIMEOUT))
             if not acquired:
                 print("[whisper] TIMEOUT waiting for model lock - dropping call", flush=True)
                 status_container.append("lock_timeout")

@@ -187,6 +187,24 @@ PI_FETCH_URL = os.environ.get("PI_FETCH_URL", "").rstrip("/")
 PI_FETCH_TOKEN = os.environ.get("PI_FETCH_TOKEN", "")
 PI_FETCH_ENABLED = bool(PI_FETCH_URL and PI_FETCH_TOKEN)
 
+# ---------------------------------------------------------------------------
+# Optional remote transcription backlog workers
+# ---------------------------------------------------------------------------
+
+BB_BACKLOG_ENABLED = os.environ.get("BB_BACKLOG_ENABLED", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+BB_BACKLOG_AGENT_TOKEN = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
+BB_BACKLOG_MAX_ITEMS = int(os.environ.get("BB_BACKLOG_MAX_ITEMS", "200"))
+BB_BACKLOG_MAX_AUDIO_BYTES = int(
+    os.environ.get("BB_BACKLOG_MAX_AUDIO_BYTES", str(2 * 1024 * 1024))
+)
+BB_BACKLOG_LEASE_SECONDS = int(os.environ.get("BB_BACKLOG_LEASE_SECONDS", "900"))
+BB_BACKLOG_MAX_ATTEMPTS = int(os.environ.get("BB_BACKLOG_MAX_ATTEMPTS", "4"))
+
 FTS_HOST = os.environ.get("FTS_HOST", "tak.example.local")
 FTS_REST_PORT = int(os.environ.get("FTS_REST_PORT", "19023"))
 FTS_COT_PORT = int(os.environ.get("FTS_COT_PORT", "8089"))

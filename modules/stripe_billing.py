@@ -84,6 +84,7 @@ def api_stripe_create_checkout():
 # ---------------------------------------------------------------------------
 
 @stripe_bp.route("/stripe/webhook", methods=["POST"])
+@stripe_bp.route("/api/stripe/webhook", methods=["POST"])
 def stripe_webhook():
     """Stripe sends signed events here. Verify signature, then provision."""
     from modules.premium import _provision_premium_user  # deferred to avoid startup circularity

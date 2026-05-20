@@ -1,9 +1,8 @@
 import sqlite3
 
-from modules import premium
-
-
 def test_issue_session_preserves_canonical_premium_username(tmp_path, monkeypatch):
+    from modules import premium
+
     db = tmp_path / "calls.db"
     conn = sqlite3.connect(db)
     conn.execute(
@@ -24,4 +23,3 @@ def test_issue_session_preserves_canonical_premium_username(tmp_path, monkeypatc
     conn.close()
 
     assert row == ("Paul", 1)
-
