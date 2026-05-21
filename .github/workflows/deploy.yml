@@ -19,11 +19,19 @@ jobs:
           script: |
             set -e
             cd /opt/battlebuddy
-            git pull --ff-only
+            git fetch origin main
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "ERROR: server drift detected (dirty working tree)"
+              git status --short
+              exit 1
+            fi
+            git checkout main
+            git reset --hard "${{ github.sha }}"
             /opt/battlebuddy/venv/bin/pip install -r requirements.txt -q
             systemctl restart battlebuddy
             sleep 5
-            systemctl is-active battlebuddy || (git revert HEAD --no-edit && systemctl restart battlebuddy && exit 1)
+            systemctl is-active battlebuddy
+            test -z "$(git status --porcelain)"
 
       - name: Notify Telegram — success
         if: success()
@@ -59,14 +67,14 @@ jobs:
           PYTEST_ADDOPTS: ""
 
       - name: Notify Telegram — smoke tests passed
-        if: steps.smoke.outputs.exit_code == '0'
+        if: steps.smoke.outputs.exit_code == 0
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="✅ Smoke tests passed after deploy%0A${{ github.event.head_commit.message }}"
 
       - name: Notify Telegram — smoke tests FAILED
-        if: steps.smoke.outputs.exit_code != '0'
+        if: steps.smoke.outputs.exit_code != 0
         run: |
           RESULTS=$(cat /tmp/smoke_results.txt | tail -20 | sed 's/[&<>]/\\&/g')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \

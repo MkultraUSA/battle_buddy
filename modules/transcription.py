@@ -140,7 +140,8 @@ def _get_fw_model() -> _FasterWhisperModel:
     if _fw_model is None:
         print("[whisper] loading faster-whisper large-v3-turbo int8...", flush=True)
         _fw_model = _FasterWhisperModel("distil-large-v3", device="cpu", compute_type="int8",
-                                        cpu_threads=4, num_workers=1)
+                                        cpu_threads=5, num_workers=1)
+
         print("[whisper] model ready", flush=True)
     return _fw_model
 

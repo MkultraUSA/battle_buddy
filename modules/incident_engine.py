@@ -215,7 +215,7 @@ def _find_incident_by_location(lat: float, lon: float, ts: float) -> int | None:
 
 def _record_escalation(incident_id: int, stage: str, description: str, ts: float):
     """Store an escalation step and alert if the stage is higher than last recorded."""
-    from modules.pollers_legacy import send_dm_alert
+    from modules.alerts import send_dm_alert
     inc = _active_incidents.get(incident_id)
     if inc is None:
         return
