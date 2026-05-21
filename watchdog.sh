@@ -8,6 +8,13 @@ LEO_COUNT=""
 INCIDENTS=""
 CALLS=""
 
+# 0. Call volume (1h window)
+CALLS_1H=$(curl -s http://localhost:9001/metrics | awk -F'[{ }]' '/battlebuddy_transcript_quality_calls{window="1h"}/ {print $3}')
+if [ -z "$CALLS_1H" ] || [ "$CALLS_1H" -eq 0 ]; then
+    echo "CRITICAL: No radio calls in the last 1 hour"
+    ERRORS=$((ERRORS+1))
+fi
+
 # 1. Service alive?
 if ! systemctl -q is-active battlebuddy.service; then
     echo "CRITICAL: battlebuddy.service DOWN. Restarting..."
@@ -58,6 +65,21 @@ fi
 # 7. Aircraft
 AIRCRAFT=$(curl -s http://localhost:9001/api/adsb 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null)
 LEO_COUNT=$(curl -s http://localhost:9001/api/adsb 2>/dev/null | python3 -c "import json,sys; print(sum(1 for a in json.load(sys.stdin) if a.get(is_leo)))" 2>/dev/null)
+
+# 8. Transcription quality (15m window) – only evaluate if there is traffic
+CALLS_15=$(curl -s http://localhost:9001/metrics | awk -F'[{ }]' '/battlebuddy_transcript_quality_calls{window="15m"}/ {print $3}')
+if [ -z "$CALLS_15" ] || [ "$CALLS_15" -eq 0 ]; then
+    :   # no calls in the last 15 min – skip quality checks
+else
+    COVERAGE=$(curl -s http://localhost:9001/metrics | awk -F'[{ }]' '/battlebuddy_transcript_quality_coverage_ratio{window="15m"}/ {print $3}')
+    RELIAB=$(curl -s http://localhost:9001/metrics | awk -F'[{ }]' '/battlebuddy_transcript_quality_reliability_score{window="15m"}/ {print $3}')
+    if [ -z "$COVERAGE" ]; then COVERAGE=0; fi
+    if [ -z "$RELIAB" ]; then RELIAB=0; fi
+    if (( $(echo "$COVERAGE <= 0.30" | bc -l) )) || (( $(echo "$RELIAB <= 0.35" | bc -l) )); then
+        echo "CRITICAL: transcription quality low – coverage $COVERAGE, reliability $RELIAB (15m)"
+        ERRORS=$((ERRORS+1))
+    fi
+fi
 
 # Report
 if [ "$ERRORS" -gt 0 ] 2>/dev/null; then

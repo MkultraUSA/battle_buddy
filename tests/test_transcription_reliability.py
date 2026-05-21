@@ -15,6 +15,7 @@ import types
 import unittest
 from unittest.mock import MagicMock, patch
 
+
 # ---------------------------------------------------------------------------
 # Fake faster_whisper module (same pattern as test_transcription_timeout.py)
 # ---------------------------------------------------------------------------

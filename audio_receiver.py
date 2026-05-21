@@ -52,6 +52,7 @@ from modules.atak import (  # noqa: E402
 )
 from modules.audio_dedup import is_duplicate_and_mark  # noqa: E402
 from modules.commute import *  #noqa: E402
+from modules.commute import _routes_travel_time  #noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -101,8 +102,8 @@ app.register_blueprint(tips_bp)
 # --- Backlog queue for remote overflow workers (pie3) ---
 _backlog_queue: deque = deque()
 _backlog_lock = threading.Lock()
-_BACKLOG_MAX_ITEMS = 200
-_BACKLOG_SOFT_CAP = 50      # start dropping when queue exceeds this
+_BACKLOG_MAX_ITEMS = 300
+_BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
 
@@ -117,11 +118,11 @@ def _should_backlog() -> bool:
         depth = len(_backlog_queue)
     if depth <= 5:
         return True                     # accept everything
-    if depth <= 20:
-        return __import__("random").random() > 0.3   # drop 30%
+    if depth <= 40:
+        return __import__("random").random() > 0.15  # drop 15%
     if depth <= _BACKLOG_SOFT_CAP:
-        return __import__("random").random() > 0.6   # drop 60%
-    return False                        # drop everything over soft cap
+        return __import__("random").random() > 0.35  # drop 35%
+    return __import__("random").random() > 0.8       # keep 20% above soft cap
 
 
 @app.route("/receive", methods=["POST"])
@@ -735,8 +736,6 @@ try:
                     yield _metric
 
                 # --- STT-stage observability from modules.transcription ---
-                _stt = get_transcription_observability(_now)
-
                 # Add scrape sample counter (total number of metric collections)
                 g_scrape_counter = CounterMetricFamily(
                     "battlebuddy_scrape_samples_total",
@@ -759,7 +758,8 @@ try:
                 g_error_ratio.add_metric([], _error_ratio)
                 yield g_error_ratio
 
-                # --- existing STT window metrics follow ---
+                # --- existing STT metrics follow ---
+                _stt = get_transcription_observability(_now)
                 g_stt_in_progress = GaugeMetricFamily(
                     "battlebuddy_transcription_in_progress",
                     "Current in-process local faster-whisper transcription workers",
