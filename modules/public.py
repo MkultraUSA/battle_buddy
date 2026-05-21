@@ -5,7 +5,6 @@ pipeline. Mounted as a Flask Blueprint named public_bp and registered in
 audio_receiver.py.
 """
 
-import json
 import re
 import sqlite3
 import time
@@ -304,8 +303,7 @@ async function loadStats() {
     try {
       const rh = await fetch('/api/homicides');
       const dh = await rh.json();
-      const all = (dh.homicides || []).concat(dh.live || []);
-      let total = 0; all.forEach(function(h){ total += (h.count || 1); });
+      const total = dh.total_area_homicides || 0;
       document.getElementById('s-homicides').textContent = total;
     } catch(eh) {}
     document.getElementById('s-agencies').textContent = d.agencies_24h.toLocaleString();
@@ -1167,9 +1165,7 @@ async function loadStats() {
   try {
     const r2 = await fetch("/api/homicides");
     const d2 = await r2.json();
-    const all = (d2.homicides || []).concat(d2.live || []);
-    let total = 0;
-    all.forEach(function(h){ total += (h.count || 1); });
+    const total = d2.total_area_homicides || 0;
     document.getElementById("ss-homicides").textContent = total;
   } catch(e) {}
 }
@@ -1192,43 +1188,27 @@ def public_map():
 
 @public_bp.route("/api/homicides")
 def api_homicides():
-    """Return 2026 homicide data for the heat map — static seed + live DB incidents."""
-    import os
-    seed_path = "/opt/battlebuddy/homicides_2026.json"
-    seed = []
-    if os.path.exists(seed_path):
-        try:
-            with open(seed_path) as f:
-                seed = json.load(f)
-        except Exception:
-            pass
+    """Return 2026 homicide data for the heat map — canonical deduped counts.
 
-    # Only pull confirmed homicides from DB (APD press release sourced)
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        """SELECT id, ts_start, itype, description, location, lat, lon
-           FROM incidents
-           WHERE itype = 'HOMICIDE'
-             AND lat IS NOT NULL AND lon IS NOT NULL
-             AND ts_start > strftime('%s','2026-01-01')
-             AND is_test = 0"""
-    ).fetchall()
-    conn.close()
+    Merges the static seed file with live DB incidents, deduplicates by URL,
+    and exposes validated area-wide totals alongside the raw lists.
+    """
+    from modules.homicide_count import (
+        canonical_homicides,
+        fetch_live_homicides,
+        load_seed,
+    )
 
-    live = []
-    for r in rows:
-        live.append({
-            "source": "scanner",
-            "date": __import__('datetime').datetime.fromtimestamp(r[1]).strftime('%Y-%m-%d'),
-            "itype": r[2],
-            "summary": r[3][:120] if r[3] else "",
-            "address": r[4] or "",
-            "lat": r[5],
-            "lon": r[6],
-            "url": ""
-        })
+    seed = load_seed()
+    live = fetch_live_homicides(DB_PATH)
+    canonical, total_area, by_agency = canonical_homicides(seed, live)
 
-    return jsonify({"homicides": seed, "live": live})
+    return jsonify({
+        "homicides": canonical,
+        "live": live,
+        "total_area_homicides": total_area,
+        "homicides_by_agency": by_agency,
+    })
 
 @public_bp.route("/public/feed")
 def public_feed():
@@ -1535,7 +1515,7 @@ async function load() {
     ...live.map(l => ({...l, n: null, victim: null}))
   ];
 
-  document.getElementById('total').textContent = seed.reduce((s,h)=>s+(h.count||1),0) + live.reduce((s,h)=>s+(h.count||1),0);
+  document.getElementById('total').textContent = d.total_area_homicides || allPoints.length;
   if (seed.length) {
     const latest = seed.slice().sort((a,b) => b.date.localeCompare(a.date))[0];
     document.getElementById('latest').textContent = latest.date + ' — ' + (latest.address||'');

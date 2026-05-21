@@ -1,0 +1,42 @@
+name: deploy-drift-check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+jobs:
+  check-drift:
+    name: check production drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check VPS git drift
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/battlebuddy
+            git fetch origin main --quiet
+            LOCAL_SHA="$(git rev-parse HEAD)"
+            REMOTE_SHA="$(git rev-parse origin/main)"
+            DIRTY="$(git status --porcelain)"
+            if [ -n "$DIRTY" ]; then
+              echo "DRIFT: dirty working tree on server"
+              echo "$DIRTY"
+              exit 1
+            fi
+            if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+              echo "DRIFT: commit mismatch local=$LOCAL_SHA remote=$REMOTE_SHA"
+              exit 1
+            fi
+            echo "OK: production repo clean and aligned with origin/main ($LOCAL_SHA)"
+
+      - name: Notify Telegram on drift
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="❌ Battle Buddy drift detected on production VPS. Check deploy-drift-check workflow."

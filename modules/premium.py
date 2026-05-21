@@ -84,7 +84,7 @@ def _is_premium(username):
     """Check if username has an active premium record."""
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
-        "SELECT status FROM premium_users WHERE username=?", (username,)
+        "SELECT status FROM premium_users WHERE lower(username)=lower(?)", (username,)
     ).fetchone()
     conn.close()
     return row is not None and row[0] == "active"
@@ -100,13 +100,18 @@ def _issue_session(username):
     token = _secrets.token_hex(32)
     now = time.time()
     expires = now + 86400 * 30  # 30 days
+    conn = sqlite3.connect(DB_PATH)
+    canonical = conn.execute(
+        "SELECT username FROM premium_users WHERE lower(username)=lower(?) LIMIT 1",
+        (username,),
+    ).fetchone()
+    session_username = canonical[0] if canonical else username
     premium = _is_premium(username)
     admin = _is_admin(username)
-    conn = sqlite3.connect(DB_PATH)
     conn.execute(
         "INSERT OR REPLACE INTO sessions (token, username, created_ts, expires_ts, is_admin, is_premium) "
         "VALUES (?,?,?,?,?,?)",
-        (token, username, now, expires, int(admin), int(premium))
+        (token, session_username, now, expires, int(admin), int(premium))
     )
     conn.commit()
     conn.close()
@@ -553,7 +558,7 @@ def _provision_premium_user(session_obj):
 @premium_bp.route("/api/login", methods=["POST"])
 def api_login():
     data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip().lower()
+    username = (data.get("username") or "").strip()
     password = (data.get("password") or "").strip()
     if not username or not password:
         return jsonify({"error": "username and password required"}), 400
@@ -683,4 +688,3 @@ def stripe_create_checkout_route():
 @premium_bp.route("/api/stripe/webhook", methods=["POST"])
 def stripe_webhook_route():
     return stripe_webhook()  # noqa: F821
-
