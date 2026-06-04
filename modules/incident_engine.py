@@ -285,6 +285,30 @@ _active_incidents: dict[int, dict] = {}
 _incident_lock = threading.Lock()
 
 
+def _is_negative_context(text: str, kw: str) -> bool:
+    """Check if a keyword appears in a negated context that should suppress matching.
+
+    Returns True if the keyword should be skipped because the surrounding text
+    indicates it is being negated, cancelled, or cleared — common in dispatcher
+    radio traffic where units report the *absence* of a situation.
+    """
+    idx = text.find(kw)
+    if idx == -1:
+        return False
+
+    # "no " immediately preceding the keyword
+    if idx >= 3 and text[idx - 3:idx].lower() == "no ":
+        return True
+
+    # Look for negating words within 50 chars before the keyword
+    prefix = text[max(0, idx - 50):idx].lower()
+    for neg in ("negative", "cancel", "clear"):
+        if neg in prefix:
+            return True
+
+    return False
+
+
 def analyze_for_incident(call: dict):
     """Run after each call is stored. Detect and record incidents."""
     tgid  = call.get("tgid", 0)
@@ -320,11 +344,15 @@ def analyze_for_incident(call: dict):
     # --- Rule 3: Keyword in transcript ---
     # Skip ABIA operational channels — airport security/ops uses words like
     # "barricade", "hostage", "weapons" in routine daily context.
+    # Skip locution dispatch channels — computer-generated transcripts never
+    # contain real hostage/barricade situations; they are handled by Rule 4.
     # Skip Unknown agency — APD radio is P25 encrypted; Whisper hallucinates
     # words like "shooting", "assault", "shots fired" from carrier noise.
-    if tgid not in ABIA_OPS_TGIDS and cat != "Unknown":
+    # Negative-context phrases ("negative", "cancel", "clear", "no ") are
+    # filtered out to avoid matching dispatchers reporting the absence of events.
+    if tgid not in ABIA_OPS_TGIDS and tgid not in LOCUTION_TGIDS and cat != "Unknown":
         for kw, itype in INCIDENT_KEYWORDS:
-            if kw in text:
+            if kw in text and not _is_negative_context(text, kw):
                 flags.append((20, itype,
                               f"'{kw}' detected on {call.get('tag', tgid)}"))
                 break
