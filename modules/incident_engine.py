@@ -346,11 +346,9 @@ def analyze_for_incident(call: dict):
     # "barricade", "hostage", "weapons" in routine daily context.
     # Skip locution dispatch channels — computer-generated transcripts never
     # contain real hostage/barricade situations; they are handled by Rule 4.
-    # Skip Unknown agency — APD radio is P25 encrypted; Whisper hallucinates
-    # words like "shooting", "assault", "shots fired" from carrier noise.
     # Negative-context phrases ("negative", "cancel", "clear", "no ") are
     # filtered out to avoid matching dispatchers reporting the absence of events.
-    if tgid not in ABIA_OPS_TGIDS and tgid not in LOCUTION_TGIDS and cat != "Unknown":
+    if tgid not in ABIA_OPS_TGIDS and tgid not in LOCUTION_TGIDS:
         for kw, itype in INCIDENT_KEYWORDS:
             if kw in text and not _is_negative_context(text, kw):
                 flags.append((20, itype,
