@@ -26,6 +26,24 @@ Battle Buddy Flask receiver
         +--> map/API/public dashboard output
 ```
 
+Aircraft tracking is a parallel pipeline and does not pass through audio
+ingestion or transcription:
+
+```text
+ADSB.lol feeder-only API
+        |
+        v
+Pi ADS-B relay
+        |
+        v
+modules/aircraft.py
+        |
+        +--> validated in-memory network snapshot
+        +--> local SQLite helicopter trails
+        +--> /api/adsb and /api/adsb/live
+        +--> /public/aircraft
+```
+
 ## Capture Node
 
 The capture node is intended to run near the SDR hardware. In the reference deployment this is a Raspberry Pi running OP25.
@@ -64,6 +82,7 @@ Responsibilities:
 | Google APIs | Optional geocoding/search/maps | API keys from environment variables |
 | FreeTAKServer | Optional CoT marker publishing | Token from environment variables |
 | Stripe | Optional payment/subscription experiments | Keys from environment variables |
+| ADSB.lol | Network aircraft positions relayed by an authorized feeder | Shared ingest token from environment variables |
 
 ## Data Stores
 
