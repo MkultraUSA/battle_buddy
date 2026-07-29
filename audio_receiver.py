@@ -78,7 +78,10 @@ from modules.pi_watchdog import (  # noqa: E402
     _pi_watchdog_alert,
 )
 from modules.pollers import *  # noqa: E402
-from modules.pollers.impl.adsb_air_asset import ADSB_TRAIL_SECS  # noqa: E402
+from modules.pollers.impl.adsb_air_asset import (  # noqa: E402
+    ADSB_TRAIL_SECS,
+    KNOWN_AIR_ASSETS,
+)
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
@@ -107,6 +110,19 @@ _BACKLOG_MAX_ITEMS = 300
 _BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
+
+# Network-wide ADSB.lol snapshot pushed by the authorized feeder Pi.  The
+# feeder-only re-api is source-IP restricted, so browsers and this VPS cannot
+# query it directly.
+_ADSB_LIVE_MAX_AIRCRAFT = 300
+_ADSB_LIVE_MAX_AGE_SECS = 120
+_adsb_live_ingest_token = os.environ.get("BB_ADSB_INGEST_TOKEN", "")
+_adsb_live_lock = threading.Lock()
+_adsb_live_snapshot = {
+    "now": 0.0,
+    "received_at": 0.0,
+    "aircraft": [],
+}
 
 
 def _should_backlog() -> bool:
@@ -1267,6 +1283,124 @@ def api_adsb():
         aircraft[icao]["trail"].append([r["lat"], r["lon"], r["ts"]])
 
     return jsonify(list(aircraft.values()))
+
+
+def _adsb_number(value, minimum=None, maximum=None):
+    """Return a bounded float for an ADS-B value, or None."""
+    if value is None or value == "ground":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if minimum is not None and number < minimum:
+        return None
+    if maximum is not None and number > maximum:
+        return None
+    return number
+
+
+def _adsb_text(value, max_length=32):
+    """Normalize untrusted ADS-B text for the public JSON response."""
+    return str(value or "").strip()[:max_length]
+
+
+@app.route("/api/adsb/ingest", methods=["POST"])
+def api_adsb_ingest():
+    """Accept a bounded network-wide snapshot from the authorized feeder Pi."""
+    if not _adsb_live_ingest_token:
+        return jsonify({"error": "ADSB ingest is not configured"}), 503
+
+    supplied = request.headers.get("Authorization", "")
+    if supplied.startswith("Bearer "):
+        supplied = supplied[7:].strip()
+    if not supplied or not hmac.compare_digest(supplied, _adsb_live_ingest_token):
+        return jsonify({"error": "unauthorized"}), 401
+
+    if request.content_length and request.content_length > 1_000_000:
+        return jsonify({"error": "snapshot too large"}), 413
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("aircraft"), list):
+        return jsonify({"error": "aircraft list required"}), 400
+
+    sanitized = []
+    for raw in payload["aircraft"][:_ADSB_LIVE_MAX_AIRCRAFT]:
+        if not isinstance(raw, dict):
+            continue
+
+        lat = _adsb_number(raw.get("lat"), 29.85, 30.70)
+        lon = _adsb_number(raw.get("lon"), -98.25, -97.25)
+        icao24 = _adsb_text(raw.get("hex"), 16).lower()
+        if lat is None or lon is None or not icao24:
+            continue
+
+        db_flags = int(_adsb_number(raw.get("dbFlags"), 0, 65535) or 0)
+        known_label, known_leo = KNOWN_AIR_ASSETS.get(icao24, ("", False))
+        squawk = _adsb_text(raw.get("squawk"), 8)
+        emergency = _adsb_text(raw.get("emergency"), 24)
+        aircraft_type = _adsb_text(raw.get("t"), 12).upper()
+        category = _adsb_text(raw.get("category"), 8).upper()
+        is_helicopter = aircraft_type.startswith("H") or category == "A7"
+
+        sanitized.append({
+            "hex": icao24,
+            "flight": _adsb_text(raw.get("flight"), 16),
+            "registration": _adsb_text(raw.get("r"), 16),
+            "aircraft_type": aircraft_type,
+            "category": category,
+            "lat": lat,
+            "lon": lon,
+            "alt_baro": _adsb_number(raw.get("alt_baro"), -2000, 100000),
+            "alt_geom": _adsb_number(raw.get("alt_geom"), -2000, 100000),
+            "gs": _adsb_number(raw.get("gs"), 0, 2000),
+            "track": _adsb_number(raw.get("track"), 0, 360),
+            "baro_rate": _adsb_number(raw.get("baro_rate"), -20000, 20000),
+            "squawk": squawk,
+            "emergency": emergency,
+            "seen": _adsb_number(raw.get("seen"), 0, 600),
+            "seen_pos": _adsb_number(raw.get("seen_pos"), 0, 600),
+            "db_flags": db_flags,
+            "is_military": bool(db_flags & 1),
+            "is_interesting": bool(db_flags & 2),
+            "is_pia": bool(db_flags & 4),
+            "is_ladd": bool(db_flags & 8),
+            "is_helicopter": is_helicopter,
+            "is_known_public_safety": bool(known_label),
+            "is_known_leo": bool(known_leo),
+            "known_label": known_label,
+            "is_emergency": bool(
+                emergency and emergency.lower() not in {"none", "no emergency"}
+            ) or squawk in {"7500", "7600", "7700"},
+        })
+
+    received_at = time.time()
+    source_now = _adsb_number(payload.get("now"), 0) or received_at
+    with _adsb_live_lock:
+        _adsb_live_snapshot["now"] = source_now
+        _adsb_live_snapshot["received_at"] = received_at
+        _adsb_live_snapshot["aircraft"] = sanitized
+
+    return jsonify({"status": "ok", "aircraft": len(sanitized)})
+
+
+@app.route("/api/adsb/live")
+def api_adsb_live():
+    """Return the latest network-wide ADSB.lol snapshot for map clients."""
+    with _adsb_live_lock:
+        snapshot = {
+            "now": _adsb_live_snapshot["now"],
+            "received_at": _adsb_live_snapshot["received_at"],
+            "aircraft": list(_adsb_live_snapshot["aircraft"]),
+        }
+
+    age = max(0.0, time.time() - snapshot["received_at"]) if snapshot["received_at"] else None
+    snapshot.update({
+        "age_seconds": age,
+        "stale": age is None or age > _ADSB_LIVE_MAX_AGE_SECS,
+        "attribution": "ADSB.lol — ODbL 1.0",
+    })
+    return jsonify(snapshot)
 
 
 @app.route("/")

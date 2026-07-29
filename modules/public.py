@@ -1575,6 +1575,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 }
 #legend h4 { color: #94a3b8; margin-bottom: 8px; font-size: 0.7rem; letter-spacing: 1px; text-transform: uppercase; }
 .leg-item { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.leg-icon { width: 22px; height: 22px; flex-shrink: 0; fill: currentColor; }
+.aircraft-symbol { width: 24px; height: 24px; color: #38bdf8; filter: drop-shadow(0 0 4px currentColor); transform-origin: center; }
+.aircraft-symbol svg { display: block; width: 24px; height: 24px; fill: currentColor; }
+.aircraft-symbol.light-aircraft svg { width: 19px; height: 19px; margin: 2.5px; }
+.aircraft-symbol.helicopter { color: #a855f7; }
+.aircraft-symbol.priority { color: #f59e0b; filter: drop-shadow(0 0 6px currentColor); }
+.aircraft-symbol.military { color: #ef4444; filter: drop-shadow(0 0 6px currentColor); }
+.aircraft-symbol.emergency { color: #f43f5e; filter: drop-shadow(0 0 8px currentColor); animation: aircraft-pulse 1s infinite; }
+@keyframes aircraft-pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 #status-bar {
   position: absolute; bottom: 30px; right: 10px; z-index: 1000;
   background: rgba(10,15,30,0.92); border: 1px solid #1e3a5f;
@@ -1607,41 +1616,32 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <div id="map"></div>
 <div id="legend">
   <h4>Aircraft</h4>
-  <div class="leg-item"><span style="font-size:18px;line-height:1;color:#f59e0b">🚁</span><span style="color:#f59e0b">LEO / EMS (APD, STAR Flight)</span></div>
-  <div class="leg-item"><span style="font-size:18px;line-height:1;color:#a855f7">🚁</span><span style="color:#a855f7">Unknown helicopter &lt;5,000ft</span></div>
-  <div class="leg-item">
-    <svg width="32" height="6" style="flex-shrink:0">
-      <line x1="0" y1="3" x2="32" y2="3" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 4"/>
-    </svg>
-    <span>30-min flight trail</span>
-  </div>
+  <div class="leg-item" style="color:#a855f7"><svg class="leg-icon" viewBox="0 0 32 32"><path d="M15 2h2v8h6v2h-6v2h3c2.8 0 5 2.2 5 5v2h4v2h-6l-3 5h-8l-3-5H3v-2h4v-2c0-2.8 2.2-5 5-5h3v-2H9v-2h6V2z"/><rect x="2" y="6" width="28" height="2" rx="1"/></svg><span>Helicopter</span></div>
+  <div class="leg-item" style="color:#38bdf8"><svg class="leg-icon" viewBox="0 0 32 32"><path d="M16 2c-1.2 0-2 2-2 4v7L4 17v3l10-2v7l-4 3v2l6-2 6 2v-2l-4-3v-7l10 2v-3l-10-4V6c0-2-.8-4-2-4z"/></svg><span>Light fixed-wing</span></div>
+  <div class="leg-item" style="color:#38bdf8"><svg class="leg-icon" viewBox="0 0 32 32"><path d="M16 1c-1.3 0-2.2 2.4-2.2 4.8v7L2 19v3l11.8-3v6.5L9 29v2l7-2 7 2v-2l-4.8-3.5V19L30 22v-3l-11.8-6.2v-7C18.2 3.4 17.3 1 16 1z"/></svg><span>Airliner / large aircraft</span></div>
+  <div class="leg-item"><span style="width:22px;text-align:center;color:#f59e0b;font-size:18px">●</span><span style="color:#f59e0b">Public safety / priority</span></div>
+  <div class="leg-item"><svg width="32" height="6" style="flex-shrink:0"><line x1="0" y1="3" x2="32" y2="3" stroke="#a855f7" stroke-width="2" stroke-dasharray="4 4"/></svg><span>Local helicopter trail</span></div>
 </div>
 <div id="status-bar">
   <h4>Status</h4>
   <div class="stat-row"><span>Aircraft tracked</span><span class="stat-val" id="s-count">—</span></div>
-  <div class="stat-row"><span>LEO airborne</span><span class="stat-val" id="s-leo">—</span></div>
+  <div class="stat-row"><span>Helicopters</span><span class="stat-val" id="s-helo">—</span></div>
+  <div class="stat-row"><span>Priority aircraft</span><span class="stat-val" id="s-priority">—</span></div>
   <div class="stat-row"><span>Last update</span><span class="stat-val" id="s-time">—</span></div>
 </div>
 <div id="no-aircraft">
   <h3>No aircraft in range</h3>
-  <p>No helicopters below 5,000ft detected within 60 miles of Austin.<br>Checking every 30 seconds.</p>
+  <p>No ADS-B aircraft are currently available around Austin.<br>Checking every 15 seconds.</p>
 </div>
 <script>
 const map = L.map('map').setView([30.2672, -97.7431], 10);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap &amp; CartoDB', maxZoom: 18
+  attribution: '&copy; OpenStreetMap &amp; CartoDB · Aircraft: <a href="https://adsb.lol" target="_blank" rel="noopener">ADSB.lol</a> ODbL 1.0',
+  maxZoom: 18
 }).addTo(map);
 
 const acMarkers = {};
 const acTrails  = {};
-
-function makeHeloIcon(isLeo) {
-  const color = isLeo ? '#f59e0b' : '#a855f7';
-  return L.divIcon({
-    html: `<div style="font-size:22px;line-height:1;filter:drop-shadow(0 0 5px ${color});color:${color}">🚁</div>`,
-    iconSize: [26,26], iconAnchor: [13,13], className: ''
-  });
-}
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -1649,13 +1649,45 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function aircraftKind(ac) {
+  const category = String(ac.category || '').toUpperCase();
+  const type = String(ac.aircraft_type || '').toUpperCase();
+  if (ac.is_helicopter || category === 'A7') return 'helicopter';
+  if (['A3', 'A4', 'A5'].includes(category)) return 'airliner';
+  if (/^(A2|A3|A4|A5|B7|B8|B9|BCS|CRJ|E1[579]|E2|DC|MD|IL|TU|AN|GLEX|GLF|CL60)/.test(type)) return 'airliner';
+  return 'light-aircraft';
+}
+
+function aircraftPriority(ac) {
+  if (ac.is_emergency) return 'emergency';
+  if (ac.is_military) return 'military';
+  if (ac.is_known_public_safety || ac.is_interesting || ac.is_pia || ac.is_ladd) return 'priority';
+  return '';
+}
+
+const AIRCRAFT_SVGS = {
+  helicopter: `<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M15 2h2v8h6v2h-6v2h3c2.8 0 5 2.2 5 5v2h4v2h-6l-3 5h-8l-3-5H3v-2h4v-2c0-2.8 2.2-5 5-5h3v-2H9v-2h6V2z"/><rect x="2" y="6" width="28" height="2" rx="1"/></svg>`,
+  'light-aircraft': `<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2c-1.2 0-2 2-2 4v7L4 17v3l10-2v7l-4 3v2l6-2 6 2v-2l-4-3v-7l10 2v-3l-10-4V6c0-2-.8-4-2-4z"/></svg>`,
+  airliner: `<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 1c-1.3 0-2.2 2.4-2.2 4.8v7L2 19v3l11.8-3v6.5L9 29v2l7-2 7 2v-2l-4.8-3.5V19L30 22v-3l-11.8-6.2v-7C18.2 3.4 17.3 1 16 1z"/></svg>`
+};
+
+function makeAircraftIcon(ac) {
+  const heading = Number.isFinite(Number(ac.track)) ? Number(ac.track) : 0;
+  const kind = aircraftKind(ac);
+  const priority = aircraftPriority(ac);
+  return L.divIcon({
+    html: `<div class="aircraft-symbol ${kind} ${priority}" style="transform:rotate(${heading}deg)">${AIRCRAFT_SVGS[kind]}</div>`,
+    iconSize: [24,24], iconAnchor: [12,12], className: ''
+  });
+}
+
 function flightAwareIdentifier(ac) {
-  const fields = [ac.callsign, ac.label, ac.icao24];
+  const fields = [ac.registration, ac.flight, ac.hex];
   for (const field of fields) {
     const match = String(field || '').toUpperCase().match(/\bN[0-9][A-Z0-9]{1,5}\b/);
     if (match) return match[0];
   }
-  const callsign = String(ac.callsign || '').trim().toUpperCase();
+  const callsign = String(ac.flight || '').trim().toUpperCase();
   return /^[A-Z0-9]{2,8}$/.test(callsign) ? callsign : '';
 }
 
@@ -1667,22 +1699,31 @@ function flightAwareLink(ac) {
 }
 
 function popupHtml(ac) {
-  const ago  = Math.round((Date.now()/1000 - ac.ts) / 60);
-  const leo  = ac.is_leo ? '<div style="color:#f59e0b;font-weight:700;margin:4px 0">🔴 LAW ENFORCEMENT / EMS</div>' : '';
-  const cs   = ac.callsign ? `<div>Flight: <b>${escapeHtml(ac.callsign)}</b></div>` : '';
-  const hdg  = ac.heading  ? `${Math.round(ac.heading)}&deg;` : '?';
-  const spd  = ac.speed_kts ? `${Math.round(ac.speed_kts)} kts` : '?';
-  const label = escapeHtml(ac.label || ac.icao24);
-  const icao = escapeHtml(ac.icao24);
+  const name = ac.known_label || ac.flight || ac.registration || ac.hex;
+  const badges = [];
+  if (ac.is_known_public_safety) badges.push(ac.is_known_leo ? 'CONFIRMED LEO' : 'KNOWN PUBLIC SAFETY');
+  if (ac.is_military) badges.push('MILITARY');
+  if (ac.is_interesting) badges.push('INTERESTING');
+  if (ac.is_pia) badges.push('PIA');
+  if (ac.is_ladd) badges.push('LADD');
+  if (aircraftKind(ac) === 'helicopter') badges.push('HELICOPTER');
+  if (ac.is_emergency) badges.push('EMERGENCY');
+  const badgeHtml = badges.length
+    ? `<div style="color:#f59e0b;font-weight:700;margin:4px 0">${badges.map(escapeHtml).join(' · ')}</div>`
+    : '';
+  const altitude = ac.alt_baro == null ? '?' : `${Math.round(ac.alt_baro).toLocaleString()} ft`;
+  const speed = ac.gs == null ? '?' : `${Math.round(ac.gs)} kt`;
+  const heading = ac.track == null ? '?' : `${Math.round(ac.track)}&deg;`;
   return `
     <div style="font-family:-apple-system,sans-serif;min-width:180px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:4px">${label}</div>
-      ${leo}${cs}
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">${escapeHtml(name)}</div>
+      ${badgeHtml}
       <div style="color:#64748b;font-size:12px">
-        ICAO: ${icao}<br>
-        Alt: <b>${ac.alt_ft ? ac.alt_ft.toLocaleString() + ' ft' : '?'}</b> &nbsp;
-        Hdg: ${hdg} &nbsp; Spd: ${spd}<br>
-        Updated ${ago}m ago
+        ICAO: ${escapeHtml(ac.hex)}
+        ${ac.registration ? ` · ${escapeHtml(ac.registration)}` : ''}
+        ${ac.aircraft_type ? ` · ${escapeHtml(ac.aircraft_type)}` : ''}<br>
+        Alt: <b>${altitude}</b> &nbsp; Hdg: ${heading} &nbsp; Spd: ${speed}
+        ${ac.squawk ? `<br>Squawk: ${escapeHtml(ac.squawk)}` : ''}
       </div>
       ${flightAwareLink(ac)}
     </div>`;
@@ -1690,30 +1731,53 @@ function popupHtml(ac) {
 
 async function poll() {
   try {
-    const resp = await fetch('/api/adsb');
-    const aircraft = await resp.json();
+    const resp = await fetch('/api/adsb/live', {cache: 'no-store'});
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const aircraft = Array.isArray(data.aircraft) ? data.aircraft : [];
+    let localAircraft = [];
+    try {
+      const localResp = await fetch('/api/adsb', {cache: 'no-store'});
+      if (localResp.ok) localAircraft = await localResp.json();
+    } catch(e) {}
+    const localByHex = new Map(
+      (Array.isArray(localAircraft) ? localAircraft : [])
+        .map(ac => [String(ac.icao24 || '').toLowerCase(), ac])
+    );
     const seen = new Set();
+    const seenTrails = new Set();
 
     for (const ac of aircraft) {
-      const key = ac.icao24;
+      if (!ac.hex || ac.lat == null || ac.lon == null) continue;
+      const key = String(ac.hex).toLowerCase();
       seen.add(key);
 
-      const trailPts   = ac.trail.map(p => [p[0], p[1]]);
-      const trailColor = ac.is_leo ? '#f59e0b' : '#a855f7';
-
-      if (acTrails[key]) {
-        acTrails[key].setLatLngs(trailPts);
-      } else {
-        acTrails[key] = L.polyline(trailPts, {
-          color: trailColor, weight: 2, opacity: 0.55, dashArray: '5 5'
-        }).addTo(map);
+      const local = localByHex.get(key);
+      const trailPts = Array.isArray(local?.trail)
+        ? local.trail.filter(p => Array.isArray(p) && p.length >= 2).map(p => [p[0], p[1]])
+        : [];
+      if (trailPts.length > 1) {
+        seenTrails.add(key);
+        const trailColor = aircraftPriority(ac) ? '#f59e0b' : '#a855f7';
+        if (acTrails[key]) {
+          acTrails[key].setLatLngs(trailPts);
+          acTrails[key].setStyle({color: trailColor});
+        } else {
+          acTrails[key] = L.polyline(trailPts, {
+            color: trailColor, weight: 2, opacity: 0.55, dashArray: '5 5'
+          }).addTo(map);
+        }
       }
 
       if (acMarkers[key]) {
         acMarkers[key].setLatLng([ac.lat, ac.lon]);
+        acMarkers[key].setIcon(makeAircraftIcon(ac));
         acMarkers[key].setPopupContent(popupHtml(ac));
       } else {
-        acMarkers[key] = L.marker([ac.lat, ac.lon], {icon: makeHeloIcon(ac.is_leo)})
+        acMarkers[key] = L.marker([ac.lat, ac.lon], {
+          icon: makeAircraftIcon(ac),
+          zIndexOffset: aircraftPriority(ac) ? 600 : 100
+        })
           .bindPopup(popupHtml(ac))
           .addTo(map);
       }
@@ -1726,20 +1790,33 @@ async function poll() {
         if (acTrails[key]) { acTrails[key].remove(); delete acTrails[key]; }
       }
     }
+    for (const key of Object.keys(acTrails)) {
+      if (!seenTrails.has(key)) {
+        acTrails[key].remove();
+        delete acTrails[key];
+      }
+    }
 
     const total = aircraft.length;
-    const leo   = aircraft.filter(a => a.is_leo).length;
+    const helicopters = aircraft.filter(a => aircraftKind(a) === 'helicopter').length;
+    const priority = aircraft.filter(a => Boolean(aircraftPriority(a))).length;
     document.getElementById('s-count').textContent = total;
-    document.getElementById('s-leo').textContent   = leo;
-    document.getElementById('s-time').textContent  = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    document.getElementById('s-helo').textContent = helicopters;
+    document.getElementById('s-priority').textContent = priority;
+    const timeEl = document.getElementById('s-time');
+    timeEl.textContent = data.stale
+      ? 'STALE'
+      : new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    timeEl.style.color = data.stale ? '#f59e0b' : '#3b82f6';
     document.getElementById('no-aircraft').style.display = total === 0 ? 'block' : 'none';
   } catch(e) {
     document.getElementById('s-time').textContent = 'error';
+    document.getElementById('s-time').style.color = '#ef4444';
   }
 }
 
 poll();
-setInterval(poll, 30000);
+setInterval(poll, 15000);
 </script>
 </body>
 </html>
