@@ -69,6 +69,7 @@ from modules.incident_engine import (  # noqa: E402
     _active_incidents,
     _incident_lock,
 )
+from modules.kg_integration import kg_write_call  # noqa: E402
 from modules.llm import *  # noqa: E402
 from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
 from modules.pi_watchdog import (  # noqa: E402
@@ -241,6 +242,10 @@ def receive():
                         transcript=transcript, lat=lat, lon=lon, location=location)
             recent = calls_since(ts - 15 * 60)
             call["llm"] = llm_analyze(call, recent)
+            try:
+                kg_write_call(call)
+            except Exception as _kg_err:
+                print(f"[recv] KG write warning: {_kg_err}", flush=True)
             # If this is an unknown talkgroup, ask the LLM to identify it
             if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
                 threading.Thread(target=llm_identify_tgid, args=(tgid, transcript),

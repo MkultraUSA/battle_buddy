@@ -83,6 +83,7 @@ logs/
 *.sqlite3-journal
 *.sqlite3-shm
 *.sqlite3-wal
+*.gexf
 *.wav
 *.mp3
 *.tmp

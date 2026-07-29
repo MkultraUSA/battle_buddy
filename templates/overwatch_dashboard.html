@@ -1,0 +1,1656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle Buddy // OVERWATCH</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        :root {
+            --primary: #0A1428;
+            --accent: #00B4D8;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: #0A1428;
+            color: #F0F4F8;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .panel {
+            background-color: #13213A;
+            border: 1px solid #1E3A5F;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 180, 216, 0.1);
+        }
+
+        .header {
+            background-color: #0A1428;
+            border-bottom: 1px solid #00B4D8;
+        }
+
+        .live-dot {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 1em;
+            height: 1em;
+            border: 2px solid rgba(0, 180, 216, 0.3);
+            border-top-color: #00B4D8;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .spinner-lg {
+            width: 2rem;
+            height: 2rem;
+            border-width: 3px;
+            border-color: rgba(0, 180, 216, 0.2);
+            border-top-color: #00B4D8;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        /* Dark Leaflet tile adjustments */
+        .leaflet-container {
+            background: #0f1f38;
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+
+        /* Remove default Leaflet attribution styling for tactical look */
+        .leaflet-control-attribution {
+            background: rgba(10, 20, 40, 0.85) !important;
+            color: #4a5568 !important;
+            font-size: 9px !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            padding: 2px 6px !important;
+            border-radius: 4px !important;
+            border: 1px solid #1E3A5F !important;
+        }
+        .leaflet-control-attribution a {
+            color: #00B4D8 !important;
+        }
+
+        /* Tactical zoom controls */
+        .leaflet-control-zoom a {
+            background: rgba(10, 20, 40, 0.9) !important;
+            color: #00B4D8 !important;
+            border-color: #1E3A5F !important;
+        }
+
+        /* Dark popup */
+        .leaflet-popup-content-wrapper {
+            background: #13213A !important;
+            color: #F0F4F8 !important;
+            border: 1px solid #00B4D8 !important;
+            border-radius: 6px !important;
+            font-family: 'Inter', system-ui, sans-serif !important;
+            font-size: 12px !important;
+        }
+        .leaflet-popup-tip {
+            background: #13213A !important;
+        }
+
+        /* Severity pulse animation for markers */
+        @keyframes marker-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.7); }
+            100% { box-shadow: 0 0 0 12px rgba(255, 77, 77, 0); }
+        }
+        .marker-critical {
+            animation: marker-pulse 2s infinite;
+            border-radius: 50%;
+        }
+
+        .ontology-tree ul {
+            list-style: none;
+        }
+
+        .timeline {
+            background: linear-gradient(to right, #00B4D8, #13213A);
+        }
+
+        .mode-btn.active {
+            background-color: #00B4D8;
+            color: #0A1428;
+            border-color: #00B4D8;
+        }
+
+        /* Agency filter buttons */
+        .agency-btn.active {
+            background-color: #00B4D8;
+            color: #0A1428;
+            border-color: #00B4D8;
+        }
+
+        .agency-btn:not(.active) {
+            background-color: transparent;
+            color: #94a3b8;
+            border-color: #334155;
+        }
+
+        .agency-btn:not(.active):hover {
+            background-color: rgba(0, 180, 216, 0.1);
+            color: #00B4D8;
+            border-color: #00B4D8;
+        }
+
+        /* Search dropdown */
+        .search-results-dropdown {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        /* Error state */
+        .error-msg {
+            color: #FF4D4D;
+            font-size: 11px;
+        }
+
+        /* Loading placeholder shimmer */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .shimmer {
+            background: linear-gradient(90deg, #13213A 25%, #1a3055 50%, #13213A 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+    <!-- Top Bar -->
+    <div class="header px-6 py-3 flex items-center justify-between border-b border-cyan-500">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-shield-alt text-[#00B4D8] text-2xl"></i>
+                <div>
+                    <span class="text-2xl font-bold tracking-tighter">BATTLE BUDDY</span>
+                    <span class="text-xs text-cyan-400 mono ml-2">OVERWATCH v0.1</span>
+                </div>
+            </div>
+
+            <!-- Global Search -->
+            <div class="relative w-96" id="search-container">
+                <input id="global-search"
+                       type="text"
+                       placeholder="Search knowledge graph... (incident, tgid:5123, shots fired)"
+                       class="w-full bg-[#0A1428] border border-cyan-500/30 focus:border-cyan-400 text-sm px-4 py-2.5 rounded-lg pl-10 text-white placeholder:text-slate-400 focus:outline-none">
+                <i class="fas fa-search absolute left-3.5 top-3 text-cyan-500"></i>
+                <!-- Search results dropdown -->
+                <div id="search-results" class="absolute top-full left-0 right-0 mt-1 bg-[#13213A] border border-cyan-500/30 rounded-lg shadow-xl z-50 hidden search-results-dropdown"></div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-6">
+            <!-- Live Status -->
+            <div class="flex items-center gap-2 bg-[#13213A] px-4 py-1 rounded-full border border-emerald-500/30">
+                <div class="w-2 h-2 bg-emerald-400 rounded-full live-dot"></div>
+                <span class="text-xs font-medium text-emerald-400 mono" id="live-status-text">LIVE • CONNECTING...</span>
+            </div>
+
+            <!-- Mode Switcher -->
+            <div class="flex bg-[#13213A] rounded-lg p-1 border border-slate-700">
+                <button onclick="switchMode(0)" id="mode-0"
+                        class="mode-btn active px-5 py-1.5 text-xs font-medium rounded-md flex items-center gap-2">
+                    <i class="fas fa-tachometer-alt"></i>
+                    <span>NORMAL</span>
+                </button>
+                <button onclick="switchMode(1)" id="mode-1"
+                        class="mode-btn px-5 py-1.5 text-xs font-medium rounded-md flex items-center gap-2">
+                    <i class="fas fa-eye"></i>
+                    <span>OVERWATCH</span>
+                </button>
+                <button onclick="switchMode(2)" id="mode-2"
+                        class="mode-btn px-5 py-1.5 text-xs font-medium rounded-md flex items-center gap-2">
+                    <i class="fas fa-timeline"></i>
+                    <span>TIMELINE</span>
+                </button>
+            </div>
+
+            <div class="flex items-center gap-3 text-xs mono">
+                <div id="incident-count-badge" class="px-3 py-1 bg-amber-500/10 text-amber-400 rounded">-- INCIDENTS</div>
+                <div onclick="refreshAllData()" class="cursor-pointer hover:text-cyan-400 transition-colors" title="Refresh all data from KG">
+                    <i class="fas fa-sync-alt"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agency / Talkgroup Filter Bar -->
+    <div id="filter-bar" class="px-6 py-2 bg-[#0c1a30] border-b border-slate-700 flex items-center gap-3">
+        <div class="flex items-center gap-2 text-[10px] mono text-slate-400 mr-1">
+            <i class="fas fa-filter text-cyan-500"></i>
+            <span>AGENCY FILTER</span>
+        </div>
+        <div id="agency-filters" class="flex items-center gap-2">
+            <button onclick="setAgencyFilter('ALL')" id="agency-btn-ALL"
+                    class="agency-btn active px-3 py-1 text-[10px] font-medium rounded border border-cyan-500/50 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 transition-colors">
+                ALL <span class="ml-1 text-[9px] opacity-60" id="agency-count-ALL">0</span>
+            </button>
+            <!-- Agency buttons populated dynamically -->
+        </div>
+        <div class="flex items-center gap-2 ml-auto">
+            <div class="flex items-center gap-2 text-[10px] mono text-slate-400 mr-1">
+                <i class="fas fa-broadcast-tower text-emerald-500"></i>
+                <span>TALKGROUP</span>
+            </div>
+            <select id="talkgroup-filter" onchange="setTalkGroupFilter(this.value)"
+                    class="bg-[#0A1428] border border-cyan-500/30 text-[10px] text-slate-300 rounded px-2 py-1 focus:outline-none focus:border-cyan-400 cursor-pointer">
+                <option value="ALL">ALL CHANNELS</option>
+                <!-- Options populated dynamically -->
+            </select>
+        </div>
+        <div id="active-filter-indicator" class="hidden items-center gap-1 text-[9px] mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+            <i class="fas fa-eye"></i>
+            <span id="active-filter-text">FILTERED</span>
+        </div>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden p-4 gap-4">
+        <!-- LEFT: Ontology Browser -->
+        <div class="w-72 flex flex-col panel">
+            <div class="px-4 py-3 border-b border-slate-700 flex justify-between items-center bg-[#0f1f38]">
+                <div class="flex items-center gap-2 text-cyan-400 text-sm font-semibold">
+                    <i class="fas fa-sitemap"></i>
+                    <span>ONTOLOGY</span>
+                </div>
+                <div id="ontology-count" class="text-[10px] mono text-slate-500">KG • -- nodes</div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3 text-sm ontology-tree" id="ontology-browser">
+                <!-- Loading spinner shown initially -->
+                <div class="flex items-center justify-center h-full min-h-[200px]">
+                    <div class="spinner-lg spinner"></div>
+                </div>
+            </div>
+            <div id="ontology-footer" class="p-3 border-t border-slate-700 text-[10px] mono text-slate-500 bg-[#0A1428]">
+                Loading stats...
+            </div>
+        </div>
+
+        <!-- CENTER: Map -->
+        <div class="flex-1 flex flex-col gap-4">
+            <div class="flex-1 panel map-container relative" style="min-height: 420px;">
+                <div class="absolute top-4 left-4 bg-black/70 text-xs mono px-3 py-2 rounded border border-cyan-500/50 z-[1000]">
+                    <div class="flex items-center gap-2">
+                        <span class="text-cyan-400">&#x2022;</span>
+                        <span>AUSTIN METRO - LIVE FEED</span>
+                    </div>
+                    <div id="map-coords" class="text-slate-400 text-[10px] mt-1">30.27&#176;N  97.74&#176;W &#x2022; <span id="map-time">--:--:--Z</span></div>
+                </div>
+
+                <!-- Real Leaflet map -->
+                <div id="map"></div>
+
+                <div id="units-deployed" class="absolute bottom-4 right-4 bg-black/80 text-[10px] mono p-3 rounded border border-slate-600 z-[1000]">
+                    <div class="text-emerald-400">-- UNITS DEPLOYED</div>
+                    <div class="text-slate-400">Loading talkgroups...</div>
+                </div>
+            </div>
+
+            <!-- Bottom Timeline -->
+            <div class="h-28 panel flex flex-col">
+                <div class="px-4 py-2 border-b border-slate-600 flex items-center justify-between text-xs mono">
+                    <div>TIMELINE &#x2022; INCIDENT CHRONOLOGY</div>
+                    <div id="timeline-labels" class="flex gap-4 text-slate-400">
+                        <span class="text-slate-500">Waiting for data...</span>
+                    </div>
+                </div>
+                <div class="flex-1 relative flex items-center px-6 timeline">
+                    <div id="timeline-bar" class="h-2 bg-cyan-400/30 w-full rounded-full relative">
+                        <!-- Timeline markers populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Live Transcript + Incidents -->
+        <div class="w-80 flex flex-col gap-4">
+            <!-- Live Transcript (shows calls/transcripts from incidents) -->
+            <div class="flex-1 panel flex flex-col">
+                <div class="px-4 py-3 border-b border-cyan-500/30 bg-[#0f1f38] flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-waveform-lines text-cyan-400"></i>
+                        <span class="font-semibold text-cyan-300">LIVE TRANSCRIPT</span>
+                    </div>
+                    <div id="transcript-tg-badge" class="px-2 py-0.5 bg-cyan-900 text-cyan-300 text-[10px] rounded mono">ALL CHANNELS</div>
+                </div>
+                <div id="transcript-feed" class="flex-1 p-4 text-sm overflow-y-auto space-y-5 mono text-slate-300 text-[13px] leading-tight">
+                    <!-- Loading state -->
+                    <div class="flex items-center justify-center h-full min-h-[150px]">
+                        <div><span class="spinner mr-2"></span> Loading transcript data...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Incidents -->
+            <div class="h-64 panel flex flex-col">
+                <div class="px-4 py-3 border-b border-rose-500/30 text-xs font-medium flex items-center gap-2 text-rose-400">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span id="incident-panel-header">ACTIVE INCIDENTS (--)</span>
+                </div>
+                <div class="flex-1 p-3 space-y-3 overflow-y-auto" id="incident-panel">
+                    <!-- Loading state -->
+                    <div class="flex items-center justify-center h-full min-h-[120px]">
+                        <div><span class="spinner mr-2"></span>Loading incidents...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Relationships Panel (collapsed by default, expandable) -->
+            <div class="panel flex flex-col" id="relationships-panel" style="display:none;">
+                <div class="px-4 py-3 border-b border-purple-500/30 text-xs font-medium flex items-center gap-2 text-purple-400 cursor-pointer" onclick="toggleRelationships()">
+                    <i class="fas fa-project-diagram"></i>
+                    <span>RELATIONSHIPS (<span id="rel-count">--</span>)</span>
+                    <i class="fas fa-chevron-down ml-auto transition-transform" id="rel-toggle-icon"></i>
+                </div>
+                <div id="relationship-list" class="flex-1 p-3 space-y-2 overflow-y-auto text-xs max-h-48">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="h-9 bg-[#0A1428] border-t border-cyan-900 flex items-center px-6 text-[10px] mono text-slate-500 justify-between">
+        <div id="footer-status">CONNECTING TO KNOWLEDGE GRAPH...</div>
+        <div class="flex items-center gap-5">
+            <span onclick="exportKG()" class="cursor-pointer hover:text-cyan-400">EXPORT KG</span>
+            <span class="text-emerald-400">&#x2022; MODE: OVERWATCH &#x2022;</span>
+            <span id="clock" class="mono"></span>
+        </div>
+    </div>
+
+    <script>
+        // =====================================================================
+        // Battle Buddy Overwatch Dashboard — Live API-Wired Version
+        // All data fetched from /api/kg/* endpoints. No hardcoded sample data.
+        // =====================================================================
+
+        // ---- In-memory caches for dashboard state ----
+        let cachedStats = null;
+        let cachedNodes = null;
+        let cachedIncidents = null;
+        let cachedRelationships = null;
+        let cachedFilterOptions = null;
+
+        // ---- Filter state ----
+        let activeAgencyFilter = 'ALL';
+        let activeTalkgroupFilter = 'ALL';
+        let incidentAgencyIndex = null; // Map<agencyId, Set<incidentId>>
+        let incidentTgIndex = null;     // Map<tgId/tgNodeId, Set<incidentId>>
+
+        // ---- Polling state ----
+        let pollTimer = null;
+        const POLL_INTERVAL_MS = 8000;  // 8 seconds between refreshes
+        let pollingPaused = false;
+        let lastUpdatedTime = null;
+        let consecutiveErrors = 0;
+        const MAX_CONSECUTIVE_ERRORS = 5;
+
+        // ---- Alert tracking (prevent duplicate alerts) ----
+        let alertedIncidentIds = new Set();
+        let audioCtx = null; // lazy-init on first user interaction
+
+        // ---- Quick change detection (lightweight, no deep compare) ----
+        function hasChanged(newData, cacheKey) {
+            if (newData === null || newData === undefined) return false;
+            if (window[cacheKey] === null || window[cacheKey] === undefined) return true;
+
+            // Compare by count/structural fingerprint, not full JSON
+            const prev = window[cacheKey];
+            const curr = newData;
+
+            if (cacheKey === 'cachedStats') {
+                return (prev.node_count !== curr.node_count ||
+                        prev.edge_count !== curr.edge_count);
+            }
+            if (cacheKey === 'cachedNodes') {
+                return (prev.length !== curr.length);
+            }
+            if (cacheKey === 'cachedIncidents') {
+                return (prev.length !== curr.length);
+            }
+            if (cacheKey === 'cachedRelationships') {
+                return (prev.length !== curr.length);
+            }
+            return true; // unknown type, re-render
+        }
+
+        // ---- Utility: safe fetch wrapper with error handling ----
+        async function apiFetch(url, errorMsg) {
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    const errData = await resp.json().catch(() => ({}));
+                    throw new Error(errData.error || `HTTP ${resp.status}`);
+                }
+                return await resp.json();
+            } catch (err) {
+                console.error(`[KG API] ${errorMsg}:`, err);
+                return { error: err.message };
+            }
+        }
+
+        // ---- Utility: show loading spinner in a container ----
+        function showLoading(containerId, message = 'Loading...') {
+            const el = document.getElementById(containerId);
+            if (el) {
+                el.innerHTML = `<div class="flex items-center justify-center h-full min-h-[100px]"><div><span class="spinner mr-2"></span>${message}</div></div>`;
+            }
+        }
+
+        // ---- Utility: show error in a container ----
+        function showError(containerId, message) {
+            const el = document.getElementById(containerId);
+            if (el) {
+                el.innerHTML = `<div class="error-msg p-4 text-center"><i class="fas fa-exclamation-circle mr-1"></i>${escapeHtml(message)}<br><button onclick="refreshAllData()" class="mt-2 text-cyan-400 hover:underline cursor-pointer">Retry</button></div>`;
+            }
+        }
+
+        // ---- Utility: HTML escape for safety ----
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(String(text)));
+            return div.innerHTML;
+        }
+
+        // =====================================================================
+        // API CALLERS
+        // =====================================================================
+
+        async function fetchStats() {
+            const data = await apiFetch('api/kg/stats', 'Failed to load stats');
+            if (data && !data.error) {
+                cachedStats = data;
+                renderStats(data);
+            } else {
+                document.getElementById('live-status-text').textContent = 'LIVE &#x2022; ERROR';
+                document.getElementById('footer-status').textContent = 'ERROR CONNECTING TO KG API';
+            }
+        }
+
+        async function fetchNodes() {
+            const data = await apiFetch('api/kg/nodes', 'Failed to load nodes');
+            if (data && !data.error) {
+                cachedNodes = data.nodes;
+                renderOntology(data.nodes, data.count);
+            } else {
+                showError('ontology-browser', data?.error || 'Failed to load knowledge graph nodes.');
+            }
+        }
+
+        async function fetchIncidents() {
+            const data = await apiFetch('api/kg/incidents', 'Failed to load incidents');
+            if (data && !data.error) {
+                cachedIncidents = data.incidents;
+                rebuildIncidentAgencyIndex();
+                if (activeAgencyFilter !== 'ALL' || activeTalkgroupFilter !== 'ALL') {
+                    applyFilters();
+                } else {
+                    renderIncidents(data.incidents, data.count);
+                    renderTranscriptFromIncidents(data.incidents);
+                    renderTimelineFromIncidents(data.incidents);
+                    renderMapMarkers(data.incidents);
+                }
+            } else {
+                showError('incident-panel', data?.error || 'Failed to load incidents.');
+                showError('transcript-feed', data?.error || 'Failed to load transcript data.');
+            }
+        }
+
+        async function fetchRelationships() {
+            const data = await apiFetch('api/kg/relationships', 'Failed to load relationships');
+            if (data && !data.error) {
+                cachedRelationships = data.relationships;
+                renderRelationships(data.relationships, data.count);
+            }
+        }
+
+        async function searchKG(query) {
+            if (!query || query.trim().length === 0) {
+                hideSearchResults();
+                return;
+            }
+            const data = await apiFetch(`api/kg/search?q=${encodeURIComponent(query.trim())}`, 'Search failed');
+            if (data && !data.error) {
+                renderSearchResults(data.results, data.query);
+            } else {
+                renderSearchResults([], query, data?.error || 'Search error');
+            }
+        }
+
+        // =====================================================================
+        // FILTER AGENCY / TALKGROUP LOGIC
+        // =====================================================================
+
+        async function fetchFilterOptions() {
+            const data = await apiFetch('api/kg/filter-options', 'Failed to load filter options');
+            if (data && !data.error) {
+                cachedFilterOptions = data;
+                populateFilterUI(data);
+                rebuildIncidentAgencyIndex();
+            }
+        }
+
+        function populateFilterUI(options) {
+            const agencyContainer = document.getElementById('agency-filters');
+            const tgSelect = document.getElementById('talkgroup-filter');
+
+            // Build agency buttons
+            let agencyHtml = '';
+            (options.agencies || []).forEach(ag => {
+                const agencyId = ag.id.replace(/['"]/g, '\\\'');
+                agencyHtml += `<button onclick="setAgencyFilter('${agencyId}')" id="agency-btn-${ag.id}"
+                    class="agency-btn px-3 py-1 text-[10px] font-medium rounded border border-slate-600 text-slate-400 hover:bg-cyan-500/10 hover:text-cyan-400 hover:border-cyan-500 transition-colors">
+                    ${escapeHtml(ag.name.length > 10 ? ag.name.substring(0, 10) : ag.name)}
+                    <span class="ml-1 text-[9px] opacity-60" id="agency-count-${ag.id}">0</span>
+                </button>`;
+            });
+            // Prepend the ALL button (which is already in the HTML) with agencies after
+            const existing = agencyContainer.innerHTML;
+            // Keep the ALL button, insert agencies after it
+            const allBtnEnd = existing.indexOf('<!-- Agency buttons') !== -1
+                ? existing.indexOf('<!-- Agency buttons') + '<!-- Agency buttons populated dynamically -->'.length
+                : existing.length;
+            agencyContainer.innerHTML = existing.substring(0, allBtnEnd) + agencyHtml;
+
+            // Build talkgroup dropdown options
+            let tgOptions = '<option value="ALL">ALL CHANNELS</option>';
+            (options.talkgroups || []).forEach(tg => {
+                const label = tg.name
+                    ? `${escapeHtml(tg.name)}${tg.tgid ? ' (TG' + tg.tgid + ')' : ''}`
+                    : escapeHtml(tg.id);
+                tgOptions += `<option value="${escapeHtml(tg.id)}">${label}</option>`;
+            });
+            tgSelect.innerHTML = tgOptions;
+        }
+
+        function rebuildIncidentAgencyIndex() {
+            // Build maps: agencyId -> Set<incidentId>, tgId/tgNodeId -> Set<incidentId>
+            incidentAgencyIndex = {};
+            incidentTgIndex = {};
+
+            if (!cachedIncidents) return;
+
+            cachedIncidents.forEach(inc => {
+                const agencies = inc.agencies || [];
+                agencies.forEach(ag => {
+                    const agId = ag.id || ag;
+                    if (!incidentAgencyIndex[agId]) {
+                        incidentAgencyIndex[agId] = new Set();
+                    }
+                    incidentAgencyIndex[agId].add(inc.id);
+                });
+
+                // Index by talkgroup from related calls
+                const calls = inc.related_calls || [];
+                calls.forEach(call => {
+                    const tgId = String(call.tgid || '');
+                    const tgNodeId = call.id || '';
+                    if (tgId && tgId !== '0' && tgId !== '??') {
+                        if (!incidentTgIndex[tgId]) incidentTgIndex[tgId] = new Set();
+                        incidentTgIndex[tgId].add(inc.id);
+                    }
+                    if (tgNodeId) {
+                        if (!incidentTgIndex[tgNodeId]) incidentTgIndex[tgNodeId] = new Set();
+                        incidentTgIndex[tgNodeId].add(inc.id);
+                    }
+                });
+            });
+
+            // Update count badges for each agency
+            const totalIncidents = cachedIncidents.length;
+            const allCountEl = document.getElementById('agency-count-ALL');
+            if (allCountEl) allCountEl.textContent = totalIncidents;
+
+            if (cachedFilterOptions && cachedFilterOptions.agencies) {
+                cachedFilterOptions.agencies.forEach(ag => {
+                    const count = incidentAgencyIndex[ag.id] ? incidentAgencyIndex[ag.id].size : 0;
+                    const countEl = document.getElementById(`agency-count-${ag.id}`);
+                    if (countEl) countEl.textContent = count;
+                });
+            }
+        }
+
+        function setAgencyFilter(agencyId) {
+            activeAgencyFilter = agencyId;
+
+            // Update button states
+            document.querySelectorAll('.agency-btn').forEach(btn => {
+                btn.classList.remove('active', 'bg-cyan-500/20', 'text-cyan-300', 'border-cyan-500/50');
+                btn.classList.add('border-slate-600', 'text-slate-400');
+            });
+
+            const activeBtn = document.getElementById(`agency-btn-${agencyId}`);
+            if (activeBtn) {
+                activeBtn.classList.add('active', 'bg-cyan-500/20', 'text-cyan-300', 'border-cyan-500/50');
+                activeBtn.classList.remove('border-slate-600', 'text-slate-400');
+            }
+
+            // Update active filter indicator
+            updateFilterIndicator();
+
+            // Re-render with filter
+            applyFilters();
+        }
+
+        function setTalkGroupFilter(tgId) {
+            activeTalkgroupFilter = tgId;
+            updateFilterIndicator();
+            applyFilters();
+        }
+
+        function updateFilterIndicator() {
+            const indicator = document.getElementById('active-filter-indicator');
+            const text = document.getElementById('active-filter-text');
+
+            if (activeAgencyFilter === 'ALL' && activeTalkgroupFilter === 'ALL') {
+                indicator.classList.add('hidden');
+                indicator.classList.remove('flex');
+            } else {
+                indicator.classList.remove('hidden');
+                indicator.classList.add('flex');
+                const parts = [];
+                if (activeAgencyFilter !== 'ALL') {
+                    // Find the agency name
+                    if (cachedFilterOptions) {
+                        const ag = cachedFilterOptions.agencies.find(a => a.id === activeAgencyFilter);
+                        parts.push(ag ? ag.name : activeAgencyFilter);
+                    } else {
+                        parts.push(activeAgencyFilter);
+                    }
+                }
+                if (activeTalkgroupFilter !== 'ALL') {
+                    if (cachedFilterOptions) {
+                        const tg = cachedFilterOptions.talkgroups.find(t => t.id === activeTalkgroupFilter);
+                        parts.push(tg ? (tg.name || tg.id) : activeTalkgroupFilter);
+                    } else {
+                        parts.push(activeTalkgroupFilter);
+                    }
+                }
+                text.textContent = parts.join(' + ');
+            }
+
+            // Update the ALL CHANNELS badge in transcript header
+            const badgeEl = document.getElementById('transcript-tg-badge');
+            if (badgeEl) {
+                if (activeTalkgroupFilter !== 'ALL') {
+                    if (cachedFilterOptions) {
+                        const tg = cachedFilterOptions.talkgroups.find(t => t.id === activeTalkgroupFilter);
+                        badgeEl.textContent = tg ? `TG${tg.tgid || ''} ${tg.name || tg.id}` : activeTalkgroupFilter;
+                    } else {
+                        badgeEl.textContent = activeTalkgroupFilter;
+                    }
+                    badgeEl.classList.remove('bg-cyan-900', 'text-cyan-300');
+                    badgeEl.classList.add('bg-amber-900', 'text-amber-300');
+                } else if (activeAgencyFilter !== 'ALL') {
+                    if (cachedFilterOptions) {
+                        const ag = cachedFilterOptions.agencies.find(a => a.id === activeAgencyFilter);
+                        badgeEl.textContent = ag ? `${ag.name} ONLY` : activeAgencyFilter;
+                    } else {
+                        badgeEl.textContent = activeAgencyFilter;
+                    }
+                    badgeEl.classList.remove('bg-cyan-900', 'text-cyan-300');
+                    badgeEl.classList.add('bg-amber-900', 'text-amber-300');
+                } else {
+                    badgeEl.textContent = 'ALL CHANNELS';
+                    badgeEl.classList.remove('bg-amber-900', 'text-amber-300');
+                    badgeEl.classList.add('bg-cyan-900', 'text-cyan-300');
+                }
+            }
+        }
+
+        function applyFilters() {
+            if (!cachedIncidents) return;
+
+            let filteredIncidents = cachedIncidents;
+
+            // Apply agency filter
+            if (activeAgencyFilter !== 'ALL' && incidentAgencyIndex) {
+                const matchingIds = incidentAgencyIndex[activeAgencyFilter];
+                if (matchingIds) {
+                    filteredIncidents = filteredIncidents.filter(inc => matchingIds.has(inc.id));
+                } else {
+                    filteredIncidents = [];
+                }
+            }
+
+            // Apply talkgroup filter
+            if (activeTalkgroupFilter !== 'ALL' && incidentTgIndex) {
+                // Resolve the talkgroup filter to a tgId string
+                let tgFilterIds = new Set();
+                if (incidentTgIndex[activeTalkgroupFilter]) {
+                    tgFilterIds = incidentTgIndex[activeTalkgroupFilter];
+                } else {
+                    // Try resolving via filter options (match by tgid number)
+                    if (cachedFilterOptions) {
+                        const tgInfo = cachedFilterOptions.talkgroups.find(t => t.id === activeTalkgroupFilter);
+                        if (tgInfo && tgInfo.tgid) {
+                            if (incidentTgIndex[String(tgInfo.tgid)]) {
+                                tgFilterIds = incidentTgIndex[String(tgInfo.tgid)];
+                            }
+                        }
+                    }
+                }
+                if (tgFilterIds.size > 0) {
+                    filteredIncidents = filteredIncidents.filter(inc => tgFilterIds.has(inc.id));
+                } else if (activeTalkgroupFilter !== 'ALL') {
+                    // No matching incidents for this talkgroup
+                    filteredIncidents = [];
+                }
+            }
+
+            // Re-render with filtered data
+            renderIncidents(filteredIncidents, filteredIncidents.length);
+            renderMapMarkers(filteredIncidents);
+            renderTimelineFromIncidents(filteredIncidents);
+            renderTranscriptWithFilter(filteredIncidents);
+        }
+
+        function renderTranscriptWithFilter(incidents) {
+            const container = document.getElementById('transcript-feed');
+
+            if (!incidents || incidents.length === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-xs text-center p-4">No matching transcript entries.</div>';
+                return;
+            }
+
+            let html = '';
+            let entryCount = 0;
+
+            incidents.forEach(inc => {
+                const calls = inc.related_calls || [];
+                calls.forEach(call => {
+                    // Apply talkgroup filter per call
+                    if (activeTalkgroupFilter !== 'ALL') {
+                        const callTgId = String(call.tgid || '');
+                        const callNodeId = call.id || '';
+                        const tgNodeId = activeTalkgroupFilter;
+
+                        if (callTgId !== String(tgNodeId) && callNodeId !== tgNodeId) {
+                            // Check against filter options for additional matching
+                            if (cachedFilterOptions) {
+                                const tgInfo = cachedFilterOptions.talkgroups.find(t => t.id === tgNodeId);
+                                if (tgInfo && String(callTgId) !== String(tgInfo.tgid)) {
+                                    return; // skip this call
+                                }
+                            } else {
+                                return; // skip if no filter info
+                            }
+                        }
+                    }
+
+                    const callTime = call.timestamp || call.time || call.created_at || '--:--';
+                    const tgId = call.tgid || call.talkgroup || call.label || '??';
+                    const callText = call.text || call.transcript || call.description || call.name || '(no transcript)';
+                    const conf = call.confidence || call.score || 'MED';
+
+                    html += `
+                    <div class="border-l-2 border-cyan-400 pl-3">
+                        <div class="flex justify-between text-[10px] text-slate-500 mb-1">
+                            <span>${escapeHtml(String(callTime).substring(0, 12))} <span class="text-cyan-400">TG${escapeHtml(String(tgId))}</span></span>
+                            <span class="${typeof conf === 'number' && conf >= 0.7 ? 'text-emerald-400' : typeof conf === 'string' && conf === 'HIGH' ? 'text-emerald-400' : 'text-amber-400'}">${escapeHtml(String(conf))}</span>
+                        </div>
+                        <div class="text-slate-200">${escapeHtml(String(callText))}</div>
+                    </div>`;
+                    entryCount++;
+                });
+
+                // If no calls, show incident itself
+                if (calls.length === 0) {
+                    const incTime = inc.timestamp || inc.time || inc.created_at || '--:--';
+                    html += `
+                    <div class="border-l-2 border-rose-400 pl-3">
+                        <div class="flex justify-between text-[10px] text-slate-500 mb-1">
+                            <span>${escapeHtml(String(incTime).substring(0, 12))} <span class="text-rose-400">INCIDENT</span></span>
+                            <span class="text-red-400">ALERT</span>
+                        </div>
+                        <div class="text-slate-200">${escapeHtml(inc.description || inc.name || 'No details')}</div>
+                    </div>`;
+                    entryCount++;
+                }
+            });
+
+            if (entryCount === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-xs text-center p-4">No matching transcript entries.</div>';
+            } else {
+                container.innerHTML = html;
+            }
+        }
+
+        // =====================================================================
+        // RENDERERS
+        // =====================================================================
+
+        function renderStats(stats) {
+            // Header: live status + incident count
+            const tgCount = (stats.nodes_by_type['Talkgroup'] || 0) + (stats.nodes_by_type['talkgroup'] || 0);
+            document.getElementById('live-status-text').textContent = `LIVE \u2022 ${tgCount} TGIDS ACTIVE`;
+
+            const incCount = (stats.nodes_by_type['Incident'] || 0) + (stats.nodes_by_type['incident'] || 0);
+            document.getElementById('incident-count-badge').textContent = `${incCount} INCIDENT${incCount !== 1 ? 'S' : ''}`;
+
+            // Ontology header count
+            document.getElementById('ontology-count').textContent = `KG \u2022 ${stats.node_count} nodes`;
+
+            // Footer status
+            document.getElementById('footer-status').textContent =
+                `CONNECTED TO KG \u2022 ${stats.node_count} ENTITIES \u2022 ${stats.edge_count} RELATIONS`;
+
+            // Units deployed area on map
+            document.getElementById('units-deployed').innerHTML = `
+                <div class="text-emerald-400">${tgCount} TGIDS ACTIVE</div>
+                <div class="text-slate-400">${stats.node_count} nodes \u2022 ${stats.edge_count} edges</div>
+            `;
+
+            // Ontology footer summary
+            const typeEntries = Object.entries(stats.nodes_by_type);
+            const footerParts = typeEntries.map(([k, v]) => `${v} ${k}s`).join(' \u2022 ');
+            document.getElementById('ontology-footer').textContent = footerParts || `${stats.node_count} total entities`;
+
+            // Update map timestamp
+            const now = new Date();
+            document.getElementById('map-time').textContent = now.toISOString().substr(11, 8) + 'Z';
+        }
+
+        function renderOntology(nodes, totalCount) {
+            const container = document.getElementById('ontology-browser');
+
+            if (!nodes || nodes.length === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-xs text-center p-4">No nodes found in knowledge graph.</div>';
+                return;
+            }
+
+            // Group nodes by label/type for tree view
+            const grouped = {};
+            nodes.forEach(node => {
+                const label = node.label || node.type || 'Unknown';
+                if (!grouped[label]) grouped[label] = [];
+                grouped[label].push(node);
+            });
+
+            let html = '<ul class="space-y-1 text-xs">';
+
+            Object.entries(grouped).forEach(([label, nodeList]) => {
+                html += `
+                    <li class="mb-2">
+                        <div class="flex items-center gap-2 p-1.5 bg-[#0a1628] rounded text-cyan-400 font-semibold cursor-pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+                            <i class="fas fa-folder text-[10px]"></i>
+                            <span>${escapeHtml(label)}</span>
+                            <span class="ml-auto text-slate-500 mono text-[10px]">${nodeList.length}</span>
+                            <i class="fas fa-chevron-down text-[8px] text-slate-600"></i>
+                        </div>
+                        <ul class="pl-3 space-y-0.5 mt-1" style="display:block;">`;
+
+                nodeList.forEach(node => {
+                    const displayName = node.name || node.id || 'Unnamed';
+                    const desc = node.description ? ` title="${escapeHtml(node.description)}"` : '';
+                    html += `
+                        <li onclick="inspectNode('${escapeHtml(node.id)}')"
+                            class="flex items-center gap-2 hover:bg-slate-800 p-1.5 rounded cursor-pointer border-l-2 border-cyan-500/40"${desc}>
+                            <span class="text-slate-400 w-20 truncate">${escapeHtml(displayName.substring(0, 18))}</span>
+                            <span class="text-slate-600 mono text-[10px] truncate flex-1">${escapeHtml(String(node.id).substring(0, 24))}</span>
+                        </li>`;
+                });
+
+                html += '</ul></li>';
+            });
+
+            html += '</ul>';
+            container.innerHTML = html;
+        }
+
+        function renderIncidents(incidents, count) {
+            const container = document.getElementById('incident-panel');
+            const headerEl = document.getElementById('incident-panel-header');
+
+            headerEl.textContent = `ACTIVE INCIDENTS (${count})`;
+
+            if (!incidents || incidents.length === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-xs text-center p-4">No active incidents.</div>';
+                return;
+            }
+
+            let html = '';
+            incidents.forEach((inc, idx) => {
+                const itype = inc.itype || inc.type || inc.label || 'Incident';
+                const desc = inc.description || inc.name || 'No description available.';
+                const timeStr = inc.timestamp || inc.time || inc.created_at || '--:--';
+                const location = inc.location || 'Unknown';
+                const confidence = inc.confidence !== undefined ? inc.confidence : (inc.score || 0);
+                const relatedCalls = inc.related_calls || [];
+                const agencies = inc.agencies || [];
+
+                html += `
+                <div onclick="selectIncident('${escapeHtml(inc.id)}')"
+                     class="bg-[#0f1f38] hover:bg-[#1a2a45] p-3 rounded border border-red-500/30 cursor-pointer transition-colors">
+                    <div class="flex justify-between text-xs">
+                        <div class="font-semibold text-red-300">${escapeHtml(itype)}</div>
+                        <div class="mono text-slate-400">${escapeHtml(typeof timeStr === 'string' ? timeStr.substring(0, 12) : timeStr)}</div>
+                    </div>
+                    <div class="text-sm leading-tight mt-1.5 text-slate-200 line-clamp-2">${escapeHtml(desc)}</div>
+                    <div class="text-[10px] text-cyan-400 mt-2 flex gap-2 flex-wrap">
+                        <span class="bg-cyan-900/60 px-2 py-px rounded">${escapeHtml(location)}</span>
+                        ${confidence > 0 ? `<span class="mono">${Math.round(confidence * 100)}%</span>` : ''}
+                        ${relatedCalls.length > 0 ? `<span class="bg-purple-900/60 px-2 py-px rounded">${relatedCalls.length} call${relatedCalls.length !== 1 ? 's' : ''}</span>` : ''}
+                        ${agencies.length > 0 ? `<span class="bg-emerald-900/60 px-2 py-px rounded">${agencies.length} agency${agencies.length !== 1 ? 'ies' : 'y'}</span>` : ''}
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function renderTranscriptFromIncidents(incidents) {
+            const container = document.getElementById('transcript-feed');
+
+            if (!incidents || incidents.length === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-xs text-center p-4">No transcript data available.</div>';
+                return;
+            }
+
+            let html = '';
+            let entryCount = 0;
+
+            // Extract related_calls from each incident as "transcript" entries
+            incidents.forEach(inc => {
+                const calls = inc.related_calls || [];
+                calls.forEach(call => {
+                    const callTime = call.timestamp || call.time || call.created_at || '--:--';
+                    const tgId = call.tgid || call.talkgroup || call.label || '??';
+                    const callText = call.text || call.transcript || call.description || call.name || '(no transcript)';
+                    const conf = call.confidence || call.score || 'MED';
+
+                    html += `
+                    <div class="border-l-2 border-cyan-400 pl-3">
+                        <div class="flex justify-between text-[10px] text-slate-500 mb-1">
+                            <span>${escapeHtml(String(callTime).substring(0, 12))} <span class="text-cyan-400">TG${escapeHtml(String(tgId))}</span></span>
+                            <span class="${typeof conf === 'number' && conf >= 0.7 ? 'text-emerald-400' : typeof conf === 'string' && conf === 'HIGH' ? 'text-emerald-400' : 'text-amber-400'}">${escapeHtml(String(conf))}</span>
+                        </div>
+                        <div class="text-slate-200">${escapeHtml(String(callText))}</div>
+                    </div>`;
+                    entryCount++;
+                });
+
+                // If no calls, show incident itself as an entry
+                if (calls.length === 0) {
+                    const incTime = inc.timestamp || inc.time || inc.created_at || '--:--';
+                    html += `
+                    <div class="border-l-2 border-rose-400 pl-3">
+                        <div class="flex justify-between text-[10px] text-slate-500 mb-1">
+                            <span>${escapeHtml(String(incTime).substring(0, 12))} <span class="text-rose-400">INCIDENT</span></span>
+                            <span class="text-red-400">ALERT</span>
+                        </div>
+                        <div class="text-slate-200">${escapeHtml(inc.description || inc.name || 'No details')}</div>
+                    </div>`;
+                    entryCount++;
+                }
+            });
+
+            if (entryCount === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-xs text-center p-4">No call transcripts linked to incidents.</div>';
+            } else {
+                container.innerHTML = html;
+            }
+        }
+
+        function renderTimelineFromIncidents(incidents) {
+            const labelsContainer = document.getElementById('timeline-labels');
+            const barContainer = document.getElementById('timeline-bar');
+
+            if (!incidents || incidents.length === 0) {
+                labelsContainer.innerHTML = '<span class="text-slate-500">No incidents to display.</span>';
+                barContainer.innerHTML = '';
+                return;
+            }
+
+            // Sort incidents by time
+            const sorted = [...incidents].sort((a, b) => {
+                const ta = a.timestamp || a.time || a.created_at || '';
+                const tb = b.timestamp || b.time || b.created_at || '';
+                return String(ta).localeCompare(String(tb));
+            });
+
+            // Timeline labels (show first few timestamps)
+            const labels = sorted.slice(0, 5).map(inc => {
+                const t = inc.timestamp || inc.time || inc.created_at || '--:--';
+                const shortT = String(t).substring(0, 8);
+                const isAlert = (inc.itype || '').toLowerCase().includes('shoot') ||
+                                (inc.type || '').toLowerCase().includes('shoot') ||
+                                (inc.confidence || 0) > 0.85;
+                return `<span class="${isAlert ? 'text-rose-400' : 'text-cyan-400'}">${shortT} ${isAlert ? 'INCIDENT' : ''}</span>`;
+            }).join('');
+
+            labelsContainer.innerHTML = labels + (sorted.length > 5 ? `<span class="text-slate-500">+${sorted.length - 5} more</span>` : '');
+
+            // Timeline markers
+            let markers = '';
+            sorted.forEach((inc, idx) => {
+                const leftPos = Math.min(5 + (idx / sorted.length) * 90, 95);
+                const isHighConf = (inc.confidence || 0) > 0.85;
+                markers += `<div onclick="selectIncident('${escapeHtml(inc.id)}')"
+                    class="absolute w-3 h-3 -top-0.5 ${isHighConf ? 'bg-red-500 ring-2 ring-red-400' : 'bg-white'} rounded-full shadow cursor-pointer hover:scale-150 transition-transform"
+                    style="left:${leftPos}%"
+                    title="${escapeHtml(inc.itype || inc.type || 'Incident')}"></div>`;
+            });
+            barContainer.innerHTML = markers;
+        }
+
+        // ---- Leaflet map state ----
+        let overwatchMap = null;
+        let markersLayer = null;
+
+        function initMap() {
+            if (overwatchMap) return; // already initialized
+
+            const mapEl = document.getElementById('map');
+            if (!mapEl) return;
+
+            overwatchMap = L.map('map', {
+                center: [30.2672, -97.7431],
+                zoom: 12,
+                zoomControl: true,
+                attributionControl: true,
+                preferCanvas: true
+            });
+
+            // CartoDB dark tiles — free, no API key, tactical aesthetic
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(overwatchMap);
+
+            // Layer group for incident markers
+            markersLayer = L.layerGroup().addTo(overwatchMap);
+
+            // Update coords display on map move
+            overwatchMap.on('moveend', function() {
+                const center = overwatchMap.getCenter();
+                document.getElementById('map-coords').innerHTML =
+                    center.lat.toFixed(4) + '&#176;N  ' + Math.abs(center.lng).toFixed(4) + '&#176;W &#x2022; ' +
+                    '<span id="map-time">' + new Date().toISOString().substr(11, 8) + 'Z</span>';
+            });
+
+            console.log('[Overwatch] Leaflet map initialized — Austin, TX');
+        }
+
+        function renderMapMarkers(incidents) {
+            if (!overwatchMap) initMap();
+            if (!markersLayer) return;
+
+            // Clear old markers
+            markersLayer.clearLayers();
+
+            if (!incidents || incidents.length === 0) return;
+
+            // Severity → color mapping
+            function severityColor(severity) {
+                const s = parseInt(severity) || 0;
+                if (s >= 6) return '#ff0000';  // critical — red
+                if (s >= 5) return '#ff4444';  // high — bright red
+                if (s >= 4) return '#ff8c00';  // elevated — orange
+                if (s >= 3) return '#ffd700';  // moderate — gold
+                if (s >= 2) return '#00b4d8';  // low — cyan
+                return '#888888';              // unknown — grey
+            }
+
+            incidents.forEach(function(inc) {
+                // Use real lat/lon if available
+                const lat = parseFloat(inc.lat);
+                const lon = parseFloat(inc.lon);
+
+                if (isNaN(lat) || isNaN(lon)) return; // skip ungeolocated incidents
+
+                const severity = parseInt(inc.severity) || 0;
+                const color = severityColor(severity);
+                const itype = inc.itype || inc.type || 'Incident';
+                const desc = inc.description || '';
+                const status = inc.status || 'unknown';
+                const location = inc.location || '';
+
+                // Circle marker sized by severity
+                const radius = Math.max(8, Math.min(20, 6 + severity * 2));
+
+                const marker = L.circleMarker([lat, lon], {
+                    radius: radius,
+                    fillColor: color,
+                    color: '#ffffff',
+                    weight: 1.5,
+                    opacity: 0.9,
+                    fillOpacity: 0.7
+                }).addTo(markersLayer);
+
+                // Popup with incident details
+                const popupHtml =
+                    '<div style="font-family:Inter,sans-serif;font-size:12px;">' +
+                    '<div style="color:' + color + ';font-weight:600;margin-bottom:4px;">' +
+                    escapeHtml(itype) + '</div>' +
+                    (desc ? '<div style="color:#94a3b8;margin-bottom:4px;">' + escapeHtml(desc.substring(0, 120)) + '</div>' : '') +
+                    (location ? '<div style="color:#64748b;font-size:10px;margin-bottom:2px;">' + escapeHtml(location) + '</div>' : '') +
+                    '<div style="display:flex;gap:8px;margin-top:4px;font-size:10px;">' +
+                    '<span style="background:' + color + '22;color:' + color + ';padding:1px 6px;border-radius:3px;">Sev ' + severity + '</span>' +
+                    '<span style="color:#64748b;">' + escapeHtml(status) + '</span>' +
+                    '</div></div>';
+
+                marker.bindPopup(popupHtml);
+
+                // Critical markers get pulse class
+                if (severity >= 5) {
+                    const icon = marker.getElement();
+                    if (icon) icon.classList.add('marker-critical');
+                }
+            });
+        }
+
+        function renderRelationships(relationships, count) {
+            document.getElementById('rel-count').textContent = count || '0';
+
+            // Show the panel if we have relationships
+            if (count > 0) {
+                document.getElementById('relationships-panel').style.display = 'flex';
+            }
+
+            const container = document.getElementById('relationship-list');
+
+            if (!relationships || relationships.length === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-[10px] text-center p-2">No relationships found.</div>';
+                return;
+            }
+
+            // Show a subset (max 15) in the compact view
+            const displayRels = relationships.slice(0, 15);
+            let html = '';
+
+            displayRels.forEach(rel => {
+                const relType = rel.type || 'LINK';
+                const srcShort = String(rel.source || '').substring(0, 16);
+                const tgtShort = String(rel.target || '').substring(0, 16);
+
+                html += `
+                <div class="flex items-center gap-2 text-[10px] p-1.5 rounded bg-[#0a1628] hover:bg-[#152238] cursor-default"
+                     title="${escapeHtml(relType)}: ${escapeHtml(rel.source)} \u2192 ${escapeHtml(rel.target)}">
+                    <span class="text-purple-400 font-mono shrink-0">${escapeHtml(relType)}</span>
+                    <span class="text-slate-400 truncate">${escapeHtml(srcShort)}</span>
+                    <i class="fas fa-arrow-right text-slate-600 text-[8px]"></i>
+                    <span class="text-slate-300 truncate">${escapeHtml(tgtShort)}</span>
+                </div>`;
+            });
+
+            if (relationships.length > 15) {
+                html += `<div class="text-[10px] text-slate-500 text-center pt-1">+${relationships.length - 15} more relationships...</div>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function renderSearchResults(results, query, error = null) {
+            const dropdown = document.getElementById('search-results');
+
+            if (error) {
+                dropdown.innerHTML = `<div class="p-3 error-msg text-xs"><i class="fas fa-exclamation-circle mr-1"></i>${escapeHtml(error)}</div>`;
+                dropdown.classList.remove('hidden');
+                return;
+            }
+
+            if (!results || results.length === 0) {
+                dropdown.innerHTML = `<div class="p-3 text-slate-400 text-xs">No results for "${escapeHtml(query)}"</div>`;
+                dropdown.classList.remove('hidden');
+                return;
+            }
+
+            let html = `<div class="px-3 py-2 text-[10px] text-slate-500 border-b border-slate-700">${results.length} result(s) for "<span class="text-cyan-400">${escapeHtml(query)}"</span></div>`;
+
+            results.slice(0, 10).forEach(r => {
+                const label = r.label || r.type || 'Entity';
+                const name = r.name || r.id || 'Unnamed';
+                const desc = r.description ? escapeHtml(r.description.substring(0, 80)) : '';
+
+                html += `
+                <div onclick="inspectNode('${escapeHtml(r.id)}'); hideSearchResults();"
+                     class="px-3 py-2 hover:bg-[#1a3055] cursor-pointer border-b border-slate-800/50 last:border-0">
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="text-cyan-400 font-mono text-[10px] bg-cyan-900/40 px-1.5 rounded">${escapeHtml(label)}</span>
+                        <span class="text-slate-200 font-medium">${escapeHtml(name.substring(0, 28))}</span>
+                    </div>
+                    ${desc ? `<div class="text-slate-500 text-[10px] mt-0.5 ml-14 truncate">${desc}</div>` : ''}
+                </div>`;
+            });
+
+            if (results.length > 10) {
+                html += `<div class="px-3 py-1.5 text-[10px] text-slate-500 text-center">+${results.length - 10} more results</div>`;
+            }
+
+            dropdown.innerHTML = html;
+            dropdown.classList.remove('hidden');
+        }
+
+        function hideSearchResults() {
+            document.getElementById('search-results').classList.add('hidden');
+        }
+
+        // =====================================================================
+        // UI INTERACTION HANDLERS
+        // =====================================================================
+
+        function switchMode(mode) {
+            document.querySelectorAll('.mode-btn').forEach((btn, i) => {
+                if (i === mode) {
+                    btn.classList.add('active', 'shadow-inner');
+                } else {
+                    btn.classList.remove('active', 'shadow-inner');
+                }
+            });
+
+            const mapEl = document.querySelector('.map-container');
+            if (mode === 2) {
+                mapEl.style.opacity = '0.6';
+            } else if (mode === 1) {
+                mapEl.style.opacity = '1';
+            }
+        }
+
+        function selectIncident(id) {
+            // Find the incident in our cache or make API call
+            const inc = cachedIncidents ? cachedIncidents.find(i => i.id === id) : null;
+            if (inc) {
+                const itype = inc.itype || inc.type || inc.label || 'Incident';
+                const desc = inc.description || inc.name || '';
+                const calls = (inc.related_calls || []).map(c => c.id || c.name || c).join(', ');
+                const agencies = (inc.agencies || []).map(a => a.name || a.id || a).join(', ');
+
+                alert(`Incident: ${itype}\n\n${desc}\n\nLinked calls: ${calls || 'none'}\nAgencies: ${agencies || 'none'}\nID: ${id}`);
+            } else {
+                alert(`Incident ID: ${id}\n\nDetails would be loaded from the knowledge graph.`);
+            }
+        }
+
+        function inspectNode(id) {
+            // Try to find node in cache
+            const node = cachedNodes ? cachedNodes.find(n => n.id === id) : null;
+            if (node) {
+                alert(`KG Node\n\nID: ${node.id}\nLabel: ${node.label || '-'}\nName: ${node.name || '-'}\nType: ${node.type || '-'}\nDescription: ${(node.description || '-').substring(0, 200)}`);
+            } else {
+                alert(`KG Node: ${id}\n\nFull graph expansion available in production (D3.js + vis-network).`);
+            }
+        }
+
+        function toggleRelationships() {
+            const panel = document.getElementById('relationship-list');
+            const icon = document.getElementById('rel-toggle-icon');
+            const isHidden = panel.style.display === 'none';
+            panel.style.display = isHidden ? 'block' : 'none';
+            icon.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0)';
+        }
+
+        async function refreshAllData() {
+            // Visual feedback on refresh button
+            showLoading('ontology-browser', 'Refreshing...');
+            showLoading('incident-panel', 'Refreshing...');
+            showLoading('transcript-feed', 'Refreshing...');
+
+            // Fetch everything in parallel
+            await Promise.all([
+                fetchStats(),
+                fetchNodes(),
+                fetchIncidents(),
+                fetchRelationships(),
+                fetchFilterOptions()
+            ]);
+
+            console.log('%c[Battle Buddy] All data refreshed from live KG API', 'color:#00B4D8; font-family:monospace');
+        }
+
+        function refreshKG() {
+            refreshAllData();
+        }
+
+        function exportKG() {
+            alert("Exporting battle_kg.gexf + SQLite dump...\n\nThis would download the full graph for Neo4j/Vis export.\n\nUse /api/kg/nodes and /api/kg/relationships for raw JSON exports.");
+        }
+
+        // =====================================================================
+        // LIVE POLLING
+        // =====================================================================
+
+        function startPolling() {
+            if (pollTimer) return; // already running
+
+            console.log(`[Overwatch] Starting live poll every ${POLL_INTERVAL_MS / 1000}s`);
+            pollTimer = setInterval(async () => {
+                if (pollingPaused) return;
+
+                try {
+                    const results = await Promise.allSettled([
+                        fetchStats(),
+                        fetchNodes(),
+                        fetchIncidents(),
+                        fetchRelationships()
+                    ]);
+
+                    // Check for errors
+                    const failed = results.filter(r => r.status === 'rejected');
+                    if (failed.length > 0) {
+                        consecutiveErrors++;
+                        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                            console.warn('[Overwatch] Too many consecutive errors, pausing polling');
+                            document.getElementById('live-status-text').textContent = 'LIVE \u2022 API ERROR';
+                            document.getElementById('live-status-text').parentElement.classList.add('border-red-500/50');
+                            document.getElementById('live-status-text').parentElement.classList.remove('border-emerald-500/30');
+                            document.querySelector('.live-dot').classList.remove('bg-emerald-400');
+                            document.querySelector('.live-dot').classList.add('bg-red-500');
+                        }
+                    } else {
+                        consecutiveErrors = 0;
+                        // Restore green status if it was red
+                        const statusEl = document.getElementById('live-status-text');
+                        if (statusEl.textContent.includes('ERROR')) {
+                            statusEl.innerHTML = 'LIVE \u2022 POLLING';
+                        }
+                        statusEl.parentElement.classList.remove('border-red-500/50');
+                        statusEl.parentElement.classList.add('border-emerald-500/30');
+                        const dot = document.querySelector('.live-dot');
+                        if (dot) { dot.classList.remove('bg-red-500'); dot.classList.add('bg-emerald-400'); }
+                    }
+
+                    // Check for new high-severity incidents
+                    if (cachedIncidents) checkForNewAlerts(cachedIncidents);
+
+                    updateFooterTimestamp();
+                } catch (e) {
+                    console.error('[Overwatch] Poll cycle error:', e);
+                }
+            }, POLL_INTERVAL_MS);
+        }
+
+        function stopPolling() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                console.log('[Overwatch] Polling stopped');
+            }
+        }
+
+        function pausePolling() {
+            pollingPaused = true;
+            document.getElementById('live-status-text').textContent = 'LIVE \u2022 PAUSED';
+        }
+
+        function resumePolling() {
+            pollingPaused = false;
+            document.getElementById('live-status-text').textContent = 'LIVE \u2022 POLLING';
+        }
+
+        function updateFooterTimestamp() {
+            lastUpdatedTime = new Date();
+            const ts = lastUpdatedTime.toISOString().substr(11, 12) + 'Z';
+            const footer = document.getElementById('footer-status');
+            if (footer && cachedStats) {
+                footer.textContent =
+                    `CONNECTED \u2022 ${cachedStats.node_count} ENTITIES \u2022 ${cachedStats.edge_count} RELATIONS \u2022 UPDATED ${ts}`;
+            }
+        }
+
+        // =====================================================================
+        // ALERT SYSTEM — Audio + Visual + Desktop Notifications
+        // =====================================================================
+
+        function playAlertSound(severity) {
+            // Lazy-init AudioContext on first use (browser policy)
+            if (!audioCtx) {
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.warn('[Overwatch] AudioContext not available:', e);
+                    return;
+                }
+            }
+
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                // Tactical beep — higher pitch for higher severity
+                const freq = severity >= 6 ? 880 : severity >= 5 ? 660 : 440;
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+                // Short beep pattern: two quick beeps for critical
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + 0.15);
+                if (severity >= 5) {
+                    gain.gain.setValueAtTime(0.15, audioCtx.currentTime + 0.2);
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime + 0.35);
+                    osc.stop(audioCtx.currentTime + 0.4);
+                } else {
+                    osc.stop(audioCtx.currentTime + 0.2);
+                }
+                osc.start(audioCtx.currentTime);
+            } catch (e) {
+                console.warn('[Overwatch] Alert sound failed:', e);
+            }
+        }
+
+        function flashMapBorder() {
+            const mapContainer = document.querySelector('.map-container');
+            if (!mapContainer) return;
+
+            // Red border pulse
+            mapContainer.style.transition = 'box-shadow 0.15s ease-out';
+            mapContainer.style.boxShadow = '0 0 30px rgba(255, 0, 0, 0.6), 0 0 60px rgba(255, 0, 0, 0.3)';
+            setTimeout(() => {
+                mapContainer.style.boxShadow = '0 4px 12px rgba(0, 180, 216, 0.1)';
+                setTimeout(() => {
+                    mapContainer.style.boxShadow = '0 0 30px rgba(255, 0, 0, 0.6), 0 0 60px rgba(255, 0, 0, 0.3)';
+                    setTimeout(() => {
+                        mapContainer.style.boxShadow = '0 4px 12px rgba(0, 180, 216, 0.1)';
+                    }, 200);
+                }, 200);
+            }, 200);
+        }
+
+        function flashIncidentPanel() {
+            const panel = document.getElementById('incident-panel');
+            if (!panel) return;
+            panel.style.transition = 'border-color 0.2s';
+            panel.style.border = '2px solid #ff4444';
+            setTimeout(() => { panel.style.border = ''; }, 2000);
+        }
+
+        function sendDesktopNotification(itype, desc, severity) {
+            if (!('Notification' in window)) return;
+
+            if (Notification.permission === 'granted') {
+                new Notification(`[SEV ${severity}] ${itype}`, {
+                    body: desc ? desc.substring(0, 120) : 'New high-severity incident detected',
+                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="%23ff4444"/><text x="16" y="21" text-anchor="middle" fill="white" font-size="14" font-weight="bold">!</text></svg>',
+                    tag: 'overwatch-alert',
+                    requireInteraction: severity >= 6
+                });
+            } else if (Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+
+        function checkForNewAlerts(incidents) {
+            if (!incidents || incidents.length === 0) return;
+
+            const alertThreshold = 4; // severity >= 4 triggers alert
+
+            incidents.forEach(inc => {
+                const severity = parseInt(inc.severity) || 0;
+                if (severity < alertThreshold) return;
+
+                const id = inc.id;
+                if (alertedIncidentIds.has(id)) return; // already alerted
+
+                // New high-severity incident!
+                alertedIncidentIds.add(id);
+
+                const itype = inc.itype || inc.type || 'Incident';
+                const desc = inc.description || '';
+
+                console.log(`[Overwatch] ALERT: ${itype} (sev ${severity}) — ${id}`);
+
+                playAlertSound(severity);
+                flashMapBorder();
+                flashIncidentPanel();
+                sendDesktopNotification(itype, desc, severity);
+            });
+
+            // Prune alert set: remove IDs that are no longer in the incident list
+            const currentIds = new Set(incidents.map(i => i.id));
+            for (const id of alertedIncidentIds) {
+                if (!currentIds.has(id)) alertedIncidentIds.delete(id);
+            }
+        }
+
+        function updateClock() {
+            const clock = document.getElementById("clock");
+            setInterval(() => {
+                const now = new Date();
+                const time = now.toLocaleTimeString('en-GB', {hour12: false}).replace(/:/g, ':');
+                clock.textContent = time + "Z";
+            }, 1000);
+        }
+
+        // =====================================================================
+        // INITIALIZATION
+        // =====================================================================
+
+        async function initDashboard() {
+            console.log('%cBattle Buddy Overwatch Dashboard initializing...', 'color:#00B4D8; font-family:monospace');
+
+            // Start clock immediately (doesn't depend on API)
+            updateClock();
+
+            // Initialize Leaflet map (doesn't depend on API data)
+            initMap();
+
+            // Show initial loading states are already in HTML
+
+            // Fetch all data in parallel
+            console.log('[Battle Buddy] Fetching data from live KG API...');
+            await Promise.allSettled([
+                fetchStats(),
+                fetchNodes(),
+                fetchIncidents(),
+                fetchRelationships(),
+                fetchFilterOptions()
+            ]);
+
+            console.log('%cBattle Buddy Overwatch Dashboard initialized successfully', 'color:#00B4D8; font-family:monospace');
+
+            // Start live polling
+            updateFooterTimestamp();
+            startPolling();
+
+            // Request notification permission (non-blocking)
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+
+            // Wire up keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+                if (e.key === '/' && document.activeElement.id !== 'global-search') {
+                    e.preventDefault();
+                    document.getElementById('global-search').focus();
+                }
+                if (e.key === 'Escape') {
+                    hideSearchResults();
+                    document.getElementById('global-search').blur();
+                }
+            });
+
+            // Wire up search box with debouncing
+            const searchInput = document.getElementById('global-search');
+            let searchTimeout = null;
+            searchInput.addEventListener('input', function(e) {
+                clearTimeout(searchTimeout);
+                const val = e.target.value;
+                searchTimeout = setTimeout(() => {
+                    if (val.trim().length > 0) {
+                        searchKG(val);
+                    } else {
+                        hideSearchResults();
+                    }
+                }, 300); // 300ms debounce
+            });
+
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    clearTimeout(searchTimeout);
+                    searchKG(e.target.value);
+                }
+            });
+
+            // Pause polling while user is searching (focus = paused, blur = resume)
+            searchInput.addEventListener('focus', function() {
+                pausePolling();
+            });
+            searchInput.addEventListener('blur', function() {
+                const val = searchInput.value;
+                if (!val || val.trim().length === 0) {
+                    resumePolling();
+                }
+                // If user left text in search, keep paused — they may come back
+            });
+
+            // Also pause on inspectNode (ontology clicks)
+            const origInspectNode = inspectNode;
+            inspectNode = function(id) {
+                pausePolling();
+                setTimeout(resumePolling, 10000); // resume after 10s
+                origInspectNode(id);
+            };
+
+            // Close search when clicking outside
+            document.addEventListener('click', function(e) {
+                const container = document.getElementById('search-container');
+                if (!container.contains(e.target)) {
+                    hideSearchResults();
+                }
+            });
+
+            // Update map clock periodically
+            setInterval(() => {
+                const now = new Date();
+                const el = document.getElementById('map-time');
+                if (el) el.textContent = now.toISOString().substr(11, 8) + 'Z';
+            }, 1000);
+        }
+
+        window.onload = initDashboard;
+    </script>
+</body>
+</html>
