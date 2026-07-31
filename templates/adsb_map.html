@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle Buddy // ADS-B Aircraft</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        
+        :root {
+            --primary: #0A1428;
+            --accent: #00B4D8;
+            --warning: #FF4D4D;
+            --success: #00CC88;
+            --neutral: #B0B8C1;
+        }
+        
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: #0A1428;
+            color: #F0F4F8;
+            margin: 0;
+        }
+        
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        
+        .leaflet-control-custom {
+            background: rgba(10, 20, 40, 0.9);
+            border: 1px solid #00B4D8;
+            border-radius: 8px;
+            padding: 8px;
+        }
+        
+        .leaflet-control-custom h3 {
+            margin: 0;
+            color: #00B4D8;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .aircraft-marker {
+            cursor: pointer;
+        }
+        
+        .aircraft-popup {
+            background: #13213A;
+            border: 1px solid #00B4D8;
+            border-radius: 6px;
+            padding: 8px;
+            color: #F0F4F8;
+        }
+        
+        .aircraft-popup h4 {
+            margin: 0 0 6px 0;
+            color: #00B4D8;
+            font-size: 14px;
+        }
+        
+        .aircraft-popup p {
+            margin: 4px 0;
+            font-size: 12px;
+            color: #B0B8C1;
+        }
+        
+        .aircraft-popup .label {
+            font-weight: 500;
+            color: #F0F4F8;
+        }
+        
+        .status-bar {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 1000;
+            background: rgba(10, 20, 40, 0.9);
+            border: 1px solid #00B4D8;
+            border-radius: 8px;
+            padding: 8px 12px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #F0F4F8;
+        }
+        
+        .status-item .live-dot {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        
+        .refresh-btn {
+            background: #00B4D8;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #0A1428;
+            font-weight: 600;
+        }
+        
+        .refresh-btn:hover {
+            background: #01D1F1;
+        }
+    </style>
+</head>
+<body>
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item">
+            <div class="w-2 h-2 bg-emerald-400 rounded-full live-dot"></div>
+            <span class="mono">LIVE</span>
+        </div>
+        <div class="status-item" style="margin-left: 16px;">
+            <i class="fas fa-plane"></i>
+            <span id="aircraft-count">--</span>
+        </div>
+        <div class="status-item" style="margin-left: 16px;">
+            <span class="mono">Austin Area (100nm)</span>
+        </div>
+        <button class="refresh-btn" id="refresh-btn" style="margin-left: 16px;">
+            <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+    </div>
+    
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Austin coordinates
+        const AUSTIN_LAT = 30.2672;
+        const AUSTIN_LON = -97.7431;
+        const RADIUS_NM = 100; // 100 nautical miles
+        
+        let map;
+        let aircraftLayer;
+        
+        // Initialize map centered on Austin
+        function initMap() {
+            map = L.map('map').setView([AUSTIN_LAT, AUSTIN_LON], 9);
+            
+            // Use CartoDB dark_matter tiles (matches tactical theme)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                maxZoom: 18,
+            }).addTo(map);
+            
+            // Add Austin circle overlay
+            const circle = L.circle([AUSTIN_LAT, AUSTIN_LON], {
+                radius: RADIUS_NM * 1852, // Convert NM to meters
+                color: '#00B4D8',
+                fillColor: '#00B4D8',
+                fillOpacity: 0.05,
+            }).addTo(map);
+            
+            // Create aircraft layer
+            aircraftLayer = L.layerGroup().addTo(map);
+        }
+        
+        // Fetch aircraft from adsb.lol API via local proxy
+        async function fetchAircraft() {
+            try {
+                // Use local API endpoint (better for CORS and caching)
+                const url = `/api/adsb/aircraft?lat=${AUSTIN_LAT}&lon=${AUSTIN_LON}&radius=${RADIUS_NM}`;
+                
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                updateAircraftMarkers(data.ac || []);
+                document.getElementById('aircraft-count').textContent = `${data.total || 0}`;
+                
+            } catch (error) {
+                console.error('Failed to fetch aircraft:', error);
+                document.getElementById('aircraft-count').textContent = 'Error';
+            }
+        }
+        
+        // Update aircraft markers on map
+        function updateAircraftMarkers(aircraft) {
+            // Clear existing markers
+            aircraftLayer.clearLayers();
+            
+            aircraft.forEach(ac => {
+                if (!ac.lat || !ac.lon) return;
+                
+                // Color based on altitude (civilian vs military)
+                const isMilitary = ac.dbFlags === 1;
+                const color = isMilitary ? '#FF4D4D' : '#00B4D8';
+                
+                // Create marker
+                const marker = L.marker([ac.lat, ac.lon], {
+                    icon: L.divIcon({
+                        className: 'aircraft-marker',
+                        html: `<div style="background:${color};width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 8px ${color}"></div>`,
+                        iconSize: [12, 12],
+                        iconAnchor: [6, 6]
+                    })
+                });
+                
+                // Create popup content
+                const callsign = (ac.flight || ac.r || '---').trim();
+                const type = ac.t || 'Unknown';
+                const altitude = ac.alt_baro ? `${Math.round(ac.alt_baro/3)} ft` : '---';
+                const speed = ac.gs ? `${Math.round(ac.gs)} kts` : '---';
+                const heading = ac.track ? `${Math.round(ac.track)}°` : '---';
+                const hex = ac.hex || '---';
+                const source = isMilitary ? 'Military' : 'Civilian';
+                
+                const popupContent = `
+                    <div class="aircraft-popup">
+                        <h4>${callsign || 'N/A'}</h4>
+                        <p><span class="label">Type:</span> ${type}</p>
+                        <p><span class="label">Source:</span> ${source}</p>
+                        <p><span class="label">ICAO:</span> ${hex}</p>
+                        <p><span class="label">Alt:</span> ${altitude}</p>
+                        <p><span class="label">Speed:</span> ${speed}</p>
+                        <p><span class="label">Hdg:</span> ${heading}</p>
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent);
+                marker.addTo(aircraftLayer);
+            });
+        }
+        
+        // Refresh data
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            fetchAircraft();
+        });
+        
+        // Initialize and fetch
+        initMap();
+        fetchAircraft();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(fetchAircraft, 30000);
+    </script>
+</body>
+</html>

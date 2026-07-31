@@ -61,6 +61,38 @@ def _json_error(message: str, status_code: int = 400) -> tuple:
 def index():
     """Serve the Overwatch dashboard at root."""
     return render_template("overwatch_dashboard.html")
+@app.route("/adsb")
+def adsb_map():
+    """Serve the ADS-B aircraft map for Austin area."""
+    return render_template("adsb_map.html")
+
+
+@app.route("/api/adsb/aircraft")
+def get_aircraft():
+    """Fetch aircraft within a radius of a point from adsb.lol API.
+    
+    Query parameters:
+        lat: Latitude (default: 30.2672, Austin)
+        lon: Longitude (default: -97.7431, Austin)
+        radius: Radius in NM (default: 100, max: 250)
+    """
+    import urllib.request
+    import json
+    
+    lat = request.args.get("lat", 30.2672, type=float)
+    lon = request.args.get("lon", -97.7431, type=float)
+    radius = min(request.args.get("radius", 100, type=int), 250)
+    
+    url = f"https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius}"
+    
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "BattleBuddy/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e), "ac": [], "total": 0}), 500
+
 
 
 # ---------------------------------------------------------------------------
