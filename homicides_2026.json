@@ -1,401 +1,327 @@
 [
-    {
-        "n": 1,
-        "date": "2026-01-01",
-        "address": "7801 N Lamar Blvd, Austin, TX",
-        "victim": "Isaiah Atkinson, 18",
-        "summary": "Shot at party in event center",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-7801-n-lamar-blvd-b148",
-        "lat": 30.34501,
-        "lon": -97.71199
-    },
-    {
-        "n": 2,
-        "date": "2026-01-04",
-        "address": "9515 North Lamar Blvd, Austin, TX",
-        "victim": "Deputy Aaron Armstrong",
-        "summary": "Off-duty constable shot working security at Club Rodeo",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-9515-north-lamar-blvd-club-rodeo",
-        "lat": 30.36443,
-        "lon": -97.6946
-    },
-    {
-        "n": 3,
-        "date": "2026-01-05",
-        "address": "68 East Avenue, Austin, TX",
-        "victim": "Luke Bradburn, 19",
-        "summary": "Shot at Cambria Hotel",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-68-east-avenue-824",
-        "lat": 30.25837,
-        "lon": -97.73814
-    },
-    {
-        "n": 4,
-        "date": "2026-01-11",
-        "address": "9616 North Lamar Blvd, Austin, TX",
-        "victim": "Cam Ron Perkins, 23",
-        "summary": "Shot and killed, suspect fled in Dodge Charger",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-9616-north-lamar-boulevard",
-        "lat": 30.36636,
-        "lon": -97.69625
-    },
-    {
-        "n": 5,
-        "date": "2026-01-12",
-        "address": "9806 Middle Fiskville Road, Austin, TX",
-        "victim": "Seferino Hernandez-Perez, 40",
-        "summary": "Found unconscious after shots fired call",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-1100-block-s-meadows-drive",
-        "lat": 30.36229,
-        "lon": -97.68394
-    },
-    {
-        "n": 6,
-        "date": "2026-01-26",
-        "address": "5900 Wagon Bend, Austin, TX",
-        "victim": "Denise Tijerina, 45",
-        "summary": "Shot in the head, suspect charged with first-degree murder",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-5900-block-wagon-bend",
-        "lat": 30.19547,
-        "lon": -97.75994
-    },
-    {
-        "n": 7,
-        "date": "2026-01-31",
-        "address": "1054 Springdale Road, Austin, TX",
-        "victim": "Robert Garcia, 66",
-        "summary": "Severe head trauma at homeless encampment",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-1054-springdale-road",
-        "lat": 30.27186,
-        "lon": -97.69304
-    },
-    {
-        "n": 8,
-        "date": "2026-02-14",
-        "address": "6715 Windrift Way, Austin, TX",
-        "victim": "Megan Montgomery, 38",
-        "summary": "Murder-suicide, stabbed by partner",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-6715-windrift-way",
-        "lat": 30.20051,
-        "lon": -97.79727
-    },
-    {
-        "n": 9,
-        "date": "2026-02-15",
-        "address": "1201 E Rundberg Lane, Austin, TX",
-        "victim": "Jamal Elijah",
-        "summary": "Shot near Gus Garcia Recreation Center",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-1201-e-rundberg-lane",
-        "lat": 30.3526,
-        "lon": -97.68204
-    },
-    {
-        "n": 10,
-        "date": "2026-02-21",
-        "address": "1400 E Rundberg Lane, Austin, TX",
-        "victim": "Unidentified male",
-        "summary": "Shot near dumpster at 3 AM",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-1400-e-rundberg-lane",
-        "lat": 30.35228,
-        "lon": -97.67792
-    },
-    {
-        "n": 11,
-        "date": "2026-02-28",
-        "address": "914 E Braker Lane, Austin, TX",
-        "victim": "Benjamin Biesecker, 52",
-        "summary": "Multiple gunshot wounds at homeless encampment",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-914-e-braker-lane",
-        "lat": 30.37609,
-        "lon": -97.67364
-    },
-    {
-        "n": 12,
-        "date": "2026-03-01",
-        "address": "700 W 6th Street, Austin, TX",
-        "victim": "3 victims killed (FBI investigated as possible terrorism)",
-        "summary": "Gunman fired into crowd at Buford's Backyard, FBI investigated as possible terrorism",
-        "url": "https://www.austintexas.gov/police/news/apd-investigates-march-1-2026-officer-involved-shooting-700-block-west-6th-street",
-        "lat": 30.27034,
-        "lon": -97.74967,
-        "count": 3
-    },
-    {
-        "n": 13,
-        "date": "2026-03-11",
-        "address": "201 W 5th Street, Austin, TX",
-        "victim": "Unidentified male",
-        "summary": "Altercation at Plains Capital Bank, security guard ruled self-defense",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-201-west-5th-street",
-        "lat": 30.26734,
-        "lon": -97.745
-    },
-    {
-        "n": 14,
-        "date": "2026-03-22",
-        "address": "4700 Loyola Lane, Austin, TX",
-        "victim": "Nicholas Zarate, 47",
-        "summary": "Shot at approximately 5 PM, suspect fled on foot",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-nicholas-zarate",
-        "lat": 30.30965,
-        "lon": -97.6663
-    },
-    {
-        "n": 15,
-        "date": "2026-03-25",
-        "address": "1822 Rutland Drive, Austin, TX",
-        "victim": "Unknown",
-        "summary": "Homicide investigation at 1822 Rutland Drive",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-1822-rutland-drive",
-        "lat": 30.379056,
-        "lon": -97.711473
-    },
-    {
-        "n": 16,
-        "date": "2026-04-02",
-        "address": "8201 Tuscany Way, Austin, TX",
-        "victim": "William Rogers, 35",
-        "summary": "Shot at Penske rental over moving deposit dispute",
-        "url": "https://www.austintexas.gov/police/news/homicide-investigation-8201-tuscany-way",
-        "lat": 30.32715,
-        "lon": -97.65871
-    },
-    {
-        "n": 17,
-        "date": "2026-04-03",
-        "address": "10900 Brazoria Lane, Austin, TX",
-        "victim": "Unidentified male, 35",
-        "summary": "Found with gunshot wounds, callers reported hearing shots",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-8201-tuscany-way",
-        "lat": 30.48241,
-        "lon": -97.79142
-    },
-    {
-        "n": 18,
-        "date": "2026-04-06",
-        "address": "10900 Brazoria Lane, Austin, TX",
-        "victim": "Unknown",
-        "summary": "Homicide investigation in the 10900 block of Brazoria Lane",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-10900-block-brazoria-lane",
-        "lat": 30.4822603,
-        "lon": -97.7913599
-    },
-    {
-        "n": 19,
-        "date": "2026-04-08",
-        "address": "12435 Dessau Road (Nova North Apartments), Austin, TX",
-        "victim": "Unidentified male",
-        "summary": "Found with gunshot wounds at Nova North Apartments. Died at scene ~7:10 PM. APD Homicide investigating. Believed isolated incident, no suspect in custody.",
-        "url": "https://www.kxan.com/news/local/austin/homicide-investigation-underway-near-busy-northeast-austin-intersection/",
-        "lat": 30.390743,
-        "lon": -97.646871
-    },
-    {
-        "n": 20,
-        "date": "2026-04-14",
-        "address": "5012 East 7th Street, Austin, TX",
-        "victim": "Unknown",
-        "summary": "Homicide investigation at 5012 East 7th Street",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-5012-east-7th-street",
-        "lat": 30.254332,
-        "lon": -97.6978024
-    },
-    {
-        "n": 21,
-        "date": "2026-04-15",
-        "address": "12435 Dessau Road, Austin, TX",
-        "victim": "Unknown",
-        "summary": "Homicide investigation at 12435 Dessau Road",
-        "url": "https://www.austintexas.gov/news/homicide-investigation-12435-dessau-road",
-        "lat": 30.3889115,
-        "lon": -97.6448116
-    },
-    {
-        "n": 22,
-        "date": "2026-05-06",
-        "address": "15424 FM 1825 Road, Pflugerville, TX",
-        "victim": "Mykal Jones, 27",
-        "summary": "One person killed and four others injured in a shooting outside Down South CaJJun Eats; multi-agency response with Pflugerville PD, TCSO, AFD, and ATCEMS.",
-        "url": "https://www.fox7austin.com/news/pflugerville-shooting-leaves-1-dead-4-others-injured",
-        "lat": 30.4423119,
-        "lon": -97.6657196,
-        "count": 1,
-        "source": "FOX 7 Austin / Pflugerville PD news conference"
-    },
-    {
-        "n": 23,
-        "date": "2026-06-17",
-        "address": "",
-        "victim": "",
-        "summary": "Husband and wife identified as victims in southeast Austin homicide",
-        "url": "https://news.google.com/articles/CBMifEFVX3lxTE1lWkN4cjlRTmIwdHlySFFQdEdNQ3JqZFpvYXJZT3FhTUI4VnNEUl96emJpSlJGYzFYclJSMmlfaC15YmVldmFtdG1pUDRRVV9CYmI0LUdEX1BZNjBkUEcwWjJtcExrckxSUmYwMXYxdlpyOTNhYkJsd0VYb1LSAYIBQVVfeXFMT3RRZzJ6cURfejZpVUVQTWpQWUR3TFRrdUxQV1QtTHJZdWFRZHJQUDl5TUR0bi1wREVHdVlMMWpybjh0VG11ak1HNUNlOXZDR0tPMDFIMjZwWVhVSU8zNkZRMlFTMXZ3MVo3NmxzYVVKTzZlUnVnQXVkYWNPR3gtQlNJZw"
-    },
-    {
-        "n": 24,
-        "date": "2026-06-16",
-        "address": "",
-        "victim": "",
-        "summary": "Police searching for suspect in southeast Austin homicide investigation",
-        "url": "https://www.kvue.com/article/news/local/homicide-east-riverside-drive-austin-southeast-person-dead-police-investigation/269-d2b19722-6f79-4376-8039-32cfe92bc353"
-    },
-    {
-        "n": 25,
-        "date": "2026-06-17",
-        "address": "",
-        "victim": "",
-        "summary": "APD searches for gunman in deadly shooting as homicide rates lag behind previous years",
-        "url": "https://news.google.com/articles/CBMiuwFBVV95cUxPS19Qb1Z1QlpCaUhCZU1pU2FWcjJpa0NMWnE3cUxmN213ejAxSDlweFhicjA1czlCamlITWtFTU1BdlB6VjJLdU81TG1TUmR1LU5kZ0dFT1dMTWRaR3VaejNLUnRQaDRnSHJUWEo0YmtfRlVjQm1oWTNFQ1A0ZjlJSTFRRlBPUVlaYWg1NHdLMF8xRnMzeklmdUxab3EyWGxoMlBZTzc2ZUlBbXNiN2h1UGZyRlhQRkdqRHow"
-    },
-    {
-        "n": 26,
-        "date": "2026-06-16",
-        "address": "",
-        "victim": "",
-        "summary": "Austin police investigating homicide Monday night on East Riverside Drive",
-        "url": "https://news.google.com/articles/CBMinwFBVV95cUxPRmNPa2NSenpHLWd2Ty1PNlMxQlZRZzZna3NaRDM1SDJjekRsaG90TUwyZWxZSWZPdk9iV2JqTndEYkhtY3hYZkVXTngwUDBPNURzYkdFWERlNzJGRUEtOTNUN0kxM0NTcERhOFpZSG9oRTlIT04tdjlQMDU1V09TcWRzUi13elZOeHViTElPSGNoUndOQVppQVl5a082UDg"
-    },
-    {
-        "n": 27,
-        "date": "2026-06-17",
-        "address": "",
-        "victim": "",
-        "summary": "Police investigating homicide on East Oltorf Street in southeast Austin",
-        "url": "https://news.google.com/articles/CBMiuAFBVV95cUxOYjZwZUVGNndwMXZEREFuNXFtZFJCTDhaTGZ2YmF2OGZqMF9MRnBEN21GbXZZZUVLRVNQTG9CWU4yQzdMOE04a2RLOXlpQUljQjVibnBkRkJOTE1UV2lLc2VHOGN3dU90Q0ZMakl6cEx0TklyTG5wbEdKb2hoODRuQlY0MnozbTU3aVZ3UUhEdDBUR3YxNGNYQUxuRmZ0djBhRXpRZXF1Sk4tX0FGckllb1JGc1VXS2Rw"
-    },
-    {
-        "n": 28,
-        "date": "2026-06-17",
-        "address": "",
-        "victim": "",
-        "summary": "Austin police investigating homicide in South Austin",
-        "url": "https://news.google.com/articles/CBMidkFVX3lxTFAtMnE2TUlYSmlTTW9BeWgwWW1EQXFlVTl3MktFYi1KbjBRUFpuRXI2clM0MFN6WnVjeFo2WUhnM1VVWkdvZ3VhdTgyV1RITldVVnAzN3ZKbUlvVFRucjA3ZW10UFZxVDRVaC1rME8xQ0o4bXI5UmfSAXtBVV95cUxQVV9PUnRmY1RjMlEyNEQ1UjRjbmp3aHZteXBDY2psdndva1RzTUdQUnBfYUlPeXl6Z0VwRTdrNkNIbURzd0gxVHBzY3d4MldINU1YdkpSakp6Nzk5elZjQ3JKZzFsQ2p1LUhwejV4QW53anQxazVJRWJzT3M"
-    },
-    {
-        "n": 29,
-        "date": "2026-06-17",
-        "address": "",
-        "victim": "",
-        "summary": "Police investigating homicide near I-35 in South Austin",
-        "url": "https://news.google.com/articles/CBMiswFBVV95cUxQNnNrWGdKYkRDYl9LZl9Zb1J2MFljYmxqdVI0UGYzZmpfcVNLRlJVamhlaGc3T2VFczF4X0VfVXhqSDQ0MF94c2pXUDJOb19VY1dpbjEtZDFydU5CdnZKVUJkaEVPUngtUUNZYW9WZHA2XzJIbFdpQkdBRGhBb0ZlbEx5V2tyZ3pVTGV5WTdqTS1JdEpsNzg0UTFNd0hOTUJoRkRxT3Nma2ZnblNVU3kzYU9WUQ"
-    },
-    {
-        "n": 30,
-        "date": "2026-06-17",
-        "address": "",
-        "victim": "",
-        "summary": "Husband and wife identified as victims in southeast Austin homicide",
-        "url": "https://news.google.com/articles/CBMiiwFBVV95cUxPQmdCVzVLdk9mVUxtS21oamVSc2tTVlZObE55dldSOFpGNlhKQ01EVFlSX2hIdWhQc2wtU1ppMUdHdWxXX3Jkc0p1SnRQbTBwRjZub1dHbnZoekZYNVRvbmlnb1EyUUlBQS1lRWJVbDVvakd1NTdQYjFUVFlrcWRwb3Y0eXZVbzRLVDVN"
-    },
-    {
-        "n": 31,
-        "date": "2026-06-18",
-        "address": "",
-        "victim": "",
-        "summary": "Woman found dead at SE Austin apartment complex, APD investigating as homicide",
-        "url": "https://news.google.com/articles/CBMigAFBVV95cUxPZ0NQNlhiU05LQ3RILU1aYW5hTUhncWtHVGZ6dlJTaFcycFVhTWZyRFpxcV9UMzNnS0NERmFTMV9COGo2RTVQQVloUkxNWXlnYmd4MU9jYzhZaGxCUWRnZTRwbjdfRDZQUzFzanJkNHd0Skw2TXUzLU1pU3NxWlJkNQ"
-    },
-    {
-        "n": 32,
-        "date": "2026-06-18",
-        "address": "",
-        "victim": "",
-        "summary": "Three homicides in three days raise concerns in SE Austin, police say no threat to public",
-        "url": "https://news.google.com/articles/CBMivgFBVV95cUxPN0JhSHktSXNkWmRQaFQxcjdfLXc3OEVXNE1UcnVPaGctVEExU1JhZFV3c1haVnlGNGJPYTRGbE90X1ZybnpOTW9QNGU0ODBGNjVHQzRTaFRjNlUtcWhDUUdwSGtPMGwtR216R0Z1RTNDRFh1ZmlLMU5fVUtBa0s4NzdYRkVzMmc3SEFjdTl4UUh0R0huOE56Tlk3V0puMFozQ01aZVM4c09rN290c2FtSUdyNHJLZXBCNm5uc05R"
-    },
-    {
-        "n": 33,
-        "date": "2026-06-17",
-        "address": "",
-        "victim": "",
-        "summary": "FULL: APD gives update on SE Austin homicide",
-        "url": "https://news.google.com/articles/CBMiY0FVX3lxTE1ZWHcyeTBqNHhianQzZGN0UFp6eEhFRzVuRmhTUkgzNndQWjh3eFp5MThKUXZoQTBJd3QzSUt2cEVybm9QSXFSamVXRDktVGQwemJCWUhLWFdfWW5wYnJ1NkluQdIBaEFVX3lxTFBJdFdER2huTFVmTTh0eDFRVGdHTml3SFhxdEdrNEtXRngxcTZHRHptUjlOV3VhTkpmNENQQmJuVjBoaEVPU0V3WkVzc1V2emRkN0xaM29mZzdoV0xnTHg3WmJaeEFybk5n"
-    },
-    {
-        "n": 34,
-        "date": "2026-06-18",
-        "address": "",
-        "victim": "",
-        "summary": "Austin crime: Police investigating 2 homicides within less than 24 hours apart",
-        "url": "https://news.google.com/articles/CBMipgFBVV95cUxPT08teDB2dnNCdEVOLWQ5b3BoWDRablV1cG53bXltNDRMRnlRQVVZVVQ5VmdHWDZ4Z2ZWWFJXT3VjUklJWUdRYm1ESEZHbDdTRXRfdld3RkNmQXlkSnlaQUx2azdHRzNNUDd0cjBiRGJodXpNTVZmXy1nQ1h0Tm1Mc21TcnRiQVRKcTczb3NGa09Bd0NOU0VScmNQTnBieDI2elNkdEVn0gGrAUFVX3lxTFB2ZkVIWTJIMnVZaHJmcS12V3MtY2FhMFlPTWRJaDh0ZS1aVWdVSzJVYWdsU2s5T1F0VGVIeHhQeDl4eEtFeS1oY0xTMFBvU0kwb0FJTndlSVAtTW04aGFmalkxNXp6NUpmWWk4ZDR5RVM3WFpSOFdPczRRczRZTVoyaXJmM1F0TlkyWEJpZUtiSWRaek9OXzFSMncxa0gxMnlWd3l5WEljV005WQ"
-    },
-    {
-        "n": 35,
-        "date": "2026-06-18",
-        "address": "",
-        "victim": "",
-        "summary": "APD: No connection found between three Southeast Austin homicides in three days",
-        "url": "https://news.google.com/articles/CBMisAFBVV95cUxPOC1nRVN3cGxiUzQzQnMxLUlKQVlzSzQwZ3RUYVJTSmVaSjhsVWFweGIzQjk5VDFnb0dTa1FBbEZEUm1LcVRkaC1uYnhBTVdUTXYtWE1ZM09zaGFIbHM4TGZXUXhKR0xpNXIwNkNzazJJckg2RjZ1OUNpcWEwX0dtcUhoNk5jMVozRXMySjRIX1NYNmZ4MnBRNmFRbjB1dExqNjFKTHRaVXFlMldtOHI0bQ"
-    },
-    {
-        "n": 36,
-        "date": "2026-06-24",
-        "address": "",
-        "victim": "",
-        "summary": "Austin Police investigate another homicide in southeast Austin",
-        "url": "https://www.kxan.com/news/crime/austin-police-investigate-another-homicide-in-southeast-austin/"
-    },
-    {
-        "n": 37,
-        "date": "2026-06-24",
-        "address": "",
-        "victim": "",
-        "summary": "1 dead in South Austin homicide, police say",
-        "url": "https://www.kvue.com/article/news/local/1-dead-homicide-austin-south-lamar-boulevard-1-injured-stabbing/269-4338d933-6139-4bab-a008-c05ce12f8f68"
-    },
-    {
-        "n": 38,
-        "date": "2026-06-24",
-        "address": "",
-        "victim": "",
-        "summary": "APD investigating overnight homicide on S Lamar Blvd, fourth in less than two weeks",
-        "url": "https://news.google.com/articles/CBMitgFBVV95cUxNS0wxWk1FT2VhYlotN2dweWU5d00zY3o1WmNsZTJxYWQ5alBIWkpNQ3dSeVRDUmhDRWx5YmVuSlNFVzJ0eEJod044WDF0THd3SHJLdXpIbnBnYlBLeXp1cG9wSW5tclJHeWJHN3dYbW14bXhtLVdSVkJ6d1ByQWVXT1hfOEZmcllMd2xjcWpuV3Y2VFo0U1pma1BBRGFCS29RaFJoZDk4cHk0MjZYUVlac1p1UGFjZw"
-    },
-    {
-        "n": 39,
-        "date": "2026-06-24",
-        "address": "",
-        "victim": "",
-        "summary": "Austin Police releases more details, asks for public\u2019s help in woman\u2019s murder",
-        "url": "https://www.kxan.com/news/crime/austin-police-to-release-more-details-ask-for-publics-help-in-womans-murder/"
-    },
-    {
-        "n": 40,
-        "date": "2026-06-24",
-        "address": "",
-        "victim": "",
-        "summary": "APD release new details in Southeast Austin homicide",
-        "url": "https://news.google.com/articles/CBMikwFBVV95cUxQX3ZrWndFazhoQXM5X3poaXZuU2J4M1F5cTJPcngySVp1cHZFQ2xjNjFBT0Rac3VyTWxCcUFEc29fcjlpNC1mTWdzdUhPOU5Vd3J4NkJGa19pWlpITG1PMEdnTDJwVG1Xc0dtaEVSdldUZnJkY0VLNmljNENzanBXS3U0M3FLVWRSQ1owODBGNGRJcjg"
-    },
-    {
-        "n": 41,
-        "date": "2026-06-24",
-        "address": "",
-        "victim": "",
-        "summary": "Austin's 30th homicide of 2026: Stabbing near bus stop leaves 1 person dead",
-        "url": "https://news.google.com/articles/CBMipAFBVV95cUxNT3h2Mmx1V3hKSF9QQ05fdk9WOHBmcElTRzdReFNuYVR1NE94U0V4WXEyQS1rTmdOUC1FekJteWdBWC1wdmY0ekNrcW1rLXNncTZhTmVrZWJYSnNIbUJlWVFDNUd2dmlNWk4yMVlIaEVJd3NDNzd1bGcxTmlOQl84T2RIODZFeGVsZnpfVXlFM3NJRFppRko3eUZybUVKQk9WMlQtMdIBqgFBVV95cUxOM1l5elBLbGpSN0pYQXpNMjFvSDdfU0pJcmQ4WF8xZTFnRl8tUmU1T00tMHdnY180TExqMFFxcTNvdGFjb0prajF5TnZmOTNjMVlrTTJXZEZkLWU3eEtEWWQxdWE0aVphOWtlZDdiQlhLNXFqeTZCOEphOU1DczR2XzhQTjNxREZweTJiNlFzX3BoYXhiWWxIQ1ZmenRTNmIxUnBmMWdIckQ5QQ"
-    },
-    {
-        "n": 42,
-        "date": "2026-06-24",
-        "address": "",
-        "victim": "",
-        "summary": "Police investigating homicide in southeast Austin",
-        "url": "https://news.google.com/articles/CBMiwAFBVV95cUxNM2xBYTRxdFExUHB1bnFEUU16aUpGWVVYVGZReGgySUZhQ1NZbmJnTDV5eTQyUTBKWXJTSmNfaXJ1WHZBbHRhN25zZVlXdGVfdWI5Z290Q1JXSnRoeGVlb05QN2pQbHFOenNYdEUwWno2V1JsRnJDUnlDS0tLQXdkVWNBaTdWZGNDOTMxdWhHczRKSHNwYkZVYTFtMDE3Q3BJYjMtNTM1NTh3SE9HTUpWZGhXRE1tVExjX0FCNzJ1UVo"
-    },
-    {
-        "n": 43,
-        "date": "2026-06-25",
-        "address": "",
-        "victim": "",
-        "summary": "Austin homicides: APD investigating 5 cases within 2 weeks",
-        "url": "https://news.google.com/articles/CBMikwFBVV95cUxQRU9JUjhPYzhqWlpEaGxPcnlQQ3JnWnNmTlBBaFhJb0dVQkdBRDFDZjZ6SE9GTWtYaEs1S2E5dVMyNW5tZVp5SVA3blJuNV9GenNwTXItYnRwTTZ5Ynd0TlBvcFZ6eXl0NDJmcW5FZS0tU3BqRlVSMElDWnZjdWwzTHNIQzRLY0d0dUZTcDhMdGp1WE3SAZgBQVVfeXFMTmdGNUJSUVNMaGdhZnJ5S2p5TXNoRWx6VG54X3V3UFJlaTIyTzBfeXlkWW1UM3h4QjlRaG1XeUszc1luRkx4TmZ6Y3pTMHpmMEhPcjBUQlZnamZrWkFHRXlHdjZEdW9BTkJIaEl1ZmpQU000T1BXdWlFY21tUmNsTGNJNjRvS1dVT2wwVDBfZHdfNnZpUkNDRlk"
-    },
-    {
-        "n": 44,
-        "date": "2026-06-24",
-        "address": "",
-        "victim": "",
-        "summary": "1 dead in South Austin homicide, police say",
-        "url": "https://news.google.com/articles/CBMiggFBVV95cUxOR19SV3d6REtua2FQU1N2NExUbTRpell0Mnh6VmdaUWVRY1EtM3FnOUlRTnMyRWd5T21xWHFCYTcyc25OMTZfbnJiV2J5V2loMjNBU0MwRWJWTl9ZXy1aRUhJalEzWURRLWdEVi10VUlPc18tdGdpZWVjSFB2SDd3b3pR"
-    }
+  {
+    "n": 1,
+    "date": "2026-01-01",
+    "address": "7801 N Lamar Blvd, Austin, TX",
+    "victim": "Isaiah Atkinson, 18",
+    "summary": "Shot at party in event center",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-7801-n-lamar-blvd-b148",
+    "lat": 30.34501,
+    "lon": -97.71199,
+    "source": "APD"
+  },
+  {
+    "n": 2,
+    "date": "2026-01-04",
+    "address": "9515 North Lamar Blvd, Austin, TX",
+    "victim": "Deputy Aaron Armstrong",
+    "summary": "Off-duty constable shot working security at Club Rodeo",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-9515-north-lamar-blvd-club-rodeo",
+    "lat": 30.36443,
+    "lon": -97.6946,
+    "source": "APD"
+  },
+  {
+    "n": 3,
+    "date": "2026-01-05",
+    "address": "68 East Avenue, Austin, TX",
+    "victim": "Luke Bradburn, 19",
+    "summary": "Shot at Cambria Hotel",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-68-east-avenue-824",
+    "lat": 30.25837,
+    "lon": -97.73814,
+    "source": "APD"
+  },
+  {
+    "n": 4,
+    "date": "2026-01-11",
+    "address": "9616 North Lamar Blvd, Austin, TX",
+    "victim": "Cam Ron Perkins, 23",
+    "summary": "Shot and killed, suspect fled in Dodge Charger",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-9616-north-lamar-boulevard",
+    "lat": 30.36636,
+    "lon": -97.69625,
+    "source": "APD"
+  },
+  {
+    "n": 5,
+    "date": "2026-01-12",
+    "address": "9806 Middle Fiskville Road, Austin, TX",
+    "victim": "Seferino Hernandez-Perez, 40",
+    "summary": "Found unconscious after shots fired call",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1100-block-s-meadows-drive",
+    "lat": 30.36229,
+    "lon": -97.68394,
+    "source": "APD"
+  },
+  {
+    "n": 6,
+    "date": "2026-01-26",
+    "address": "5900 Wagon Bend, Austin, TX",
+    "victim": "Denise Tijerina, 45",
+    "summary": "Shot in the head, suspect charged with first-degree murder",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-5900-block-wagon-bend",
+    "lat": 30.19547,
+    "lon": -97.75994,
+    "source": "APD"
+  },
+  {
+    "n": 7,
+    "date": "2026-01-31",
+    "address": "1054 Springdale Road, Austin, TX",
+    "victim": "Robert Garcia, 66",
+    "summary": "Severe head trauma at homeless encampment",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1054-springdale-road",
+    "lat": 30.27186,
+    "lon": -97.69304,
+    "source": "APD"
+  },
+  {
+    "n": 8,
+    "date": "2026-02-14",
+    "address": "6715 Windrift Way, Austin, TX",
+    "victim": "Megan Montgomery, 38",
+    "summary": "Murder-suicide, stabbed by partner",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-6715-windrift-way",
+    "lat": 30.20051,
+    "lon": -97.79727,
+    "source": "APD"
+  },
+  {
+    "n": 9,
+    "date": "2026-02-15",
+    "address": "1201 E Rundberg Lane, Austin, TX",
+    "victim": "Jamal Elijah",
+    "summary": "Shot near Gus Garcia Recreation Center",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1201-e-rundberg-lane",
+    "lat": 30.3526,
+    "lon": -97.68204,
+    "source": "APD"
+  },
+  {
+    "n": 10,
+    "date": "2026-02-21",
+    "address": "1400 E Rundberg Lane, Austin, TX",
+    "victim": "Unidentified male",
+    "summary": "Shot near dumpster at 3 AM",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1400-e-rundberg-lane",
+    "lat": 30.35228,
+    "lon": -97.67792,
+    "source": "APD"
+  },
+  {
+    "n": 11,
+    "date": "2026-02-28",
+    "address": "914 E Braker Lane, Austin, TX",
+    "victim": "Benjamin Biesecker, 52",
+    "summary": "Multiple gunshot wounds at homeless encampment",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-914-e-braker-lane",
+    "lat": 30.37609,
+    "lon": -97.67364,
+    "source": "APD"
+  },
+  {
+    "n": 12,
+    "date": "2026-03-01",
+    "address": "700 W 6th Street, Austin, TX",
+    "victim": "3 victims killed (FBI investigated as possible terrorism)",
+    "summary": "Gunman fired into crowd at Buford's Backyard, FBI investigated as possible terrorism",
+    "url": "https://www.austintexas.gov/police/news/apd-investigates-march-1-2026-officer-involved-shooting-700-block-west-6th-street",
+    "lat": 30.27034,
+    "lon": -97.74967,
+    "count": 3,
+    "source": "APD"
+  },
+  {
+    "n": 13,
+    "date": "2026-03-11",
+    "address": "201 W 5th Street, Austin, TX",
+    "victim": "Unidentified male",
+    "summary": "Altercation at Plains Capital Bank, security guard ruled self-defense",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-201-west-5th-street",
+    "lat": 30.26734,
+    "lon": -97.745,
+    "source": "APD"
+  },
+  {
+    "n": 14,
+    "date": "2026-03-22",
+    "address": "4700 Loyola Lane, Austin, TX",
+    "victim": "Nicholas Zarate, 47",
+    "summary": "Shot at approximately 5 PM, suspect fled on foot",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-nicholas-zarate",
+    "lat": 30.30965,
+    "lon": -97.6663,
+    "source": "APD"
+  },
+  {
+    "n": 15,
+    "date": "2026-03-25",
+    "address": "1822 Rutland Drive, Austin, TX",
+    "victim": "Unknown",
+    "summary": "Homicide investigation at 1822 Rutland Drive",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-1822-rutland-drive",
+    "lat": 30.379056,
+    "lon": -97.711473,
+    "source": "APD"
+  },
+  {
+    "n": 16,
+    "date": "2026-04-02",
+    "address": "8201 Tuscany Way, Austin, TX",
+    "victim": "William Rogers, 35",
+    "summary": "Shot at Penske rental over moving deposit dispute",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-8201-tuscany-way",
+    "lat": 30.32715,
+    "lon": -97.65871,
+    "source": "APD"
+  },
+  {
+    "n": 17,
+    "date": "2026-04-03",
+    "address": "10900 Brazoria Lane, Austin, TX",
+    "victim": "Unidentified male, 35",
+    "summary": "Found with gunshot wounds, callers reported hearing shots",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-8201-tuscany-way",
+    "lat": 30.48241,
+    "lon": -97.79142,
+    "source": "APD"
+  },
+  {
+    "n": 18,
+    "date": "2026-04-06",
+    "address": "10900 Brazoria Lane, Austin, TX",
+    "victim": "Unknown",
+    "summary": "Homicide investigation in the 10900 block of Brazoria Lane",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-10900-block-brazoria-lane",
+    "lat": 30.4822603,
+    "lon": -97.7913599,
+    "source": "APD"
+  },
+  {
+    "n": 19,
+    "date": "2026-04-08",
+    "address": "12435 Dessau Road (Nova North Apartments), Austin, TX",
+    "victim": "Unidentified male",
+    "summary": "Found with gunshot wounds at Nova North Apartments. Died at scene ~7:10 PM. APD Homicide investigating. Believed isolated incident, no suspect in custody.",
+    "url": "https://www.kxan.com/news/local/austin/homicide-investigation-underway-near-busy-northeast-austin-intersection/",
+    "lat": 30.390743,
+    "lon": -97.646871,
+    "source": "APD"
+  },
+  {
+    "n": 20,
+    "date": "2026-04-14",
+    "address": "5012 East 7th Street, Austin, TX",
+    "victim": "Unknown",
+    "summary": "Homicide investigation at 5012 East 7th Street",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-5012-east-7th-street",
+    "lat": 30.254332,
+    "lon": -97.6978024,
+    "source": "APD"
+  },
+  {
+    "n": 21,
+    "date": "2026-04-15",
+    "address": "12435 Dessau Road, Austin, TX",
+    "victim": "Unknown",
+    "summary": "Homicide investigation at 12435 Dessau Road",
+    "url": "https://www.austintexas.gov/news/homicide-investigation-12435-dessau-road",
+    "lat": 30.3889115,
+    "lon": -97.6448116,
+    "source": "APD"
+  },
+  {
+    "n": 22,
+    "date": "2026-05-06",
+    "address": "15424 FM 1825 Road, Pflugerville, TX",
+    "victim": "Mykal Jones, 27",
+    "summary": "One person killed and four others injured in a shooting outside Down South CaJJun Eats; multi-agency response with Pflugerville PD, TCSO, AFD, and ATCEMS.",
+    "url": "https://www.fox7austin.com/news/pflugerville-shooting-leaves-1-dead-4-others-injured",
+    "lat": 30.4423119,
+    "lon": -97.6657196,
+    "count": 1,
+    "source": "FOX 7 Austin / Pflugerville PD news conference"
+  },
+  {
+    "id": 8858,
+    "date": "2026-07-29",
+    "address": "401 Dawson Road, Austin, TX",
+    "victim": "",
+    "summary": "Homicide Investigation at 401 Dawson Road (Butler Metro Park)",
+    "url": "https://news.google.com/rss/articles/CBMinAFBVV95cUxQMi1JUzBaRlIxVGVySEpVV1JFRGU4WDJPLUtHbFZ1eTRCNUVWSEhncW8zSldvUjc0aC02NWZQVDBWVVNrc1Ztclp0clBTNTVtNFh0Z2cxMndINUlpUVNLQnpVYXc0MXV2R2g4T01EekJ1WWQxQmFYLVRDcGFDU3ZMZ0RsVG1zNVhRbExMMzctT1hzS211bmRuLVhNZVk?oc=5",
+    "lat": 30.261414,
+    "lon": -97.7559499,
+    "source": "APD",
+    "n": 23
+  },
+  {
+    "id": 8859,
+    "date": "2026-07-13",
+    "address": "8303 Empress Boulevard, Austin, TX",
+    "victim": "",
+    "summary": "Homicide Investigation at 8303 Empress Boulevard",
+    "url": "https://news.google.com/rss/articles/CBMie0FVX3lxTFBsM3hlVWdkQ2xjaHRZa3VuMVVMQ0xhWFl2V0xyYVFlb1ZuRV9teEVZZ3ZmZ0I4RjRISXhJWE9LNUw5N0hnZ1A5ZVNON3E2anRucEdsWmNHYlY2Y25Eay1ENWNmZ01UMEgzb1k2MnAwd183Rnc4QnJQTWFXUQ?oc=5",
+    "lat": 30.1911875,
+    "lon": -97.8175807,
+    "source": "APD",
+    "n": 24
+  },
+  {
+    "id": 8860,
+    "date": "2026-06-16",
+    "address": "East Riverside Drive, Austin, TX",
+    "victim": "",
+    "summary": "Austin police investigating homicide Monday night on East Riverside Drive",
+    "url": "https://news.google.com/rss/articles/CBMinwFBVV95cUxPRmNPa2NSenpHLWd2Ty1PNlMxQlZRZzZna3NaRDM1SDJjekRsaG90TUwyZWxZSWZPdk9iV2JqTndEYkhtY3hYZkVXTngwUDBPNURzYkdFWERlNzJGRUEtOTNUN0kxM0NTcERhOFpZSG9oRTlIT04tdjlQMDU1V09TcWRzUi13elZOeHViTElPSGNoUndOQVppQVl5a082UDg?oc=5",
+    "lat": 30.2440014,
+    "lon": -97.729763,
+    "source": "APD",
+    "n": 25
+  },
+  {
+    "id": 8861,
+    "date": "2026-06-16",
+    "address": "East Oltorf Street, Austin, TX",
+    "victim": "",
+    "summary": "Police investigating homicide on East Oltorf Street in southeast Austin",
+    "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxOYjZwZUVGNndwMXZEREFuNXFtZFJCTDhaTGZ2YmF2OGZqMF9MRnBEN21GbXZZZUVLRVNQTG9CWU4yQzdMOE04a2RLOXlpQUljQjVibnBkRkJOTE1UV2lLc2VHOGN3dU90Q0ZMakl6cEx0TklyTG5wbEdKb2hoODRuQlY0MnozbTU3aVZ3UUhEdDBUR3YxNGNYQUxuRmZ0djBhRXpRZXF1Sk4tX0FGckllb1JGc1VXS2Rw?oc=5",
+    "lat": 30.2369699,
+    "lon": -97.7501833,
+    "source": "APD",
+    "n": 26
+  },
+  {
+    "date": "2026-07-05",
+    "address": "9700 Reservoir Court, Austin, TX",
+    "victim": "",
+    "summary": "two-found-dead-deputies-investigate-double-homicide-travis-county-gentlemens-club",
+    "url": "https://www.fox7austin.com/news/two-found-dead-deputies-investigate-double-homicide-travis-county-gentlemens-club",
+    "lat": 30.331466,
+    "lon": -97.625874,
+    "source": "APD",
+    "n": 27
+  },
+  {
+    "date": "2026-06-29",
+    "address": "800 East 10th Street, Austin, TX",
+    "victim": "",
+    "summary": "texas-mother-five-killed-broad-daylight-stabbing-three-women-charged-murder",
+    "url": "https://www.fox7austin.com/news/texas-mother-five-killed-broad-daylight-stabbing-three-women-charged-murder",
+    "lat": 30.2710765,
+    "lon": -97.7388274,
+    "source": "APD",
+    "n": 28
+  },
+  {
+    "date": "2026-07-20",
+    "address": "3200 Montopolis Drive, Austin, TX",
+    "victim": "",
+    "summary": "texas-man-charged-murder-after-southeast-austin-apartment-shooting",
+    "url": "https://www.fox7austin.com/news/texas-man-charged-murder-after-southeast-austin-apartment-shooting",
+    "lat": 30.2105017,
+    "lon": -97.7136414,
+    "source": "APD",
+    "n": 29
+  }
 ]
