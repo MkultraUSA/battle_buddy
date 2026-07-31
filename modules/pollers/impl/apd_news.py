@@ -357,10 +357,37 @@ def _apd_fetch_article(
     """
     # Try residential Pi fetch first (bypasses datacenter IP blocks)
     pi_result = _pi_fetch(url, pi_fetch_url, pi_fetch_token)
-    # Only accept pi_result if it actually extracted an address;
-    # otherwise fall through to direct fetch with cleaner HTML stripping
-    if pi_result and pi_result.get("address"):
-        return pi_result
+    if pi_result:
+        # If we got an address from the fetch agent, return immediately
+        if pi_result.get("address"):
+            return pi_result
+        # If we got text but no address, try extracting address from the
+        # raw text again (the fetch agent may return clean text that our
+        # regex can match on a second pass with different patterns)
+        text = pi_result.get("text", "")
+        if text:
+            # Try alternate address patterns in the text
+            # Look for addresses in APD press release format
+            import re as _re
+            addr_m2 = _re.search(
+                r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]+(?:Street|St|Avenue|Ave|Drive|Dr|"
+                r"Road|Rd|Lane|Ln|Boulevard|Blvd|Way|Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|"
+                r"Loop|Trail|Trl|Pass|Crossing|Xing|Place|Pl|Cove|Path|Run|Row|Terrace|Terr|"
+                r"Center|Ctr|Plaza|Square|Sq|Bridge|Brg|Expressway|Expy|Freeway|Fwy|"
+                r"Turnpike|Tpke|Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
+                r"Point|Ridge|Spring|Trace|Valley|View|Vista)"
+                r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?)",
+                text,
+            )
+            if addr_m2:
+                pi_result["address"] = addr_m2.group(1).strip()
+                return pi_result
+        # If we have a summary but no address, still use the pi result
+        # (better than failing on direct fetch which is always blocked)
+        if pi_result.get("summary"):
+            return pi_result
+        # Pi fetch returned something but it's empty/useless, fall through
+    # Fallback: direct fetch from VPS (usually blocked, kept as last resort)
 
     # Fallback: direct fetch from VPS
     try:
@@ -707,6 +734,36 @@ class APDNewsPoller(BasePoller):
             detail  = _apd_fetch_article(url, pi_fetch_url, pi_fetch_token)
             address = detail.get("address")
             summary = detail.get("summary", article["title"])
+
+            # Fallback: extract address from article title when fetch fails
+            if not address:
+                import re as _t_re
+                _SUFFIX = (
+                    r"Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Lane|Ln|Boulevard|Blvd|Way|"
+                    r"Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|Loop|Trail|Trl|Pass|"
+                    r"Place|Pl|Cove|Path|Run|Row|Terrace|Terr|Center|Ctr|Plaza|Square|Sq|"
+                    r"Bridge|Brg|Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
+                    r"Point|Ridge|Spring|Trace|Valley|View|Vista|Expressway|Expy|Freeway|Fwy|"
+                    r"Turnpike|Tpke"
+                )
+                # Pass 1: address with street number (e.g., "8201 Tuscany Way")
+                _t_addr = _t_re.search(
+                    r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
+                    r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
+                    article["title"],
+                )
+                # Pass 2: street name without number (e.g., "on Tuscany Way")
+                if not _t_addr:
+                    _t_addr = _t_re.search(
+                        r"(?:on|at|near|in|of)\s+"
+                        r"((?:[A-Z][a-z]*\s+){0,3}[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
+                        r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
+                        article["title"],
+                    )
+                if _t_addr:
+                    address = _t_addr.group(1).strip().rstrip(" -.,;")
+                    if "," not in address and "Austin" not in address:
+                        address = address + ", Austin, TX"
 
             lat: float | None = None
             lon: float | None = None
