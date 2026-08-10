@@ -22,6 +22,7 @@ from modules.config import (
     TALK_ROOMS,
     TALK_USER,
 )
+from modules.kg_integration import kg_write_incident
 from modules.database import calls_since
 from modules.kg_integration import kg_write_incident
 from modules.talkgroups import (
