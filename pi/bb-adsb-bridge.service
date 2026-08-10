@@ -1,0 +1,17 @@
+[Unit]
+Description=Battle Buddy ADSB.lol feeder relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+EnvironmentFile=/etc/default/bb-adsb-bridge
+ExecStart=/usr/bin/python3 /usr/local/bin/bb-adsb-bridge.py
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

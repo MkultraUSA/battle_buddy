@@ -47,6 +47,7 @@ urllib.request.install_opener(
 from flask import Flask, jsonify, render_template_string, request  # noqa: E402
 
 from modules import atak as _atak_mod  # noqa: E402
+from modules.aircraft import aircraft_bp  # noqa: E402
 from modules.atak import (  # noqa: E402
     _atak_resync_on_startup,
 )
@@ -77,7 +78,6 @@ from modules.pi_watchdog import (  # noqa: E402
     _pi_watchdog_alert,
 )
 from modules.pollers import *  # noqa: E402
-from modules.pollers.impl.adsb_air_asset import ADSB_TRAIL_SECS  # noqa: E402
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
@@ -94,6 +94,7 @@ from modules.transcription import (  # noqa: E402
 
 app = Flask(__name__, static_folder="/opt/battlebuddy/static", static_url_path="/static")
 
+app.register_blueprint(aircraft_bp)
 from modules.public import public_bp  # noqa: E402, I001
 app.register_blueprint(public_bp)
 from modules.tips import tips_bp  # noqa: E402, I001
@@ -1218,50 +1219,6 @@ def api_drone_sightings():
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
-
-
-@app.route("/api/adsb")
-def api_adsb():
-    """Return current aircraft positions + 30-min trails grouped by icao24."""
-    cutoff = time.time() - ADSB_TRAIL_SECS
-    conn = sqlite3.connect(DB_PATH, timeout=5.0)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT * FROM aircraft_positions WHERE ts > ? ORDER BY icao24, ts",
-        (cutoff,)
-    ).fetchall()
-    conn.close()
-
-    aircraft: dict = {}
-    for r in rows:
-        icao = r["icao24"]
-        if icao not in aircraft:
-            aircraft[icao] = {
-                "icao24":   icao,
-                "label":    r["label"],
-                "callsign": r["callsign"],
-                "is_leo":   bool(r["is_leo"]),
-                "lat":      r["lat"],
-                "lon":      r["lon"],
-                "alt_ft":   r["alt_ft"],
-                "heading":  r["heading"],
-                "speed_kts": r["speed_kts"],
-                "ts":       r["ts"],
-                "trail":    [],
-            }
-        else:
-            # Keep latest position as current
-            aircraft[icao].update({
-                "lat":     r["lat"],
-                "lon":     r["lon"],
-                "alt_ft":  r["alt_ft"],
-                "heading": r["heading"],
-                "speed_kts": r["speed_kts"],
-                "ts":      r["ts"],
-            })
-        aircraft[icao]["trail"].append([r["lat"], r["lon"], r["ts"]])
-
-    return jsonify(list(aircraft.values()))
 
 
 @app.route("/")
