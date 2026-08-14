@@ -76,8 +76,8 @@ def get_aircraft():
         lon: Longitude (default: -97.7431, Austin)
         radius: Radius in NM (default: 100, max: 250)
     """
-    import urllib.request
     import json
+    import urllib.request
     
     lat = request.args.get("lat", 30.2672, type=float)
     lon = request.args.get("lon", -97.7431, type=float)
