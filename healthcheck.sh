@@ -207,14 +207,13 @@ if has_cmd ssh; then
     ok "Capture node reachable"
 
     PI_STATUS=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "${PI_USER}@${PI_HOST}" \
-      'echo op25=$(systemctl is-active op25-multi_rx 2>/dev/null) collector=$(systemctl --user is-active op25-collector 2>/dev/null) recorder=$(systemctl --user is-active call_recorder 2>/dev/null)' 2>/dev/null || true)
+      'echo op25=$(systemctl is-active op25-multi_rx 2>/dev/null) recorder=$(systemctl is-active battlebuddy-call-recorder 2>/dev/null)' 2>/dev/null || true)
 
-    for svc in op25 collector recorder; do
+    for svc in op25 recorder; do
       VAL=$(echo "$PI_STATUS" | grep -o "${svc}=[a-z]*" | cut -d= -f2)
       case $svc in
         op25)      label="op25-multi_rx (P25 decoder)" ;;
-        collector) label="op25-collector (talkgroup data)" ;;
-        recorder)  label="call_recorder (audio → server)" ;;
+        recorder)  label="battlebuddy-call-recorder (audio → server)" ;;
       esac
       [ "$VAL" = "active" ] && ok "Capture node: ${label}" || warn "Capture node: ${label} is ${VAL:-unknown}"
     done

@@ -301,19 +301,43 @@ def _pi_fetch(url: str, pi_fetch_url: str, pi_fetch_token: str, referer: str = "
         data = json.loads(resp.read().decode("utf-8"))
         if data.get("status") != 200:
             return {}
-        text = data.get("text", "")
+        raw_text = data.get("text", "")
+        # Strip HTML tags and normalize whitespace
+        text = re.sub(r"<[^>]+>", " ", raw_text)
+        text = re.sub(r"\s+", " ", text).strip()
+        # Also strip JSON-like structured data fragments that leak from Google News
+        text = re.sub(r'"[A-Z]{2,4}"\s*,\s*true\s*,\s*\[[^\]]*\]', " ", text)
+        text = re.sub(r'"[A-Z][a-z]+\d*"\s*:\s*\d+', " ", text)
+        text = re.sub(r'"[a-z_]+"\s*:\s*"[^"]*"', " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+
         addr_m = re.search(
-            r"(\d{3,5}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.]+(?:Street|St|Avenue|Ave|"
+            r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]+(?:Street|St|Avenue|Ave|"
             r"Drive|Dr|Road|Rd|Lane|Ln|Boulevard|Blvd|Way|Court|Ct|Circle|Cir|"
-            r"Parkway|Pkwy|Highway|Hwy|Loop|Trail|Trl|Pass|Place|Pl)"
+            r"Parkway|Pkwy|Highway|Hwy|Loop|Trail|Trl|Pass|Place|Pl|"
+            r"Cove|Path|Run|Row|Terrace|Terr|Center|Ctr|Plaza|Square|Sq|"
+            r"Bridge|Brg|Expressway|Expy|Freeway|Fwy|Turnpike|Tpke|"
+            r"Bend|Creek|Crossing|Xing|Hollow|Landing|Manor|Meadow|"
+            r"Orchard|Pine|Point|Ridge|Spring|Trace|Valley|View|Vista)"
             r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?)",
             text,
         )
         address = addr_m.group(1).strip() if addr_m else None
+
+        # Try to extract body from "Case Number" pattern (APD format)
+        body_m = re.search(r"Case Number[:\s]+(.*?)(?:Tips|Contact|Crime Stoppers)", text, re.DOTALL)
+        if body_m:
+            summary = body_m.group(0)[:400].strip()
+        elif len(text) > 500:
+            # Skip first 200 chars (often nav/header junk), take next 400
+            summary = text[200:600].strip()
+        else:
+            summary = text[:400].strip()
+
         return {
             "url":     data.get("final_url", url),
             "address": address,
-            "summary": text[:400].strip(),
+            "summary": summary,
             "text":    text,
         }
     except Exception as exc:
@@ -334,7 +358,36 @@ def _apd_fetch_article(
     # Try residential Pi fetch first (bypasses datacenter IP blocks)
     pi_result = _pi_fetch(url, pi_fetch_url, pi_fetch_token)
     if pi_result:
-        return pi_result
+        # If we got an address from the fetch agent, return immediately
+        if pi_result.get("address"):
+            return pi_result
+        # If we got text but no address, try extracting address from the
+        # raw text again (the fetch agent may return clean text that our
+        # regex can match on a second pass with different patterns)
+        text = pi_result.get("text", "")
+        if text:
+            # Try alternate address patterns in the text
+            # Look for addresses in APD press release format
+            import re as _re
+            addr_m2 = _re.search(
+                r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]+(?:Street|St|Avenue|Ave|Drive|Dr|"
+                r"Road|Rd|Lane|Ln|Boulevard|Blvd|Way|Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|"
+                r"Loop|Trail|Trl|Pass|Crossing|Xing|Place|Pl|Cove|Path|Run|Row|Terrace|Terr|"
+                r"Center|Ctr|Plaza|Square|Sq|Bridge|Brg|Expressway|Expy|Freeway|Fwy|"
+                r"Turnpike|Tpke|Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
+                r"Point|Ridge|Spring|Trace|Valley|View|Vista)"
+                r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?)",
+                text,
+            )
+            if addr_m2:
+                pi_result["address"] = addr_m2.group(1).strip()
+                return pi_result
+        # If we have a summary but no address, still use the pi result
+        # (better than failing on direct fetch which is always blocked)
+        if pi_result.get("summary"):
+            return pi_result
+        # Pi fetch returned something but it's empty/useless, fall through
+    # Fallback: direct fetch from VPS (usually blocked, kept as last resort)
 
     # Fallback: direct fetch from VPS
     try:
@@ -358,15 +411,27 @@ def _apd_fetch_article(
     text = re.sub(r"\s+", " ", text)
 
     addr_m = re.search(
-        r"(\d{3,5}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.]+(?:Street|St|Avenue|Ave|Drive|Dr|"
+        r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]+(?:Street|St|Avenue|Ave|Drive|Dr|"
         r"Road|Rd|Lane|Ln|Boulevard|Blvd|Way|Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|"
-        r"Loop|Trail|Trl|Pass|Crossing|Crossing|Place|Pl)(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?)",
+        r"Loop|Trail|Trl|Pass|Crossing|Xing|Place|Pl|"
+        r"Cove|Path|Run|Row|Terrace|Terr|Center|Ctr|Plaza|Square|Sq|"
+        r"Bridge|Brg|Expressway|Expy|Freeway|Fwy|Turnpike|Tpke|"
+        r"Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
+        r"Point|Ridge|Spring|Trace|Valley|View|Vista)"
+        r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?)",
         text,
     )
     address = addr_m.group(1).strip() if addr_m else None
 
-    body_m  = re.search(r"Case Number[:\s]+(.*?)(?:Tips|Contact|Crime Stoppers)", text, re.DOTALL)
-    summary = body_m.group(0)[:400].strip() if body_m else text[500:900].strip()
+    # Try APD press release format first
+    body_m = re.search(r"Case Number[:\s]+(.*?)(?:Tips|Contact|Crime Stoppers)", text, re.DOTALL)
+    if body_m:
+        summary = body_m.group(0)[:400].strip()
+    elif len(text) > 500:
+        # Skip first 200 chars (often nav/header), take next 400
+        summary = text[200:600].strip()
+    else:
+        summary = text[:400].strip()
 
     return {"url": final_url, "address": address, "summary": summary}
 
@@ -374,8 +439,27 @@ def _apd_fetch_article(
 def _article_itype_from_title(title: str) -> str:
     """Determine the incident type (itype) from a news article headline."""
     t = title.lower()
+
     if "homicide" in t or "murder" in t:
-        return "HOMICIDE"
+        # Filter false positives: historical articles, wrong-year, non-Austin
+        false_positive_patterns = [
+            r"\b(19|20)\d{2}\b",           # year references (1980, 2023, etc.)
+            r"\bcold\s*case\b",             # cold case
+            r"\bhistorical\b",               # historical
+            r"\bsolve[sd]?\b",               # "solved", "solves" (past cases)
+            r"\bidentified\b",               # "identified" (often cold cases)
+            r"\bofficer.{0,20}(shot|killed)", # officer-involved shooting
+            r"\bindict",                      # indictment (legal, not new homicide)
+        ]
+        is_false_positive = any(re.search(p, t) for p in false_positive_patterns)
+
+        # Also check for explicit 2026 references (good signal)
+        is_current = bool(re.search(r"\b2026\b", t))
+
+        if not is_false_positive or is_current:
+            return "HOMICIDE"
+        # Fall through to other classifications for false positives
+
     if "fatal" in t and any(w in t for w in ("crash", "accident", "hit", "pedestrian", "collision")):
         return "FATAL CRASH"
     if "shooting" in t or " shot" in t:
@@ -650,6 +734,36 @@ class APDNewsPoller(BasePoller):
             detail  = _apd_fetch_article(url, pi_fetch_url, pi_fetch_token)
             address = detail.get("address")
             summary = detail.get("summary", article["title"])
+
+            # Fallback: extract address from article title when fetch fails
+            if not address:
+                import re as _t_re
+                _SUFFIX = (
+                    r"Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Lane|Ln|Boulevard|Blvd|Way|"
+                    r"Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|Loop|Trail|Trl|Pass|"
+                    r"Place|Pl|Cove|Path|Run|Row|Terrace|Terr|Center|Ctr|Plaza|Square|Sq|"
+                    r"Bridge|Brg|Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
+                    r"Point|Ridge|Spring|Trace|Valley|View|Vista|Expressway|Expy|Freeway|Fwy|"
+                    r"Turnpike|Tpke"
+                )
+                # Pass 1: address with street number (e.g., "8201 Tuscany Way")
+                _t_addr = _t_re.search(
+                    r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
+                    r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
+                    article["title"],
+                )
+                # Pass 2: street name without number (e.g., "on Tuscany Way")
+                if not _t_addr:
+                    _t_addr = _t_re.search(
+                        r"(?:on|at|near|in|of)\s+"
+                        r"((?:[A-Z][a-z]*\s+){0,3}[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
+                        r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
+                        article["title"],
+                    )
+                if _t_addr:
+                    address = _t_addr.group(1).strip().rstrip(" -.,;")
+                    if "," not in address and "Austin" not in address:
+                        address = address + ", Austin, TX"
 
             lat: float | None = None
             lon: float | None = None

@@ -22,8 +22,8 @@ from modules.config import (
     TALK_ROOMS,
     TALK_USER,
 )
-from modules.kg_integration import kg_write_incident
 from modules.database import calls_since
+from modules.kg_integration import kg_write_incident
 from modules.talkgroups import (
     ABIA_OPS_TGIDS,
     AIR_ASSET_TGIDS,
@@ -286,6 +286,9 @@ _active_incidents: dict[int, dict] = {}
 _incident_lock = threading.Lock()
 
 
+_analyze_counter = 0
+_analyze_last_log = 0.0
+
 def _is_negative_context(text: str, kw: str) -> bool:
     """Check if a keyword appears in a negated context that should suppress matching.
 
@@ -312,6 +315,12 @@ def _is_negative_context(text: str, kw: str) -> bool:
 
 def analyze_for_incident(call: dict):
     """Run after each call is stored. Detect and record incidents."""
+    global _analyze_counter, _analyze_last_log
+    _analyze_counter += 1
+    now_ts = time.time()
+    if now_ts - _analyze_last_log >= 300:
+        print(f"[incident] analyzed {_analyze_counter} calls total", flush=True)
+        _analyze_last_log = now_ts
     tgid  = call.get("tgid", 0)
     cat   = call.get("category", "Unknown")
     _raw = (call.get("transcript") or "")
@@ -521,6 +530,21 @@ def _create_incident(itype: str, desc: str, call: dict, ts: float):
         "escalation_stage": None,
         "room_tokens":      [],
     }
+
+    try:
+        kg_write_incident({
+            "id": inc_id,
+            "itype": itype,
+            "description": desc,
+            "lat": call.get("lat"),
+            "lon": call.get("lon"),
+            "location": call.get("location"),
+            "tgid": tgid,
+            "category": cat,
+        })
+    except Exception:
+        pass
+
     print(f"[incident] NEW  {itype}: {desc}", flush=True)
     agencies_str = ", ".join(json.loads(agencies))
     location     = call.get("location")

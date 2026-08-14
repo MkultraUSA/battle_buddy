@@ -70,6 +70,7 @@ from modules.incident_engine import (  # noqa: E402
     _active_incidents,
     _incident_lock,
 )
+from modules.kg_integration import kg_write_call  # noqa: E402
 from modules.llm import *  # noqa: E402
 from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
 from modules.pi_watchdog import (  # noqa: E402
@@ -107,6 +108,19 @@ _BACKLOG_MAX_ITEMS = 300
 _BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
+
+# Network-wide ADSB.lol snapshot pushed by the authorized feeder Pi.  The
+# feeder-only re-api is source-IP restricted, so browsers and this VPS cannot
+# query it directly.
+_ADSB_LIVE_MAX_AIRCRAFT = 300
+_ADSB_LIVE_MAX_AGE_SECS = 120
+_adsb_live_ingest_token = os.environ.get("BB_ADSB_INGEST_TOKEN", "")
+_adsb_live_lock = threading.Lock()
+_adsb_live_snapshot = {
+    "now": 0.0,
+    "received_at": 0.0,
+    "aircraft": [],
+}
 
 
 def _should_backlog() -> bool:
@@ -242,6 +256,10 @@ def receive():
                         transcript=transcript, lat=lat, lon=lon, location=location)
             recent = calls_since(ts - 15 * 60)
             call["llm"] = llm_analyze(call, recent)
+            try:
+                kg_write_call(call)
+            except Exception as _kg_err:
+                print(f"[recv] KG write warning: {_kg_err}", flush=True)
             # If this is an unknown talkgroup, ask the LLM to identify it
             if tag.startswith("TGID ") and transcript and len(transcript) >= _TGID_ID_MIN_LEN:
                 threading.Thread(target=llm_identify_tgid, args=(tgid, transcript),

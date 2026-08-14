@@ -11,8 +11,8 @@ from faster_whisper import WhisperModel as _FasterWhisperModel
 
 _fw_model            = None
 _fw_model_lock       = threading.Lock()
-_MAX_PROCESS_THREADS = 8
-_BROADCASTIFY_MAX    = 4
+_MAX_PROCESS_THREADS = 3
+_BROADCASTIFY_MAX    = 2
 _process_sem         = threading.Semaphore(_MAX_PROCESS_THREADS)
 _broadcastify_sem    = threading.Semaphore(_BROADCASTIFY_MAX)
 
@@ -124,7 +124,7 @@ def get_transcription_observability(now: Optional[float] = None) -> dict:
 
     return {
         "provider": "local_faster_whisper",
-        "model": "distil-large-v3",
+        "model": "base.en",
         "in_progress": in_progress,
         "totals": totals,
         "windows": by_window,
@@ -138,9 +138,9 @@ TRANSCRIPTION_TIMEOUT = 300
 def _get_fw_model() -> _FasterWhisperModel:
     global _fw_model
     if _fw_model is None:
-        print("[whisper] loading faster-whisper large-v3-turbo int8...", flush=True)
-        _fw_model = _FasterWhisperModel("distil-large-v3", device="cpu", compute_type="int8",
-                                        cpu_threads=5, num_workers=1)
+        print("[whisper] loading faster-whisper base.en int8...", flush=True)
+        _fw_model = _FasterWhisperModel("base.en", device="cpu", compute_type="int8",
+                                        cpu_threads=2, num_workers=1)
         print("[whisper] model ready", flush=True)
     return _fw_model
 
@@ -230,7 +230,23 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
             lock_held = True
             try:
                 model = _get_fw_model()
-                segments, _ = model.transcribe(tmp, language="en", beam_size=1, vad_filter=True)
+                # Short radio bursts are frequently over-pruned by VAD; relax for <=3s clips.
+                if audio_seconds <= 3.0:
+                    segments, _ = model.transcribe(
+                        tmp,
+                        language="en",
+                        beam_size=1,
+                        vad_filter=False,
+                        no_speech_threshold=0.8,
+                    )
+                else:
+                    segments, _ = model.transcribe(
+                        tmp,
+                        language="en",
+                        beam_size=2,
+                        vad_filter=True,
+                        no_speech_threshold=0.6,
+                    )
                 seg_texts = []
                 seg_logprobs = []
                 for s in segments:
