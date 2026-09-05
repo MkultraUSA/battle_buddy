@@ -144,3 +144,9 @@ __marimo__/
 *.bak*
 bugs.md
 graphify-out/cache/
+
+# Graphify generated artifacts (keep local only)
+graphify-out/
+
+# Runtime poller state
+austin_events_state.json
