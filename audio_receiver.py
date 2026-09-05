@@ -47,6 +47,7 @@ urllib.request.install_opener(
 from flask import Flask, jsonify, render_template_string, request  # noqa: E402
 
 from modules import atak as _atak_mod  # noqa: E402
+from modules import maintenance as __maintenance_mod  # noqa: E402
 from modules.aircraft import aircraft_bp  # noqa: E402
 from modules.atak import (  # noqa: E402
     _atak_resync_on_startup,
@@ -70,6 +71,7 @@ from modules.incident_engine import (  # noqa: E402
     _active_incidents,
     _incident_lock,
 )
+from modules.kg_integration import _get_kg as __kg_get_kg  # noqa: E402
 from modules.kg_integration import kg_write_call  # noqa: E402
 from modules.llm import *  # noqa: E402
 from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
@@ -4054,6 +4056,38 @@ def auth_nc_admin():
         return make_response("", 403)
     return make_response("", 200)
 
+
+# --- WAL Checkpointing (auto-inserted by Hermes — Phase 2)
+_WAL_CHECKPOINT_INTERVAL = 900  # 15 minutes
+
+def _wal_checkpoint_loop():
+    import os as _os
+    db_paths = [DB_PATH, _os.path.join(_os.path.dirname(DB_PATH), "battle_knowledge.db")]
+    while True:
+        try:
+            time.sleep(_WAL_CHECKPOINT_INTERVAL)
+            for dbp in db_paths:
+                if not _os.path.exists(dbp):
+                    continue
+                try:
+                    c = sqlite3.connect(dbp, timeout=2.0)
+                    c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    c.close()
+                except Exception:
+                    pass
+        except Exception:
+            time.sleep(60)
+
+# ---------------------------------------------------------------------------
+# Health endpoint — Prometheus-compatible observability
+# ---------------------------------------------------------------------------
+
+@app.route("/api/health")
+def api_health():
+    """Return health snapshot: memory, DB stats, KG stats, uptime."""
+    return jsonify(__maintenance_mod.get_health_snapshot(DB_PATH))
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--port",        type=int, default=9001)
@@ -4070,6 +4104,14 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     load_talkgroups()
     init_db()
+    # Enable WAL mode on all databases for better concurrent read/write performance
+    for _dbp in [DB_PATH, os.path.join(os.path.dirname(DB_PATH), "battle_knowledge.db")]:
+        try:
+            _c = sqlite3.connect(_dbp, timeout=2.0)
+            _c.execute("PRAGMA journal_mode=WAL")
+            _c.close()
+        except Exception:
+            pass
     _load_active_incidents_from_db()
     _atak_resync_on_startup()
 
@@ -4090,5 +4132,12 @@ if __name__ == "__main__":
     APDNewsPoller().start()
     RedditIntelPoller().start()
     ADSBAirAssetPoller().start()
+    # --- Phase 3: Maintenance loops ---
+    threading.Thread(target=__maintenance_mod._kg_prune_loop, daemon=True).start()
+    threading.Thread(target=lambda: __maintenance_mod._archive_loop(DB_PATH), daemon=True).start()
+    # Register KG instance for pruning (deferred — KG loads on first call)
+    threading.Thread(target=lambda: (time.sleep(30), __maintenance_mod.set_kg_instance(
+        __kg_get_kg())), daemon=True).start()
 
+    threading.Thread(target=_wal_checkpoint_loop, daemon=True).start()  # WAL checkpointing
     app.run(host="0.0.0.0", port=args.port, threaded=True)

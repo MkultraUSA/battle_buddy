@@ -10,6 +10,7 @@ from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 
 from modules.kg_ontology import ONTOLOGY, BattleBuddyKG
+from modules.maintenance import _kg_prune_loop, prune_kg_calls, set_kg_instance
 
 # ---------------------------------------------------------------------------
 # App & KG initialization
@@ -23,6 +24,7 @@ DB_PATH = os.path.join(BASE_DIR, "battle_knowledge.db")
 GRAPH_PATH = os.path.join(BASE_DIR, "battle_kg.gexf")
 
 kg = BattleBuddyKG(db_path=DB_PATH, graph_path=GRAPH_PATH)
+set_kg_instance(kg)  # register for periodic pruning
 
 
 # ---------------------------------------------------------------------------
@@ -317,4 +319,9 @@ if __name__ == "__main__":
     print(f"  Graph:   {GRAPH_PATH}")
     print(f"  Nodes:   {kg.G.number_of_nodes()}")
     print(f"  Edges:   {kg.G.number_of_edges()}")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # --- Phase 3: KG pruning ---
+    import threading
+    threading.Thread(target=_kg_prune_loop, daemon=True).start()
+    # Run initial prune to reclaim memory now
+    threading.Thread(target=lambda: (lambda: (set_kg_instance(kg), prune_kg_calls(kg)))(), daemon=True).start()
+    app.run(host="0.0.0.0", port=5000, debug=False)
