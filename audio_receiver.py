@@ -47,6 +47,7 @@ urllib.request.install_opener(
 from flask import Flask, jsonify, render_template_string, request  # noqa: E402
 
 from modules import atak as _atak_mod  # noqa: E402
+from modules import maintenance as __maintenance_mod  # noqa: E402
 from modules.aircraft import aircraft_bp  # noqa: E402
 from modules.atak import (  # noqa: E402
     _atak_resync_on_startup,
@@ -70,8 +71,8 @@ from modules.incident_engine import (  # noqa: E402
     _active_incidents,
     _incident_lock,
 )
-from modules import maintenance as __maintenance_mod  # noqa: E402
-from modules.kg_integration import kg_write_call, _get_kg as __kg_get_kg  # noqa: E402
+from modules.kg_integration import _get_kg as __kg_get_kg  # noqa: E402
+from modules.kg_integration import kg_write_call  # noqa: E402
 from modules.llm import *  # noqa: E402
 from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
 from modules.pi_watchdog import (  # noqa: E402

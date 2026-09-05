@@ -6,13 +6,10 @@ Battle Buddy Maintenance Module — Phase 3
 """
 
 import gc
-import json
 import os
 import sqlite3
 import threading
 import time
-
-import networkx as nx
 
 from modules.kg_ontology import BattleBuddyKG
 
@@ -194,7 +191,6 @@ def archive_old_calls(db_path: str, archive_path: str = None,
     aconn.close()
 
     elapsed = time.time() - start
-    remaining = mconn.execute("SELECT COUNT(*) FROM calls").fetchone()[0] if False else 0
     print(f"[archive] Done — moved {copied} calls in {elapsed:.1f}s", flush=True)
 
     return copied, 0

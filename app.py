@@ -10,7 +10,7 @@ from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 
 from modules.kg_ontology import ONTOLOGY, BattleBuddyKG
-from modules.maintenance import prune_kg_calls, set_kg_instance, _kg_prune_loop
+from modules.maintenance import _kg_prune_loop, prune_kg_calls, set_kg_instance
 
 # ---------------------------------------------------------------------------
 # App & KG initialization
