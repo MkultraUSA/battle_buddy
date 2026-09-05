@@ -413,8 +413,8 @@ const map = L.map('map', {
   maxBounds: AUSTIN_BOUNDS,
   maxBoundsViscosity: 1.0
 }).setView([30.32, -97.77], 11);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap contributors',
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
   maxZoom: 18
 }).addTo(map);
 
@@ -1457,8 +1457,8 @@ HOMICIDE_MAP_HTML = """<!DOCTYPE html>
 
 <script>
 const map = L.map('map', {center: [30.307, -97.735], zoom: 11});
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
 }).addTo(map);
 
 let heatLayer = null, markerGroup = L.layerGroup(), mode = 'heat';

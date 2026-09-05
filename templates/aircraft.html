@@ -85,8 +85,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 </div>
 <script>
 const map = L.map('map').setView([30.2672, -97.7431], 10);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap &amp; CartoDB · Aircraft: <a href="https://adsb.lol" target="_blank" rel="noopener">ADSB.lol</a> ODbL 1.0',
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors · Aircraft: <a href="https://adsb.lol" target="_blank" rel="noopener">ADSB.lol</a> ODbL 1.0',
   maxZoom: 18
 }).addTo(map);
 
