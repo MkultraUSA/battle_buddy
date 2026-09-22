@@ -16,6 +16,7 @@ from modules.config import (
     TALK_BASE,
     TALK_ENABLED,
     TALK_PASS,
+    TALK_ROOMS,
     TALK_USER,
     _room_for_call,
 )
@@ -45,6 +46,14 @@ _HIGH_KW = [
     "homicide", "body found", "found dead", "death investigation",
     "medical examiner",
 ]
+
+
+# T1 crime/EMS/fire-response tag prefixes (mirrors recorder tiers).
+_T1_PREFIX = (
+    "TCSO", "TCEMS", "TCESD", "APD",
+    "AFD FIRECOM", "AFD LOCUTION", "AFD TAC", "AFD ARSON",
+    "AFD SPEC OPS", "AFD FCOM", "INTEROP",
+)
 
 
 def _extract_units(transcript: str) -> list[str]:
@@ -77,10 +86,14 @@ def post_to_talk(call: dict):
     tgid = call.get("tgid")
     text_lower = transcript.lower()
 
-    # Only post high-danger calls
+    # Two-signal rule (2026-09-22): single signals don't page. Keyword
+    # fragments ("shooting back to the first name") and lone LLM HIGHs stay
+    # silent; T1 crime/EMS tags with a keyword post regardless of the LLM call.
     llm_pri_early = (call.get("llm") or {}).get("priority", "NONE")
     has_high_kw = any(k in text_lower for k in _HIGH_KW)
-    if llm_pri_early != "HIGH" and not has_high_kw:
+    is_t1 = (tag or "").upper().startswith(_T1_PREFIX)
+    llm_high = llm_pri_early == "HIGH"
+    if not ((llm_high and (has_high_kw or is_t1)) or (has_high_kw and is_t1)):
         return
 
     # --- Incident linkage ---
@@ -134,11 +147,18 @@ def post_to_talk(call: dict):
         "Content-Type": "application/json",
     }
 
-    for room_token in _room_for_call(call, priority):
-        url = f"{TALK_BASE}/chat/{room_token}"
-        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-        try:
-            urllib.request.urlopen(req, timeout=10)
-            print(f"[talk] posted {priority} {tag} → {room_token}: {transcript[:50]}", flush=True)
-        except Exception as e:
-            print(f"[talk] post failed → {room_token}: {e}", flush=True)
+    rooms = _room_for_call(call, priority)
+    incidents_room = TALK_ROOMS.get("incidents")
+    if incidents_room in rooms:
+        room_token = incidents_room
+    elif rooms:
+        room_token = sorted(rooms)[0]
+    else:
+        return
+    url = f"{TALK_BASE}/chat/{room_token}"
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        print(f"[talk] posted {priority} {tag} → {room_token}: {transcript[:50]}", flush=True)
+    except Exception as e:
+        print(f"[talk] post failed → {room_token}: {e}", flush=True)
