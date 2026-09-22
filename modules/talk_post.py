@@ -16,8 +16,8 @@ from modules.config import (
     TALK_BASE,
     TALK_ENABLED,
     TALK_PASS,
-    TALK_USER,
     TALK_ROOMS,
+    TALK_USER,
     _room_for_call,
 )
 from modules.incident_engine import (
