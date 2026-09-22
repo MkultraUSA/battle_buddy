@@ -5,6 +5,7 @@ Exposes Knowledge Graph data as REST endpoints for the dashboard.
 """
 
 import os
+from time import time
 
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
@@ -25,6 +26,30 @@ GRAPH_PATH = os.path.join(BASE_DIR, "battle_kg.gexf")
 
 kg = BattleBuddyKG(db_path=DB_PATH, graph_path=GRAPH_PATH)
 set_kg_instance(kg)  # register for periodic pruning
+
+# ---------------------------------------------------------------------------
+# Simple in-memory cache for API responses (60s TTL)
+# ---------------------------------------------------------------------------
+
+_CACHE_TTL = 60  # seconds
+_api_cache = {}
+
+
+def _cached_json(endpoint: str, ttl: int = _CACHE_TTL):
+    """Decorator: cache JSON responses in memory for `ttl` seconds."""
+    def decorator(func):
+        from functools import wraps
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            now = time()
+            cached = _api_cache.get(endpoint)
+            if cached and (now - cached["ts"]) < ttl:
+                return cached["resp"]
+            resp = func(*args, **kwargs)
+            _api_cache[endpoint] = {"resp": resp, "ts": now}
+            return resp
+        return wrapper
+    return decorator
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +88,8 @@ def _json_error(message: str, status_code: int = 400) -> tuple:
 def index():
     """Serve the Overwatch dashboard at root."""
     return render_template("overwatch_dashboard.html")
+
+
 @app.route("/adsb")
 def adsb_map():
     """Serve the ADS-B aircraft map for Austin area."""
@@ -71,22 +98,16 @@ def adsb_map():
 
 @app.route("/api/adsb/aircraft")
 def get_aircraft():
-    """Fetch aircraft within a radius of a point from adsb.lol API.
-    
-    Query parameters:
-        lat: Latitude (default: 30.2672, Austin)
-        lon: Longitude (default: -97.7431, Austin)
-        radius: Radius in NM (default: 100, max: 250)
-    """
+    """Fetch aircraft within a radius of a point from adsb.lol API."""
     import json
     import urllib.request
-    
+
     lat = request.args.get("lat", 30.2672, type=float)
     lon = request.args.get("lon", -97.7431, type=float)
     radius = min(request.args.get("radius", 100, type=int), 250)
-    
+
     url = f"https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius}"
-    
+
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "BattleBuddy/1.0"})
         with urllib.request.urlopen(req, timeout=10) as response:
@@ -96,89 +117,70 @@ def get_aircraft():
         return jsonify({"error": str(e), "ac": [], "total": 0}), 500
 
 
-
 # ---------------------------------------------------------------------------
 # Knowledge Graph API endpoints
 # ---------------------------------------------------------------------------
 
 
 @app.route("/api/kg/nodes", methods=["GET"])
+@_cached_json("nodes")
 def get_nodes():
     """Return all nodes (entities) in the knowledge graph."""
     try:
         nodes = [_serialize_node(nid) for nid in kg.G.nodes()]
-        return jsonify(
-            {
-                "count": len(nodes),
-                "nodes": nodes,
-            }
-        )
+        return jsonify({"count": len(nodes), "nodes": nodes})
     except Exception as exc:
         return _json_error(f"Failed to retrieve nodes: {exc}", 500)
 
 
 @app.route("/api/kg/relationships", methods=["GET"])
+@_cached_json("relationships")
 def get_relationships():
     """Return all edges / relationships in the knowledge graph."""
     try:
         edges = [_serialize_edge(src, tgt, data) for src, tgt, data in kg.G.edges(data=True)]
-        return jsonify(
-            {
-                "count": len(edges),
-                "relationships": edges,
-            }
-        )
+        return jsonify({"count": len(edges), "relationships": edges})
     except Exception as exc:
         return _json_error(f"Failed to retrieve relationships: {exc}", 500)
 
 
 @app.route("/api/kg/incidents", methods=["GET"])
+@_cached_json("incidents")
 def get_incidents():
     """Return incidents enriched with related call and agency data."""
     try:
-        # Find all Incident-type nodes
         incident_nodes = []
         for nid in kg.G.nodes():
             node_data = dict(kg.G.nodes[nid])
-            # Heuristic: look at label property or check ontology type hints
             label = node_data.get("label", "").lower()
             itype = node_data.get("itype", "")
             if "incident" in label or itype or "incident" in str(node_data.get("type", "")).lower():
                 entry = {"id": nid, **node_data}
 
-                # Collect related calls via PART_OF edges (calls -> incident)
                 related_calls = []
                 for src, tgt, data in kg.G.in_edges(nid, data=True):
-                    rel_type = data.get("type", "")
-                    if rel_type == "PART_OF":
+                    if data.get("type", "") == "PART_OF":
                         call_data = _serialize_node(src)
-                        call_data["relationship"] = rel_type
+                        call_data["relationship"] = "PART_OF"
                         related_calls.append(call_data)
 
                 entry["related_calls"] = related_calls
 
-                # Collect involved agencies via INVOLVED edges
                 agencies = []
                 for src, tgt, data in kg.G.out_edges(nid, data=True):
-                    rel_type = data.get("type", "")
-                    if rel_type == "INVOLVED":
-                        agency_data = _serialize_node(tgt)
-                        agencies.append(agency_data)
+                    if data.get("type", "") == "INVOLVED":
+                        agencies.append(_serialize_node(tgt))
 
                 entry["agencies"] = agencies
                 incident_nodes.append(entry)
 
-        return jsonify(
-            {
-                "count": len(incident_nodes),
-                "incidents": incident_nodes,
-            }
-        )
+        return jsonify({"count": len(incident_nodes), "incidents": incident_nodes})
     except Exception as exc:
         return _json_error(f"Failed to retrieve incidents: {exc}", 500)
 
 
 @app.route("/api/kg/filter-options", methods=["GET"])
+@_cached_json("filter-options")
 def get_filter_options():
     """Return unique agencies and talkgroups for filter UI."""
     try:
@@ -190,33 +192,23 @@ def get_filter_options():
             label = data.get("label", "")
 
             if label == "Agency":
-                name = data.get("name", nid)
-                agency_type = data.get("type", "unknown")
                 agencies[nid] = {
                     "id": nid,
-                    "name": name,
-                    "type": agency_type,
+                    "name": data.get("name", nid),
+                    "type": data.get("type", "unknown"),
                     "color": data.get("color", "#00B4D8"),
                 }
 
             if label == "Talkgroup":
-                tg_name = data.get("name", nid)
-                tg_agency = data.get("agency", "")
-                tg_category = data.get("category", "")
                 talkgroups[nid] = {
                     "id": nid,
-                    "name": tg_name,
-                    "agency": tg_agency,
-                    "category": tg_category,
+                    "name": data.get("name", nid),
+                    "agency": data.get("agency", ""),
+                    "category": data.get("category", ""),
                     "tgid": data.get("tgid", ""),
                 }
 
-        return jsonify(
-            {
-                "agencies": list(agencies.values()),
-                "talkgroups": list(talkgroups.values()),
-            }
-        )
+        return jsonify({"agencies": list(agencies.values()), "talkgroups": list(talkgroups.values())})
     except Exception as exc:
         return _json_error(f"Failed to retrieve filter options: {exc}", 500)
 
@@ -233,8 +225,6 @@ def search_nodes():
 
     for nid in kg.G.nodes():
         data = dict(kg.G.nodes[nid])
-
-        # Search across common text fields
         searchable_fields = [
             data.get("label", ""),
             data.get("name", ""),
@@ -242,7 +232,7 @@ def search_nodes():
             data.get("itype", ""),
             data.get("type", ""),
             str(data.get("tgid", "")),
-            nid,  # also match on node ID itself
+            nid,
         ]
 
         for field in searchable_fields:
@@ -250,41 +240,31 @@ def search_nodes():
                 results.append(_serialize_node(nid))
                 break
 
-    return jsonify(
-        {
-            "query": query,
-            "count": len(results),
-            "results": results,
-        }
-    )
+    return jsonify({"query": query, "count": len(results), "results": results})
 
 
 @app.route("/api/kg/stats", methods=["GET"])
+@_cached_json("stats")
 def get_stats():
     """Return summary statistics about the knowledge graph."""
     try:
-        # Count nodes by approximate type (based on label field)
         type_counts = {}
         for nid in kg.G.nodes():
-            data = kg.G.nodes[nid]
-            label = data.get("label", "Unknown")
+            label = kg.G.nodes[nid].get("label", "Unknown")
             type_counts[label] = type_counts.get(label, 0) + 1
 
-        # Edge type counts
         edge_type_counts = {}
         for src, tgt, data in kg.G.edges(data=True):
             etype = data.get("type", "UNKNOWN")
             edge_type_counts[etype] = edge_type_counts.get(etype, 0) + 1
 
-        return jsonify(
-            {
-                "node_count": kg.G.number_of_nodes(),
-                "edge_count": kg.G.number_of_edges(),
-                "nodes_by_type": type_counts,
-                "edges_by_type": edge_type_counts,
-                "ontology_entities": list(ONTOLOGY["entities"].keys()),
-            }
-        )
+        return jsonify({
+            "node_count": kg.G.number_of_nodes(),
+            "edge_count": kg.G.number_of_edges(),
+            "nodes_by_type": type_counts,
+            "edges_by_type": edge_type_counts,
+            "ontology_entities": list(ONTOLOGY["entities"].keys()),
+        })
     except Exception as exc:
         return _json_error(f"Failed to compute stats: {exc}", 500)
 
@@ -319,9 +299,7 @@ if __name__ == "__main__":
     print(f"  Graph:   {GRAPH_PATH}")
     print(f"  Nodes:   {kg.G.number_of_nodes()}")
     print(f"  Edges:   {kg.G.number_of_edges()}")
-    # --- Phase 3: KG pruning ---
     import threading
     threading.Thread(target=_kg_prune_loop, daemon=True).start()
-    # Run initial prune to reclaim memory now
     threading.Thread(target=lambda: (lambda: (set_kg_instance(kg), prune_kg_calls(kg)))(), daemon=True).start()
     app.run(host="0.0.0.0", port=5000, debug=False)
