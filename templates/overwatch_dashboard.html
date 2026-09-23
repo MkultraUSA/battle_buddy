@@ -1153,6 +1153,12 @@
                 const status = inc.status || 'unknown';
                 const location = inc.location || '';
 
+                // History belongs in the panel, not on the map.
+                if (status === 'cleared' || status === 'resolved' || status === 'closed') return;
+                // City-center fallback coords with no location string are not
+                // a real position (default geocode when extraction fails).
+                if (lat === 30.2672 && lon === -97.7431 && !location) return;
+
                 // Circle marker sized by severity
                 const radius = Math.max(8, Math.min(20, 6 + severity * 2));
 
