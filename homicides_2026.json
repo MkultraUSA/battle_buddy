@@ -323,5 +323,115 @@
     "lon": -97.7136414,
     "source": "APD",
     "n": 29
+  },
+  {
+    "n": 30,
+    "date": "2026-08-29",
+    "address": "11700 Timber Heights Drive, Austin, TX",
+    "victim": "Tyrell Pordia",
+    "summary": "Shot during dispute; suspect Joitorian Bouye arrested at scene, charged First Degree Murder",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-11700-block-timber-heights-drive",
+    "lat": 30.3768605,
+    "lon": -97.6510834,
+    "source": "APD"
+  },
+  {
+    "n": 31,
+    "date": "2026-08-30",
+    "address": "1900 Woodland Avenue, Austin, TX",
+    "victim": "Edwin Pulgar",
+    "summary": "Shot while inside his vehicle; suspect Santana Gonzales arrested Sep 9. Initially reported at Briar Hill Dr & Woodland Ave",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-intersection-briar-hill-drive-and-woodland-avenue",
+    "lat": 30.237711,
+    "lon": -97.7308938,
+    "source": "APD"
+  },
+  {
+    "n": 32,
+    "date": "2026-09-15",
+    "address": "744 W William Cannon Drive, Austin, TX",
+    "victim": "Desiree Gauna, 27",
+    "summary": "Found deceased with gunshot wounds during welfare check; connected to Bastrop homicide, suspect Manuel Salgado Vasquez deceased",
+    "url": "https://www.austintexas.gov/police/news/joint-release-austin-police-and-bastrop-police-investigate-two-connected-homicides",
+    "lat": 30.1983615,
+    "lon": -97.7892186,
+    "source": "APD"
+  },
+  {
+    "n": 33,
+    "date": "2026-06-11",
+    "address": "3001 South Congress Avenue, Austin, TX",
+    "victim": "Ethan Westgard, 19",
+    "summary": "St. Edwards student found unresponsive in residence hall; fentanyl death, two arrested for First Degree Murder Sep 16-17",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-3001-south-congress-avenue",
+    "lat": 30.2298438,
+    "lon": -97.7546488,
+    "source": "APD"
+  },
+  {
+    "n": 34,
+    "date": "2026-06-17",
+    "address": "7707 S IH-35, Austin, TX",
+    "victim": "Francesca Ortiz",
+    "summary": "Found behind Waters at Bluff Springs apartments; blunt force trauma",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-7707-s-ih-35-waters-bluff-springs",
+    "lat": 30.1786457,
+    "lon": -97.7748417,
+    "source": "APD"
+  },
+  {
+    "n": 35,
+    "date": "2026-06-23",
+    "address": "2500 South Lamar Boulevard, Austin, TX",
+    "victim": "Roosevelt Hunter",
+    "summary": "Stabbing on S Lamar; Hunter found dead holding knife, caller wounded",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-2500-block-south-lamar-boulevard",
+    "lat": 30.246628,
+    "lon": -97.7785379,
+    "source": "APD"
+  },
+  {
+    "n": 36,
+    "date": "2026-06-24",
+    "address": "5100 Lambs Lane, Austin, TX",
+    "victim": "Michael Shelton",
+    "summary": "Found stabbed multiple times at home; APD 31st homicide of 2026",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-5100-block-lambs-lane",
+    "lat": 30.178373,
+    "lon": -97.750525,
+    "source": "APD"
+  },
+  {
+    "n": 37,
+    "date": "2026-07-04",
+    "address": "900 East Braker Lane, Austin, TX",
+    "victim": "Antonio Cleveland Jr.",
+    "summary": "Shot outside Otro Pedo Sports Bar; second victim wounded",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-900-east-braker-lane",
+    "lat": 30.376171,
+    "lon": -97.673819,
+    "source": "APD"
+  },
+  {
+    "n": 38,
+    "date": "2026-07-08",
+    "address": "6700 Bolm Road, Austin, TX",
+    "victim": "Minor Garcia",
+    "summary": "Fatally shot, found in truck in wooded area near embankment",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-6700-bolm-road",
+    "lat": 30.2528205,
+    "lon": -97.678016,
+    "source": "APD"
+  },
+  {
+    "n": 39,
+    "date": "2026-07-24",
+    "address": "12200 N IH-35 SVRD NB, Austin, TX",
+    "victim": "Zachary Page",
+    "summary": "Shot by driver at Tech Ridge Blvd after breaking vehicle window with knife",
+    "url": "https://www.austintexas.gov/police/news/homicide-investigation-12200-n-ih-35-svrd-nb",
+    "lat": 30.3993561,
+    "lon": -97.6734819,
+    "source": "APD"
   }
 ]

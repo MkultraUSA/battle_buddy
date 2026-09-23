@@ -468,13 +468,23 @@ def analyze_for_incident(call: dict):
         # Match by location first, then fall back to same itype within window
         matched_id = loc_match
         if matched_id is None:
+            clat, clon = call.get("lat"), call.get("lon")
             for inc_id, inc in _active_incidents.items():
                 if (ts - inc["ts_updated"]) >= MULTIAGENCY_WINDOW_MIN * 60:
                     continue
                 cur = inc["itype"]
-                if cur == itype or itype in ITYPE_MERGE_COMPAT.get(cur, set()):
-                    matched_id = inc_id
-                    break
+                if not (cur == itype or itype in ITYPE_MERGE_COMPAT.get(cur, set())):
+                    continue
+                # Both ends geocoded but far apart = separate incidents.
+                # Stops cross-city merges (e.g. Box 303 standby + Box 1710
+                # crash, 8.5 km apart) while keeping multi-agency merging
+                # for follow-ups without coords.
+                if (clat is not None and clon is not None
+                        and inc.get("lat") is not None and inc.get("lon") is not None
+                        and _haversine_km(clat, clon, inc["lat"], inc["lon"]) > INCIDENT_LOCATION_RADIUS_KM):
+                    continue
+                matched_id = inc_id
+                break
 
         if matched_id is not None:
             _update_incident(matched_id, call, ts, desc, new_itype=itype)

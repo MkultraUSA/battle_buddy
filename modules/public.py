@@ -390,7 +390,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div><span>EMS</span></div>
   <div class="leg-item"><div class="leg-dot" style="background:#a855f7"></div><span>DPS / State</span></div>
   <div class="leg-item"><svg width="12" height="12" viewBox="0 0 12 12" style="filter:drop-shadow(0 0 4px #ef4444);flex-shrink:0"><polygon points="6,0 12,12 0,12" fill="#ef4444" stroke="#fca5a5" stroke-width="1.5"/></svg><span>Active Incident</span></div>
-  <div class="leg-item"><svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0"><polygon points="0,0 12,0 6,12" fill="#334155" stroke="#475569" stroke-width="1.5"/></svg><span>Cleared Incident</span></div>
 </div>
 <div id="stats-bar">
   <h4>Last 48 Hours</h4>
@@ -492,7 +491,7 @@ async function loadIncidents() {
   // Clear old markers
   Object.values(incidentMarkers).forEach(m => map.removeLayer(m));
 
-  // Only plot incidents we have a real address for, and only crime/fire types
+  // Only plot ACTIVE incidents we have a real address for, and only crime/fire types (cleared stay off the map)
   const MAP_ITYPES = new Set([
     "SHOOTING","STABBING","OFFICER DOWN","PURSUIT","WEAPONS",
     "STRUCTURE FIRE","FIRE DISPATCH","FIRE ALARM","FIRE/EMS DISPATCH","GRASS FIRE",
@@ -501,7 +500,7 @@ async function loadIncidents() {
     "FLOODING","ROAD HAZARD","PEDESTRIAN INCIDENT","VEHICLE FIRE"
   ]);
   // Add incident markers
-  all.filter(i => i.location && i.lat && i.lon && MAP_ITYPES.has(i.itype) && AUSTIN_BOUNDS.contains([i.lat, i.lon])).forEach(inc => {
+  active.filter(i => i.location && i.lat && i.lon && MAP_ITYPES.has(i.itype) && AUSTIN_BOUNDS.contains([i.lat, i.lon])).forEach(inc => {
     const isTest   = inc.is_test === 1;
     const isActive = inc.status === 'active' && !isTest;
     const fill   = isTest ? '#78716c' : (isActive ? '#ef4444' : '#334155');
