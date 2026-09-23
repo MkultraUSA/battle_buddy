@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import urllib.parse
 from datetime import datetime
@@ -226,3 +227,45 @@ def canonical_homicides(
         by_agency[agency] = by_agency.get(agency, 0) + 1
 
     return canonical, total_area, by_agency
+
+
+# ---------------------------------------------------------------------------
+# Means-of-death classification (server-side, tested)
+# ---------------------------------------------------------------------------
+# Previously this ran in inline page JavaScript inside a Python triple-quoted
+# string, where \\b regex escapes were silently eaten at import time and every
+# marker rendered UNKNOWN grey. Keep regexes HERE, never in page templates.
+
+MEANS_COLORS = {
+    "SHOOTING": "#ef4444",
+    "STABBING": "#818cf8",
+    "OTHER": "#a8a29e",
+    "UNKNOWN": "#a8a29e",
+}
+
+_SHOOT_RE = re.compile(
+    r"\bshot\b|\bshooting\b|\bgunshot\b|\bfired\b|\bfirearm\b|\bgunman\b"
+)
+_STAB_RE = re.compile(
+    r"\bstabbed\b|\bstabbing\b|\bstab\b|\bknife\b|\bknifed\b|\bslashed\b"
+)
+_OTHER_RE = re.compile(
+    r"blunt|trauma|beaten|\bbeat\b|strang|asphyx|fentanyl|overdose|toxic|bludgeon|suffocat"
+)
+
+
+def means_of(summary=None, victim=None) -> str:
+    """Classify means of death from press-release text.
+
+    Returns one of SHOOTING / STABBING / OTHER / UNKNOWN. Word boundaries
+    matter ('constable' is not a stabbing); a shooting mention wins over a
+    knife mention (e.g. victim shot by driver during knife encounter).
+    """
+    t = f"{summary or ''} {victim or ''}".lower()
+    if _SHOOT_RE.search(t):
+        return "SHOOTING"
+    if _STAB_RE.search(t):
+        return "STABBING"
+    if _OTHER_RE.search(t):
+        return "OTHER"
+    return "UNKNOWN"

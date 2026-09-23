@@ -1196,11 +1196,18 @@ def api_homicides():
         canonical_homicides,
         fetch_live_homicides,
         load_seed,
+        means_of,
     )
 
     seed = load_seed()
     live = fetch_live_homicides(DB_PATH)
     canonical, total_area, by_agency = canonical_homicides(seed, live)
+    for entry in canonical:
+        entry["means"] = means_of(entry.get("summary"), entry.get("victim"))
+    for entry in live:
+        entry.setdefault(
+            "means", means_of(entry.get("summary"), entry.get("victim"))
+        )
 
     return jsonify({
         "homicides": canonical,
@@ -1382,13 +1389,13 @@ HOMICIDE_MAP_HTML = """<!DOCTYPE html>
     <div class="hleg-row"><div class="hleg-heat"></div><span>Incident density</span></div>
     <hr class="hleg-divider"/>
     <div class="hleg-row"><div class="hleg-dot" style="background:#ef4444"></div><span>APD Press Release (verified)</span></div>
-    <div class="hleg-row"><div class="hleg-dot" style="background:#f59e0b"></div><span>Scanner detection</span></div>
+    
     <hr class="hleg-divider"/>
     <div class="hleg-row"><div class="hleg-sq" style="background:#7f1d1d;border:1px solid #ef4444"></div><span>Shooting / Homicide</span></div>
     <div class="hleg-row"><div class="hleg-sq" style="background:#1e1b4b;border:1px solid #818cf8"></div><span>Stabbing</span></div>
-    <div class="hleg-row"><div class="hleg-sq" style="background:#1c1917;border:1px solid #a8a29e"></div><span>Other violent crime</span></div>
+    <div class="hleg-row"><div class="hleg-sq" style="background:#1c1917;border:1px solid #a8a29e"></div><span>Other / unknown means</span></div>
     <hr class="hleg-divider"/>
-    <div style="font-size:.68rem;color:#475569;margin-top:2px">Click any marker for details<br/>and press release links.</div>
+    <div style="font-size:.68rem;color:#475569;margin-top:2px">Click any marker for details<br/>and press release links.<br/>APD-verified only; scanner<br/>detections excluded until confirmed.</div>
   </div>
 </div>
 
@@ -1454,86 +1461,7 @@ HOMICIDE_MAP_HTML = """<!DOCTYPE html>
 
 <footer>&copy; 2026 Battle Buddy &nbsp;&middot;&nbsp; Austin Metro Public Safety Intelligence</footer>
 
-<script>
-const map = L.map('map', {center: [30.307, -97.735], zoom: 11});
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
-}).addTo(map);
-
-let heatLayer = null, markerGroup = L.layerGroup(), mode = 'heat';
-let allPoints = [];
-
-function setMode(m) {
-  mode = m;
-  ['heat','markers','both'].forEach(id => {
-    document.getElementById('btn-'+id).classList.toggle('active', id === m);
-  });
-  render();
-}
-
-function render() {
-  if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
-  markerGroup.clearLayers();
-
-  if (mode === 'heat' || mode === 'both') {
-    heatLayer = L.heatLayer(allPoints.map(p => [p.lat, p.lon, 1.0]), {
-      radius: 35, blur: 25, maxZoom: 14,
-      gradient: {0.2:'#1d4ed8', 0.4:'#7c3aed', 0.6:'#dc2626', 0.8:'#ea580c', 1.0:'#fbbf24'}
-    }).addTo(map);
-  }
-
-  if (mode === 'markers' || mode === 'both') {
-    allPoints.forEach(p => {
-      const icon = L.divIcon({
-        className: '',
-        html: '<div style="background:' + ((p.source==='scanner'?'#f59e0b':(p.itype==='STABBING'?'#818cf8':(p.itype==='WEAPONS'?'#a8a29e':'#ef4444')))) +
-              ';width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.4)"></div>',
-        iconSize: [12, 12], iconAnchor: [6, 6]
-      });
-      const popup = '<div class="incident-popup">' +
-        '<h3>#' + (p.n||'') + ' ' + (p.itype||'HOMICIDE') + '</h3>' +
-        '<p><b>Date:</b> ' + p.date + '</p>' +
-        (p.victim ? '<p><b>Victim:</b> ' + p.victim + '</p>' : '') +
-        '<p><b>Location:</b> ' + (p.address||'Unknown') + '</p>' +
-        '<p>' + (p.summary||'') + '</p>' +
-        (p.url ? '<a href="' + p.url + '" target="_blank">APD Press Release &#8599;</a>' : '') +
-        '</div>';
-      L.marker([p.lat, p.lon], {icon}).addTo(markerGroup).bindPopup(popup);
-    });
-    markerGroup.addTo(map);
-  }
-}
-
-async function load() {
-  const r = await fetch('/api/homicides');
-  const d = await r.json();
-  const seed = (d.homicides||[]).filter(h => h.lat && h.lon);
-  const live = (d.live||[]).filter(h => h.lat && h.lon);
-  allPoints = [
-    ...seed,
-    ...live.map(l => ({...l, n: null, victim: null}))
-  ];
-
-  document.getElementById('total').textContent = d.total_area_homicides || allPoints.length;
-  if (seed.length) {
-    const latest = seed.slice().sort((a,b) => b.date.localeCompare(a.date))[0];
-    document.getElementById('latest').textContent = latest.date + ' — ' + (latest.address||'');
-  }
-
-  // Find hottest neighborhood (rough grid cell with most hits)
-  const grid = {};
-  allPoints.forEach(p => {
-    const key = (Math.round(p.lat*20)/20).toFixed(2) + ',' + (Math.round(p.lon*20)/20).toFixed(2);
-    grid[key] = (grid[key]||0) + 1;
-  });
-  const hot = Object.entries(grid).sort((a,b) => b[1]-a[1])[0];
-  if (hot && hot[1] > 1) document.getElementById('hotzone').textContent = hot[1] + ' incidents near ' + hot[0];
-
-  render();
-}
-
-load();
-</script>
+<script src="/static/js/homicides.js?v=2"></script>
 </body>
 </html>"""
 
