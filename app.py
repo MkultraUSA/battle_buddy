@@ -11,6 +11,7 @@ from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 
 from modules.kg_ontology import ONTOLOGY, BattleBuddyKG
+from modules.aircraft import aircraft_bp
 from modules.maintenance import _kg_prune_loop, prune_kg_calls, set_kg_instance
 
 # ---------------------------------------------------------------------------
@@ -18,6 +19,7 @@ from modules.maintenance import _kg_prune_loop, prune_kg_calls, set_kg_instance
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
+app.register_blueprint(aircraft_bp)
 CORS(app)  # enabled for development
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
