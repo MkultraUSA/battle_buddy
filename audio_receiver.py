@@ -502,6 +502,65 @@ try:
                 g_hom_i.add_metric([], float(_homicide_incidents))
                 yield g_hom_i
 
+                # --- map/investigation health gauges (added 2026-09-23) ---
+                import time as _mtime
+                try:
+                    from datetime import datetime as _dt
+                    _newest = max(
+                        _dt.strptime(h.get("date", "2026-01-01"), "%Y-%m-%d").timestamp()
+                        for h in _hdata
+                    )
+                except Exception:
+                    _newest = 0
+                g_hom_fresh = GaugeMetricFamily(
+                    "battlebuddy_homicides_seed_newest_ts",
+                    "Newest incident date in curated homicides file (unixtime)",
+                )
+                g_hom_fresh.add_metric([], float(_newest))
+                yield g_hom_fresh
+
+                _1h = _mtime.time() - 3600
+                cur.execute(
+                    "SELECT COUNT(*) FROM incidents WHERE ts_start >= ? "
+                    "AND (is_test IS NULL OR is_test=0)",
+                    (_1h,),
+                )
+                (_created_1h,) = cur.fetchone()
+                g_created = GaugeMetricFamily(
+                    "battlebuddy_incidents_created_1h",
+                    "Incidents created in the last hour",
+                )
+                g_created.add_metric([], float(_created_1h))
+                yield g_created
+
+                cur.execute(
+                    "SELECT COUNT(*) FROM incidents WHERE ts_updated >= ? "
+                    "AND ts_start < ? AND (is_test IS NULL OR is_test=0)",
+                    (_1h, _1h),
+                )
+                (_merged_1h,) = cur.fetchone()
+                g_merged = GaugeMetricFamily(
+                    "battlebuddy_incidents_merged_1h",
+                    "Existing incidents updated (merged follow-ups) in the last hour",
+                )
+                g_merged.add_metric([], float(_merged_1h))
+                yield g_merged
+
+                try:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM apd_seen WHERE ts >= ?",
+                        (_mtime.time() - 86400,),
+                    )
+                    (_apd_24h,) = cur.fetchone()
+                except Exception:
+                    _apd_24h = 0
+                g_apd = GaugeMetricFamily(
+                    "battlebuddy_apd_articles_24h",
+                    "APD press articles seen by poller in the last 24 hours",
+                )
+                g_apd.add_metric([], float(_apd_24h))
+                yield g_apd
+
                 # --- shooting intelligence tiers (30-day window) ---
                 import time as _time
                 _now = _time.time()
