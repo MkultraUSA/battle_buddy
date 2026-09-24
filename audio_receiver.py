@@ -672,6 +672,32 @@ try:
                 g_backlog_done.add_metric([], float(_backlog_completed))
                 yield g_backlog_done
 
+                # --- file-backed backlog depths (raw_audio_queue dirs) ---
+                # The in-memory gauge above only tracks the live remote-worker
+                # deque. Overflow persists to disk; count those dirs too so the
+                # board shows the true backlog (204 stale May clips found
+                # 2026-09-23 while the gauge read ~0).
+                try:
+                    from pathlib import Path as _Path
+                    _qroot = _Path("/opt/battlebuddy/raw_audio_queue")
+                    _pending_n = sum(
+                        1 for _f in (_qroot / "pending").glob("*.json"))
+                    _failed_n = sum(
+                        1 for _f in (_qroot / "failed").glob("*.json"))
+                except Exception:
+                    _pending_n, _failed_n = 0, 0
+                for _name, _help, _val in [
+                    ("battlebuddy_backlog_files_pending",
+                     "Audio clips waiting in file-backed backlog (pending dir)",
+                     _pending_n),
+                    ("battlebuddy_backlog_files_failed",
+                     "Audio clips in file-backed backlog (failed dir)",
+                     _failed_n),
+                ]:
+                    _g = GaugeMetricFamily(_name, _help)
+                    _g.add_metric([], float(_val))
+                    yield _g
+
                 # --- transcript reliability / ASR quality metrics ---
                 _quality_windows = [
                     ("15m", _now - (15 * 60)),
@@ -4189,7 +4215,7 @@ if __name__ == "__main__":
     AustinEventsPoller().start()
     APDCADPoller().start()
     APDNewsPoller().start()
-    RedditIntelPoller().start()
+    # RedditIntelPoller().start()  # DISABLED 2026-09-24: Reddit RSS 429 on all 4 feeds; re-enable with OAuth/fix
     ADSBAirAssetPoller().start()
     # --- Phase 3: Maintenance loops ---
     threading.Thread(target=__maintenance_mod._kg_prune_loop, daemon=True).start()
