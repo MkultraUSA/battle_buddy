@@ -16,6 +16,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import sqlite3
@@ -153,6 +154,46 @@ def _backlog_file_metric_specs(state: dict) -> tuple[tuple[str, str, int], ...]:
             state["file_scan_error"],
         ),
     )
+
+
+def _poller_health_metric_specs() -> tuple[tuple[str, str, float], ...]:
+    try:
+        from modules.pollers.base import get_poller_health
+
+        health = list(get_poller_health())
+    except Exception:
+        return ()
+
+    specs = []
+    seen = set()
+    for record in health:
+        try:
+            name = record["name"]
+            if not isinstance(name, str):
+                continue
+            if re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", name) is None:
+                continue
+            if name in seen:
+                continue
+            consecutive_failures = float(record["consecutive_failures"])
+            last_success_age = float(record["last_success_age_seconds"])
+            active = record["active"]
+            if not all(math.isfinite(value) for value in (consecutive_failures, last_success_age)):
+                continue
+            if not isinstance(active, bool):
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        seen.add(name)
+        consecutive_failures = max(0.0, min(consecutive_failures, 1_000_000.0))
+        if last_success_age < 0:
+            last_success_age = -1.0
+        specs.extend((
+            ("battlebuddy_poller_consecutive_failures", name, consecutive_failures),
+            ("battlebuddy_poller_last_success_age_seconds", name, last_success_age),
+            ("battlebuddy_poller_active", name, float(active)),
+        ))
+    return tuple(specs)
 
 
 # Network-wide ADSB.lol snapshot pushed by the authorized feeder Pi.  The
@@ -472,6 +513,35 @@ try:
 
     class _BBMetricsCollector:
         def collect(self):
+            g_poller_failures = GaugeMetricFamily(
+                "battlebuddy_poller_consecutive_failures",
+                "Consecutive failed poll cycles by poller; zero means the last cycle succeeded",
+                labels=["poller"],
+            )
+            g_poller_last_success = GaugeMetricFamily(
+                "battlebuddy_poller_last_success_age_seconds",
+                "Seconds since the last successful poll cycle; -1 means no success has been observed",
+                labels=["poller"],
+            )
+            g_poller_active = GaugeMetricFamily(
+                "battlebuddy_poller_active",
+                "Whether a poller thread is currently running; 1 means active and 0 means inactive",
+                labels=["poller"],
+            )
+            try:
+                for _metric_name, _poller_name, _value in _poller_health_metric_specs():
+                    if _metric_name == "battlebuddy_poller_consecutive_failures":
+                        g_poller_failures.add_metric([_poller_name], _value)
+                    elif _metric_name == "battlebuddy_poller_last_success_age_seconds":
+                        g_poller_last_success.add_metric([_poller_name], _value)
+                    elif _metric_name == "battlebuddy_poller_active":
+                        g_poller_active.add_metric([_poller_name], _value)
+            except Exception:
+                pass
+            yield g_poller_failures
+            yield g_poller_last_success
+            yield g_poller_active
+
             try:
                 c = sqlite3.connect(DB_PATH, timeout=5.0)
                 cur = c.cursor()

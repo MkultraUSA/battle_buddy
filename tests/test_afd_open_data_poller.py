@@ -5,6 +5,8 @@ Focused tests for modules/pollers/impl/afd_news.py.
 from __future__ import annotations
 
 import sys
+import threading
+import types
 import unittest
 import unittest.mock as mock
 from pathlib import Path
@@ -57,6 +59,36 @@ class AFDOpenDataPollerTests(unittest.TestCase):
             "latitude": "30.25",
             "longitude": "-97.75",
         }
+
+    @mock.patch.object(
+        afd_news.urllib.request,
+        "urlopen",
+        side_effect=RuntimeError("network down"),
+    )
+    def test_run_propagates_fetch_error_after_logging(self, mock_urlopen):
+        poller = AFDOpenDataPoller()
+        config = types.ModuleType("modules.config")
+        config.TALK_BASE = "http://talk.test"
+        config.TALK_USER = "user"
+        config.TALK_PASS = "pass"
+        config.TALK_ROOMS = {"fire-ems": "room_fire"}
+        incident_engine = types.ModuleType("modules.incident_engine")
+        incident_engine._active_incidents = {}
+        incident_engine._atak_clear_marker = mock.Mock()
+        incident_engine._atak_post_marker = mock.Mock()
+        incident_engine._haversine_km = lambda *a, **kw: 999
+        incident_engine._incident_lock = threading.Lock()
+        runtime_modules = {
+            "modules.config": config,
+            "modules.incident_engine": incident_engine,
+        }
+
+        with mock.patch.dict(sys.modules, runtime_modules), \
+             self.assertLogs("AFDOpenDataPoller", level="WARNING") as logs:
+            with self.assertRaisesRegex(RuntimeError, "network down"):
+                poller.run()
+
+        self.assertIn("[afd] fetch error: network down", logs.output[0])
 
     @mock.patch.object(afd_news.urllib.request, "urlopen")
     def test_post_to_talk_skips_missing_config(self, mock_urlopen):

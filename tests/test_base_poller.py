@@ -11,6 +11,8 @@ BasePoller = _base.BasePoller
 
 
 class _SequencePoller(BasePoller):
+    NAME = "test-health"
+
     def __init__(self, outcomes, interval=10):
         super().__init__(interval=interval)
         self.outcomes = iter(outcomes)
@@ -70,6 +72,39 @@ class BasePollerTests(unittest.TestCase):
 
         self.assertEqual(poller.run_calls, failure_count)
         self.assertEqual(delays[16:], [3600.0] * (failure_count - 16))
+
+    def test_health_tracks_failures_and_resets_after_success(self):
+        poller = _SequencePoller([])
+        poller._record_failure()
+        poller._record_failure()
+
+        with mock.patch.object(_base.time, "time", return_value=100.0):
+            poller._record_success()
+
+        record = next(
+            item for item in _base.get_poller_health(now=130.0)
+            if item["name"] == "test-health"
+        )
+        self.assertEqual(record["consecutive_failures"], 0)
+        self.assertEqual(record["last_success_ts"], 100.0)
+        self.assertEqual(record["last_success_age_seconds"], 30.0)
+        self.assertFalse(record["active"])
+
+        poller._record_failure()
+        record = next(
+            item for item in _base.get_poller_health(now=130.0)
+            if item["name"] == "test-health"
+        )
+        self.assertEqual(record["consecutive_failures"], 1)
+        self.assertEqual(record["last_success_age_seconds"], 30.0)
+
+    def test_health_snapshot_survives_clock_failure(self):
+        poller = _SequencePoller([])
+
+        with mock.patch.object(_base.time, "time", side_effect=RuntimeError("clock unavailable")):
+            self.assertEqual(_base.get_poller_health(), [])
+
+        self.assertEqual(poller.consecutive_failures, 0)
 
 
 if __name__ == "__main__":
