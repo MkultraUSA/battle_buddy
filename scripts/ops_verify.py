@@ -91,6 +91,8 @@ def main():
         gate("active incidents < 20",
              m.get("battlebuddy_active_incidents", 999) < 20,
              str(m.get("battlebuddy_active_incidents")))
+        seed_error = m.get("battlebuddy_homicides_seed_error", 0)
+        gate("homicide seed readable", not seed_error, f"error={seed_error:.0f}")
         newest = m.get("battlebuddy_homicides_seed_newest_ts", 0)
         gate("homicide data fresh (<14d)",
              (now - newest) < 14 * 86400 if newest else False,

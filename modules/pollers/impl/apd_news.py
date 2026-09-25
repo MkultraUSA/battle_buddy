@@ -14,6 +14,11 @@ SOA / BasePoller refactor.
 
 For each new article the poller:
   - Deduplicates against the ``apd_seen`` DB table (persistent across restarts).
+    An article is recorded in ``apd_seen`` only *after* its processing outcome
+    is handled, so an article whose processing raises is never lost: it stays
+    unseen and the next cycle retries it (the cycle is reported as failed so
+    BasePoller backs off). Deliberate skips (headline keyword, missing/stale
+    pubDate) are handled outcomes and are marked seen.
   - Filters headlines by keyword list (_APD_HEADLINE_KW).
   - Resolves the real article URL (source RSS → Google CSE → Google /articles/).
   - Optionally fetches the article body via the Pi5 residential-IP fetch agent.
@@ -23,6 +28,17 @@ For each new article the poller:
   - If matched: stores the article link and posts a "press coverage" message to Talk.
   - If unmatched: creates a new incident record, posts to Talk, sends DM alerts,
     and places an ATAK marker when coordinates are available.
+  - Records each article in a durable identity ledger (``apd_article_identity``)
+    keyed by the stable RSS ``article['link']``, *before* the first side effect.
+    The ledger maps that link to the resolved URL the work was recorded with and
+    to the incident it produced, so a failure *after* the incident/article-link
+    insert (seed write, DB error) leaves the article unseen, and the next cycle's
+    retry still finds the prior incident/link/seed even when the URL resolver now
+    returns a *different* URL: it never inserts a second incident or article
+    link, never re-sends the alert and never re-posts to Talk. It only completes
+    the side effects that are themselves idempotent (the seed append, which
+    dedupes on the article URL). Failures *before* the ledger is written are
+    unaffected — nothing is recorded, so the article is retried from scratch.
 
 A secondary sub-poll fetches Austin traffic fatality news and links articles
 to existing radio incidents (no new incident creation on no-match).
@@ -120,8 +136,67 @@ _APD_NEWS_LOCK = threading.Lock()
 # Pure helper functions — no module-level config imports
 # ---------------------------------------------------------------------------
 
-_HOMICIDE_JSON_PATH = "/opt/battlebuddy/homicides_2026.json"
 _HOMICIDE_JSON_LOCK = threading.Lock()
+
+# Seed filename and the env var that relocates it. The path itself is resolved
+# per call by _homicide_seed_path() so tests can redirect it without reloading
+# this module, and so a sandbox/review clone can never touch the production
+# seed at /opt/battlebuddy/homicides_2026.json.
+_HOMICIDE_SEED_ENV = "HOMICIDE_SEED_PATH"
+
+
+class HomicideSeedError(RuntimeError):
+    """Raised when the curated homicide seed cannot be read or written.
+
+    The seed is the authoritative area-wide homicide dataset, so an
+    unreadable, corrupt, or unwritable seed is a deployment fault that must
+    surface as a failed poll cycle. It is never treated as an empty seed:
+    silently recreating the file would overwrite the curated history and
+    silently reset the canonical count to 1.
+    """
+
+
+def _homicide_seed_path() -> str:
+    """Resolve the homicide seed path (call-time) via the shared contract.
+
+    Delegates to ``modules.config.resolve_homicide_seed_path`` — the single
+    source of truth for the HOMICIDE_SEED_PATH / BATTLE_BUDDY_DATA_DIR /
+    BATTLE_BUDDY_HOME precedence — so the writer can never resolve a different
+    file than the readers (modules.homicide_count, the public API, the audio
+    receiver's metrics). Whitespace-only env values are treated as unset at
+    every level because the shared resolver strips them. The import is deferred
+    for the same circular-import reason as the rest of this module's config
+    access, and the resolver is called per call rather than snapshotted at
+    import time, so a redirected sandbox picks the change up on the next write.
+
+    With no env override the production default is unchanged:
+    ``/opt/battlebuddy/homicides_2026.json``.
+    """
+    from modules.config import resolve_homicide_seed_path  # noqa: PLC0415
+
+    return resolve_homicide_seed_path()
+
+
+def _load_homicide_seed(path: str) -> list[dict]:
+    """Load and validate the homicide seed, raising HomicideSeedError on fault.
+
+    A missing or malformed seed is an explicit failure, never an empty list.
+    """
+    if not os.path.exists(path):
+        raise HomicideSeedError(
+            f"homicide seed not found at {path!r}; set {_HOMICIDE_SEED_ENV} or "
+            f"BATTLE_BUDDY_HOME to the deployment data directory"
+        )
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise HomicideSeedError(f"homicide seed at {path!r} is unreadable: {exc}") from exc
+    if not isinstance(data, list):
+        raise HomicideSeedError(
+            f"homicide seed at {path!r} must be a JSON list, got {type(data).__name__}"
+        )
+    return data
 
 
 def _append_homicide_json(
@@ -135,21 +210,24 @@ def _append_homicide_json(
     lat: float | None,
     lon: float | None,
 ) -> None:
-    """Append a new confirmed homicide to homicides_2026.json (thread-safe).
+    """Append a new confirmed homicide to the seed file (thread-safe).
 
     Enforces the canonical area-wide homicide counting policy:
     - ``url`` must be a non-empty string (the source press-release link).
       Entries without a URL are silently dropped — they cannot be verified.
     - Deduplication is by exact URL match; the first entry for a given URL wins.
+
+    The target is resolved by :func:`_homicide_seed_path` on every call, so the
+    write follows BATTLE_BUDDY_HOME / HOMICIDE_SEED_PATH and a clean clone can
+    never write to /opt/battlebuddy. A missing, corrupt, or unwritable seed
+    raises :class:`HomicideSeedError` so the cycle is reported as failed rather
+    than silently overwriting the curated history with a single new entry.
     """
     if not url:
         return
+    path = _homicide_seed_path()
     with _HOMICIDE_JSON_LOCK:
-        try:
-            with open(_HOMICIDE_JSON_PATH) as f:
-                data = json.load(f)
-        except Exception:
-            data = []
+        data = _load_homicide_seed(path)
         # Deduplicate by URL
         if any(h.get("url") == url for h in data):
             return
@@ -161,10 +239,13 @@ def _append_homicide_json(
         if lon is not None:
             entry["lon"] = lon
         data.append(entry)
-        tmp = _HOMICIDE_JSON_PATH + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(data, f, indent=4)
-        os.replace(tmp, _HOMICIDE_JSON_PATH)
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=4)
+            os.replace(tmp, path)
+        except OSError as exc:
+            raise HomicideSeedError(f"homicide seed at {path!r} is unwritable: {exc}") from exc
         logger.info("[apd-news] homicide #%d appended to JSON: %s", n, summary[:80])
 
 
@@ -534,6 +615,238 @@ def _match_article_to_incident(
     return (best_id, best_score) if best_score >= 1.0 else (None, 0)
 
 
+def _prior_article_work(db_path: str, url: str) -> tuple[bool, int]:
+    """Return ``(already_recorded, incident_id)`` for an article in the DB.
+
+    ``already_recorded`` is True when a previous cycle got far enough to
+    commit this article's work; ``incident_id`` is the incident it is recorded
+    against (0 when the record carries no incident, e.g. an orphaned link row).
+
+    Both durable markers an interrupted article can leave behind are checked:
+    the ``incident_articles`` row, and ``incidents.article_url`` (written by the
+    same helper, so it exists even if the link row never landed).
+
+    This is the *recovery* lookup, not the primary idempotency guard: the guard
+    is ``apd_article_identity``, which is keyed by the stable RSS link and is
+    consulted first (see the ledger section below). It is still needed for the
+    two windows the ledger cannot answer by itself — an article processed before
+    the ledger existed, and a claim whose insert landed but whose ledger commit
+    did not. In both cases the caller adopts the found work instead of repeating
+    it, so a second incident, a second link and a second alert are never created.
+    """
+    if not url:
+        return False, 0
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE url=? ORDER BY id LIMIT 1",
+            (url,),
+        ).fetchone()
+        if row is not None:
+            return True, int(row[0] or 0)
+        row = conn.execute(
+            "SELECT id FROM incidents WHERE article_url=? ORDER BY id LIMIT 1",
+            (url,),
+        ).fetchone()
+        if row is not None and row[0]:
+            return True, int(row[0])
+    finally:
+        conn.close()
+    return False, 0
+
+
+# ---------------------------------------------------------------------------
+# Durable article identity ledger
+# ---------------------------------------------------------------------------
+# Keyed by the stable Google News RSS link (``article['link']``), which does not
+# change for the life of a press release. The *resolved* article URL is not
+# stable: the source-RSS tier, the Google CSE tier and the Google News
+# /articles/ fallback can each hand back a different URL on a later cycle (feed
+# rotation, CSE reshuffle, a tier that has since started failing), so a guard
+# keyed on the resolved URL silently misses and the retry inserts a second
+# incident, a second article link, a second alert, a second Talk post and a
+# second seed entry for the same press release.
+#
+# The ledger records the identity -> (resolved URL, incident, seed) association
+# before the first side effect, and is read by the RSS link the feed actually
+# gives us. ``apd_seen`` keeps its own, different contract: it is still written
+# only *after* an article's outcome is known, so a failure before the ledger is
+# written leaves nothing recorded and the article is retried from scratch.
+
+_IDENTITY_CLAIMED = "claimed"
+_IDENTITY_COMMITTED = "committed"
+
+_IDENTITY_DDL = """
+    CREATE TABLE IF NOT EXISTS apd_article_identity (
+        rss_link     TEXT PRIMARY KEY,
+        resolved_url TEXT NOT NULL DEFAULT '',
+        source       TEXT NOT NULL DEFAULT 'apd_pr',
+        itype        TEXT NOT NULL DEFAULT '',
+        address      TEXT NOT NULL DEFAULT '',
+        lat          REAL,
+        lon          REAL,
+        incident_id  INTEGER,
+        state        TEXT NOT NULL DEFAULT 'claimed',
+        first_ts     REAL,
+        updated_ts   REAL
+    );
+    CREATE INDEX IF NOT EXISTS idx_apd_article_identity_incident
+        ON apd_article_identity(incident_id)
+        WHERE incident_id IS NOT NULL;
+"""
+
+_IDENTITY_COLUMNS = (
+    "rss_link", "resolved_url", "source", "itype", "address",
+    "lat", "lon", "incident_id", "state", "first_ts", "updated_ts",
+)
+
+
+def _identity_is_recorded(identity: dict | None) -> bool:
+    """True when the ledger says this article's outcome is already durable.
+
+    A committed row is the authoritative answer even when it carries no incident
+    id: that is the recorded form of an article whose incident could not be
+    determined (an orphaned link row), and re-processing it would duplicate the
+    link.
+    """
+    if not identity:
+        return False
+    return identity.get("state") == _IDENTITY_COMMITTED or bool(identity.get("incident_id"))
+
+
+def _lookup_article_identity(db_path: str, rss_link: str) -> dict | None:
+    """Return the ledger row for *rss_link*, or None when it is not recorded.
+
+    Read-only, and the one lookup that decides whether an article has been
+    processed before: it needs no network, so a retry of a fully processed
+    article costs a single indexed query.
+    """
+    if not rss_link:
+        return None
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            f"SELECT {', '.join(_IDENTITY_COLUMNS)} FROM apd_article_identity "
+            f"WHERE rss_link=?",
+            (rss_link,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return dict(zip(_IDENTITY_COLUMNS, row))
+
+
+def _claim_article_identity(
+    db_path: str,
+    *,
+    rss_link: str,
+    resolved_url: str,
+    source: str,
+    itype: str,
+    address: str = "",
+    lat: float | None = None,
+    lon: float | None = None,
+    ts: float | None = None,
+) -> tuple[dict, bool]:
+    """Record the article's identity association; return ``(row, claimed_now)``.
+
+    ``INSERT OR IGNORE`` on the primary key makes the claim idempotent and safe
+    against a concurrent poller: the row that ends up in the table is returned
+    as-is. ``claimed_now`` is True only when this call created the row, so a
+    caller can tell "I am the first attempt" from "an earlier attempt already
+    claimed this article and may have got as far as its insert".
+
+    The recorded values (resolved URL, itype, address, coordinates) are the
+    association for this press release and are deliberately not overwritten by a
+    later attempt: the first URL the work was recorded with is the one the
+    incident, the link row and the seed entry all carry.
+    """
+    now = time.time() if ts is None else ts
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO apd_article_identity "
+            "(rss_link, resolved_url, source, itype, address, lat, lon, "
+            " state, first_ts, updated_ts) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (rss_link, resolved_url or "", source or "", itype or "",
+             address or "", lat, lon, _IDENTITY_CLAIMED, now, now),
+        )
+        claimed_now = cur.rowcount == 1
+        row = conn.execute(
+            f"SELECT {', '.join(_IDENTITY_COLUMNS)} FROM apd_article_identity "
+            f"WHERE rss_link=?",
+            (rss_link,),
+        ).fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+    return dict(zip(_IDENTITY_COLUMNS, row)), claimed_now
+
+
+def _commit_article_identity(
+    db_path: str,
+    rss_link: str,
+    incident_id: int | None,
+) -> dict:
+    """Mark the article's outcome durable and return the committed row.
+
+    Called once the incident and the article link are both stored, so from here
+    on a retry takes the recorded path. The commit is its own statement: if the
+    process dies between the link insert and this update, the still-claimed row
+    plus the link row is enough for the retry to adopt the work instead of
+    repeating it (see the recovery branch in ``_process_apd_article``).
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE apd_article_identity SET incident_id=?, state=?, updated_ts=? "
+            "WHERE rss_link=?",
+            (incident_id or None, _IDENTITY_COMMITTED, time.time(), rss_link),
+        )
+        conn.commit()
+        row = conn.execute(
+            f"SELECT {', '.join(_IDENTITY_COLUMNS)} FROM apd_article_identity "
+            f"WHERE rss_link=?",
+            (rss_link,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(zip(_IDENTITY_COLUMNS, row))
+
+
+def _resume_recorded_seed_append(identity: dict, article: dict) -> None:
+    """Complete the one side effect a recorded article can still be missing.
+
+    A recorded article never re-inserts an incident or link, never re-alerts and
+    never re-posts, so an interrupted seed append is the only outcome left to
+    finish. It is keyed by the resolved URL recorded in the ledger — not by the
+    URL this attempt happens to resolve — so a retry completes the original
+    entry instead of adding a second one for the same press release. The append
+    itself dedupes on that URL, so repeating it is free.
+
+    Everything it needs is in the ledger, so no resolver call, article fetch or
+    geocode is required to finish the interrupted write.
+    """
+    if (identity.get("itype") or "") != "HOMICIDE":
+        return
+    resolved_url = identity.get("resolved_url") or ""
+    if not resolved_url:
+        return
+    ts = article.get("pub_ts") or time.time()
+    _append_homicide_json(
+        inc_id=int(identity.get("incident_id") or 0),
+        date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+        address=identity.get("address") or "",
+        victim="",
+        summary=article.get("title", "").rsplit(" - ", 1)[0],
+        url=resolved_url,
+        lat=identity.get("lat"),
+        lon=identity.get("lon"),
+    )
+
+
 def _store_article_link(
     incident_id: int | None,
     ts: float,
@@ -600,6 +913,89 @@ def _post_to_talk(
 # BasePoller subclass
 # ---------------------------------------------------------------------------
 
+class APDNewsFetchError(RuntimeError):
+    """Raised when one or more news feeds fail to fetch in a single cycle.
+
+    Both feeds are always attempted so a single upstream outage cannot starve
+    the other feed of a cycle. Whatever succeeded is processed and committed
+    first, then this aggregate is raised so BasePoller records the failure and
+    backs off instead of reporting a clean cycle.
+
+    Attributes
+    ----------
+    errors : tuple[tuple[str, BaseException], ...]
+        ``(feed_name, exception)`` pairs for every feed that failed, in the
+        order they were attempted.
+    """
+
+    def __init__(self, errors: list[tuple[str, BaseException]]) -> None:
+        self.errors: tuple[tuple[str, BaseException], ...] = tuple(errors)
+        detail = "; ".join(f"{name}: {exc}" for name, exc in self.errors)
+        super().__init__(
+            f"{len(self.errors)} news feed(s) failed this cycle: {detail}"
+        )
+
+
+class APDNewsArticleError(RuntimeError):
+    """Raised when one or more new articles could not be processed this cycle.
+
+    Articles are only recorded in ``apd_seen`` after their processing outcome
+    is safely handled, so a failure here leaves the affected URLs unseen and
+    the next cycle retries exactly those articles. The aggregate is raised
+    after the whole feed has been attempted (and every article that did
+    succeed has been committed) so BasePoller records the cycle as failed and
+    backs off instead of reporting a clean cycle over silently dropped
+    articles.
+
+    Attributes
+    ----------
+    errors : tuple[tuple[str, BaseException], ...]
+        ``(article_url, exception)`` pairs for every article that failed.
+    """
+
+    def __init__(self, errors: list[tuple[str, BaseException]]) -> None:
+        self.errors: tuple[tuple[str, BaseException], ...] = tuple(errors)
+        detail = "; ".join(f"{url}: {exc}" for url, exc in self.errors)
+        super().__init__(
+            f"{len(self.errors)} article(s) failed processing and stay unseen "
+            f"for retry: {detail}"
+        )
+
+
+def _mark_seen(db_path: str, urls: list[str]) -> None:
+    """Record *urls* in ``apd_seen`` once their outcome is safely handled.
+
+    Called only after an article has been processed or deliberately skipped, so
+    a crash or raised error earlier in the cycle leaves the article unseen and
+    the next cycle picks it up again. Never called with an empty list.
+    """
+    if not urls:
+        return
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executemany(
+            "INSERT OR IGNORE INTO apd_seen (url, ts) VALUES (?,?)",
+            [(url, time.time()) for url in urls],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _select_unseen(db_path: str, articles: list[dict]) -> list[dict]:
+    """Return the parsed articles whose ``link`` is not in ``apd_seen``.
+
+    Read-only: articles are marked seen by :func:`_mark_seen` after their
+    outcome is known, never before processing starts.
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        existing = {row[0] for row in conn.execute("SELECT url FROM apd_seen")}
+    finally:
+        conn.close()
+    return [a for a in articles if a.get("link") not in existing]
+
+
 class APDNewsPoller(BasePoller):
     """Poll Google News RSS for APD press releases every 5 minutes.
 
@@ -611,6 +1007,9 @@ class APDNewsPoller(BasePoller):
     _lock : threading.Lock
         Guards the ``apd_seen`` DB dedup set shared between the APD sub-poll
         and the traffic sub-poll within a single run() call.
+    _schema_db_path : str | None
+        DB path whose identity ledger has already been created by this
+        instance, so ``ensure_schema`` runs once per database, not per cycle.
     """
 
     NAME: str     = "apd_news"
@@ -619,6 +1018,24 @@ class APDNewsPoller(BasePoller):
     def __init__(self) -> None:
         super().__init__(interval=int(self.INTERVAL))
         self._lock = threading.Lock()
+        self._schema_db_path: str | None = None
+
+    @staticmethod
+    def ensure_schema(db_path: str) -> None:
+        """Create the durable identity ledger if it is not there yet.
+
+        Migration-safe by construction: one idempotent ``CREATE TABLE IF NOT
+        EXISTS`` (plus its index) on the poller's own path, so an existing
+        production database gains the ledger on its next cycle — no ALTER, no
+        schema rewrite, and not one existing row touched. The same DDL is in
+        schema.sql, so a fresh database built from the schema is identical.
+        """
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.executescript(_IDENTITY_DDL)
+            conn.commit()
+        finally:
+            conn.close()
 
     def diagnostics(self) -> str:
         """Return a human-readable status string for health checks and tests."""
@@ -629,7 +1046,14 @@ class APDNewsPoller(BasePoller):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        """Perform one full poll cycle: APD press releases + traffic fatalities."""
+        """Perform one full poll cycle: APD press releases + traffic fatalities.
+
+        Each feed is polled independently and both are always attempted, so a
+        failing feed cannot stop the other one from being processed. Failures
+        are collected and re-raised together as APDNewsFetchError after both
+        feeds have run, which lets BasePoller see the cycle as failed (and
+        back off) rather than silently reporting success.
+        """
         # Lazy imports — avoids circular dependency at module load time
         from modules.config import (  # noqa: PLC0415
             DB_PATH,
@@ -645,30 +1069,43 @@ class APDNewsPoller(BasePoller):
         from modules.geocoding import _geocode_address  # noqa: PLC0415
         from modules.incident_engine import _atak_post_marker  # noqa: PLC0415
 
+        feed_errors: list[tuple[str, BaseException]] = []
+
         # ---- APD press release sub-poll ----------------------------------
-        self._poll_apd_press_releases(
-            db_path=DB_PATH,
-            talk_base=TALK_BASE,
-            talk_user=TALK_USER,
-            talk_pass=TALK_PASS,
-            talk_rooms=TALK_ROOMS,
-            google_cse_api_key=GOOGLE_CSE_API_KEY,
-            google_cse_id=GOOGLE_CSE_ID,
-            pi_fetch_url=PI_FETCH_URL,
-            pi_fetch_token=PI_FETCH_TOKEN,
-            geocode_fn=_geocode_address,
-            atak_post_fn=_atak_post_marker,
-        )
+        try:
+            self._poll_apd_press_releases(
+                db_path=DB_PATH,
+                talk_base=TALK_BASE,
+                talk_user=TALK_USER,
+                talk_pass=TALK_PASS,
+                talk_rooms=TALK_ROOMS,
+                google_cse_api_key=GOOGLE_CSE_API_KEY,
+                google_cse_id=GOOGLE_CSE_ID,
+                pi_fetch_url=PI_FETCH_URL,
+                pi_fetch_token=PI_FETCH_TOKEN,
+                geocode_fn=_geocode_address,
+                atak_post_fn=_atak_post_marker,
+            )
+        except Exception as exc:
+            logger.warning("[apd-news] sub-poll failed: %s", exc)
+            feed_errors.append(("apd-news", exc))
 
         # ---- Traffic fatality news sub-poll ------------------------------
-        self._poll_traffic_news(
-            db_path=DB_PATH,
-            google_cse_api_key=GOOGLE_CSE_API_KEY,
-            google_cse_id=GOOGLE_CSE_ID,
-            pi_fetch_url=PI_FETCH_URL,
-            pi_fetch_token=PI_FETCH_TOKEN,
-            geocode_fn=_geocode_address,
-        )
+        try:
+            self._poll_traffic_news(
+                db_path=DB_PATH,
+                google_cse_api_key=GOOGLE_CSE_API_KEY,
+                google_cse_id=GOOGLE_CSE_ID,
+                pi_fetch_url=PI_FETCH_URL,
+                pi_fetch_token=PI_FETCH_TOKEN,
+                geocode_fn=_geocode_address,
+            )
+        except Exception as exc:
+            logger.warning("[traffic-news] sub-poll failed: %s", exc)
+            feed_errors.append(("traffic-news", exc))
+
+        if feed_errors:
+            raise APDNewsFetchError(feed_errors)
 
     # ------------------------------------------------------------------
     # Private sub-pollers
@@ -689,10 +1126,14 @@ class APDNewsPoller(BasePoller):
         geocode_fn,
         atak_post_fn,
     ) -> None:
-        """Fetch and process APD press release articles from Google News RSS."""
-        # Lazy import — avoids circular dependency
-        from modules.pollers import send_dm_alert  # noqa: PLC0415
+        """Fetch and process APD press release articles from Google News RSS.
 
+        Raises on fetch failure, and on :class:`APDNewsArticleError` when any
+        new article failed processing; run() aggregates either so the traffic
+        sub-poll still runs before the cycle is reported as failed. Articles
+        are marked seen only after their outcome is handled, so every URL
+        reported in the aggregate is retried by the next cycle.
+        """
         try:
             req = urllib.request.Request(
                 APD_NEWS_URL,
@@ -704,180 +1145,347 @@ class APDNewsPoller(BasePoller):
             xml_text = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", errors="replace")
         except Exception as exc:
             logger.warning("[apd-news] fetch error: %s", exc)
-            return
+            raise
 
         articles = _apd_parse_rss(xml_text)
 
-        # Dedup against DB — persistent across restarts
+        # Migration-safe schema guard: the identity ledger is created here (once
+        # per database) instead of requiring a manual migration, so the retry
+        # contract below is available on an existing deployment from its very
+        # first cycle after the upgrade.
+        if self._schema_db_path != db_path:
+            self.ensure_schema(db_path)
+            self._schema_db_path = db_path
+
+        # Dedup against DB — persistent across restarts. Read-only: an article
+        # is written to apd_seen by _mark_seen() *after* its outcome is known,
+        # so a failure below leaves it unseen and the next cycle retries it.
         with self._lock:
-            conn_d   = sqlite3.connect(db_path)
-            existing = {row[0] for row in conn_d.execute("SELECT url FROM apd_seen")}
-            new_articles = [a for a in articles if a["link"] not in existing]
-            if new_articles:
-                conn_d.executemany(
-                    "INSERT OR IGNORE INTO apd_seen (url, ts) VALUES (?,?)",
-                    [(a["link"], time.time()) for a in new_articles],
-                )
-                conn_d.commit()
-            conn_d.close()
+            new_articles = _select_unseen(db_path, articles)
 
+        handled: list[str] = []
+        failures: list[tuple[str, BaseException]] = []
         for article in new_articles:
-            title_lower = article["title"].lower()
-            if not any(kw in title_lower for kw in _APD_HEADLINE_KW):
-                continue
-
-            logger.info("[apd-news] NEW: %s", article["title"])
-            url    = _resolve_article_url(
-                article.get("source_url", ""), article["title"], article["link"],
-                google_cse_api_key, google_cse_id,
-            )
-            detail  = _apd_fetch_article(url, pi_fetch_url, pi_fetch_token)
-            address = detail.get("address")
-            summary = detail.get("summary", article["title"])
-
-            # Fallback: extract address from article title when fetch fails
-            if not address:
-                import re as _t_re
-                _SUFFIX = (
-                    r"Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Lane|Ln|Boulevard|Blvd|Way|"
-                    r"Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|Loop|Trail|Trl|Pass|"
-                    r"Place|Pl|Cove|Path|Run|Row|Terrace|Terr|Center|Ctr|Plaza|Square|Sq|"
-                    r"Bridge|Brg|Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
-                    r"Point|Ridge|Spring|Trace|Valley|View|Vista|Expressway|Expy|Freeway|Fwy|"
-                    r"Turnpike|Tpke"
+            link = article["link"]
+            try:
+                self._process_apd_article(
+                    article,
+                    db_path=db_path,
+                    talk_base=talk_base,
+                    talk_user=talk_user,
+                    talk_pass=talk_pass,
+                    talk_rooms=talk_rooms,
+                    google_cse_api_key=google_cse_api_key,
+                    google_cse_id=google_cse_id,
+                    pi_fetch_url=pi_fetch_url,
+                    pi_fetch_token=pi_fetch_token,
+                    geocode_fn=geocode_fn,
+                    atak_post_fn=atak_post_fn,
                 )
-                # Pass 1: address with street number (e.g., "8201 Tuscany Way")
+            except HomicideSeedError:
+                # Deployment fault, not a per-article problem: every remaining
+                # article would fail identically. Commit what was already
+                # handled, then let it fail the cycle without marking the rest.
+                with self._lock:
+                    _mark_seen(db_path, handled)
+                raise
+            except Exception as exc:
+                # Deliberately NOT marked seen: the article keeps its place in
+                # the next cycle's unseen set so nothing is lost.
+                logger.warning(
+                    "[apd-news] FAILED (stays unseen, retried next cycle): %s — %s",
+                    link, exc,
+                )
+                failures.append((link, exc))
+                continue
+            handled.append(link)
+
+        with self._lock:
+            _mark_seen(db_path, handled)
+
+        if failures:
+            raise APDNewsArticleError(failures)
+
+    def _process_apd_article(
+        self,
+        article: dict,
+        *,
+        db_path: str,
+        talk_base: str,
+        talk_user: str,
+        talk_pass: str,
+        talk_rooms: dict,
+        google_cse_api_key: str,
+        google_cse_id: str,
+        pi_fetch_url: str,
+        pi_fetch_token: str,
+        geocode_fn,
+        atak_post_fn,
+    ) -> None:
+        """Process one unseen press-release article.
+
+        Returns normally when the article's outcome is decided — either it was
+        linked/created as an incident, or it was deliberately skipped (headline
+        keyword filter, missing or stale pubDate). Both outcomes are "handled"
+        and the caller records the article in apd_seen. Any exception means the
+        outcome is *not* known, so the caller leaves the article unseen.
+
+        Processing is idempotent by the *stable* RSS link: the identity ledger
+        (see :func:`_claim_article_identity`) is keyed by ``article['link']`` and
+        written before the first side effect, so a retry whose resolver returns a
+        different URL still finds the incident, the link and the seed entry of
+        the interrupted attempt. It then inserts nothing, alerts nobody, posts
+        nothing, and only re-attempts the URL-deduped seed append.
+        """
+        # Lazy import — avoids circular dependency
+        from modules.pollers import send_dm_alert  # noqa: PLC0415
+
+        title_lower = article["title"].lower()
+        if not any(kw in title_lower for kw in _APD_HEADLINE_KW):
+            logger.info("[news] SKIP apd_pr (headline): %s", article["title"])
+            return
+
+        rss_link = article["link"]
+
+        # Fast path for an article this poller already recorded. The ledger is
+        # keyed by the RSS link, so this finds the work even when the resolver
+        # would now return a different URL — and it needs no network at all.
+        identity = _lookup_article_identity(db_path, rss_link)
+        if _identity_is_recorded(identity):
+            logger.info(
+                "[apd-news] IDEMPOTENT: '%s' already recorded (incident %s) — "
+                "skipping re-insert, re-alert and re-post",
+                article["title"], identity.get("incident_id") or "?",
+            )
+            _resume_recorded_seed_append(identity, article)
+            return
+
+        logger.info("[apd-news] NEW: %s", article["title"])
+        url    = _resolve_article_url(
+            article.get("source_url", ""), article["title"], article["link"],
+            google_cse_api_key, google_cse_id,
+        )
+        detail  = _apd_fetch_article(url, pi_fetch_url, pi_fetch_token)
+        address = detail.get("address")
+        summary = detail.get("summary", article["title"])
+
+        # Fallback: extract address from article title when fetch fails
+        if not address:
+            import re as _t_re
+            _SUFFIX = (
+                r"Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Lane|Ln|Boulevard|Blvd|Way|"
+                r"Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|Loop|Trail|Trl|Pass|"
+                r"Place|Pl|Cove|Path|Run|Row|Terrace|Terr|Center|Ctr|Plaza|Square|Sq|"
+                r"Bridge|Brg|Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
+                r"Point|Ridge|Spring|Trace|Valley|View|Vista|Expressway|Expy|Freeway|Fwy|"
+                r"Turnpike|Tpke"
+            )
+            # Pass 1: address with street number (e.g., "8201 Tuscany Way")
+            _t_addr = _t_re.search(
+                r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
+                r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
+                article["title"],
+            )
+            # Pass 2: street name without number (e.g., "on Tuscany Way")
+            if not _t_addr:
                 _t_addr = _t_re.search(
-                    r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
+                    r"(?:on|at|near|in|of)\s+"
+                    r"((?:[A-Z][a-z]*\s+){0,3}[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
                     r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
                     article["title"],
                 )
-                # Pass 2: street name without number (e.g., "on Tuscany Way")
-                if not _t_addr:
-                    _t_addr = _t_re.search(
-                        r"(?:on|at|near|in|of)\s+"
-                        r"((?:[A-Z][a-z]*\s+){0,3}[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
-                        r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
-                        article["title"],
-                    )
-                if _t_addr:
-                    address = _t_addr.group(1).strip().rstrip(" -.,;")
-                    if "," not in address and "Austin" not in address:
-                        address = address + ", Austin, TX"
+            if _t_addr:
+                address = _t_addr.group(1).strip().rstrip(" -.,;")
+                if "," not in address and "Austin" not in address:
+                    address = address + ", Austin, TX"
 
-            lat: float | None = None
-            lon: float | None = None
-            if address:
-                coords = geocode_fn(address)
-                if coords:
-                    lat, lon = coords
+        lat: float | None = None
+        lon: float | None = None
+        if address:
+            coords = geocode_fn(address)
+            if coords:
+                lat, lon = coords
 
-            itype  = _article_itype_from_title(article["title"])
-            pub_ts = article.get("pub_ts")
+        itype  = _article_itype_from_title(article["title"])
+        pub_ts = article.get("pub_ts")
 
-            if not pub_ts:
-                logger.info("[news] SKIP apd_pr (no pub_ts): %s", article["title"])
-                continue
-            age = time.time() - pub_ts
-            if age > _ARTICLE_MAX_AGE_SECS:
-                logger.info("[news] SKIP apd_pr (stale %.1fh): %s", age / 3600, article["title"])
-                continue
+        if not pub_ts:
+            logger.info("[news] SKIP apd_pr (no pub_ts): %s", article["title"])
+            return
+        age = time.time() - pub_ts
+        if age > _ARTICLE_MAX_AGE_SECS:
+            logger.info("[news] SKIP apd_pr (stale %.1fh): %s", age / 3600, article["title"])
+            return
 
-            ts   = pub_ts
-            desc = f"[APD Press Release] {article['title']}. {summary[:200]}"
+        ts   = pub_ts
+        desc = f"[APD Press Release] {article['title']}. {summary[:200]}"
 
-            matched_id, match_score = _match_article_to_incident(
-                article["title"], itype, ts, db_path
+        # Rollout fallback: an article processed *before* this ledger existed has
+        # no identity row, so its recorded work is found by the URL that attempt
+        # resolved. Adopt it into the ledger rather than inserting it a second
+        # time, which also gives those articles the stable identity from here on.
+        already_recorded, prior_inc_id = _prior_article_work(db_path, url)
+        if already_recorded:
+            _claim_article_identity(
+                db_path,
+                rss_link=rss_link,
+                resolved_url=url,
+                source="apd_pr",
+                itype=itype,
+                address=address or "",
+                lat=lat,
+                lon=lon,
+                ts=ts,
             )
+            identity = _commit_article_identity(db_path, rss_link, prior_inc_id or None)
+            logger.info(
+                "[apd-news] IDEMPOTENT: '%s' already recorded (incident %s) — "
+                "adopted into the identity ledger, skipping re-insert and re-alert",
+                article["title"], prior_inc_id or "?",
+            )
+            _resume_recorded_seed_append(identity, article)
+            return
 
-            if matched_id:
-                # Article matches a radio incident — link and notify
-                _store_article_link(
-                    matched_id, ts, article["title"], url,
-                    "apd_pr", summary[:300], match_score, db_path,
-                )
-                if itype == "HOMICIDE":
-                    _append_homicide_json(
-                        inc_id=matched_id,
-                        date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
-                        address=address or "",
-                        victim="",
-                        summary=article["title"].rsplit(" - ", 1)[0],
-                        url=url,
-                        lat=lat,
-                        lon=lon,
-                    )
+        # Claim the identity *before* the first side effect. From here on the
+        # article is durably identified by its RSS link, so an interruption in
+        # the middle of the insert is recognisable on the retry.
+        identity, claimed_now = _claim_article_identity(
+            db_path,
+            rss_link=rss_link,
+            resolved_url=url,
+            source="apd_pr",
+            itype=itype,
+            address=address or "",
+            lat=lat,
+            lon=lon,
+            ts=ts,
+        )
+        if _identity_is_recorded(identity):
+            # Committed between the lookup above and this claim.
+            _resume_recorded_seed_append(identity, article)
+            return
+
+        # The ledger's URL is this article's identity: on a retry of a claim an
+        # earlier attempt left behind, the first URL the work was recorded with
+        # wins, so a resolver that now returns something different can never
+        # fork one press release into two incidents / two seed entries.
+        url = identity.get("resolved_url") or url
+
+        if not claimed_now:
+            # An earlier attempt claimed this article and died before its outcome
+            # was committed. Its insert may still have landed (the link row and
+            # the incident both carry the recorded URL), so adopt that work
+            # instead of inserting a second one — and commit the outcome, so the
+            # next cycle is a plain no-op.
+            found, inc_id = _prior_article_work(db_path, url)
+            if found:
+                identity = _commit_article_identity(db_path, rss_link, inc_id or None)
                 logger.info(
-                    "[apd-news] LINKED: '%s' → incident %s (score=%.1f)",
-                    article["title"], matched_id, match_score,
+                    "[apd-news] IDEMPOTENT: '%s' insert found for the claimed "
+                    "identity (incident %s) — adopted, skipping re-insert and re-alert",
+                    article["title"], inc_id or "?",
                 )
-                loc_str = f" @ {address}" if address else ""
-                msg = (
-                    f"\U0001f4f0 [PRESS COVERAGE] Radio incident #{matched_id} now in the news\n"
-                    f"\U0001f4f0 {article['title']}\n"
-                    f"\U0001f517 {url}\n"
-                    f"\U0001f4cd{loc_str}"
-                )
-                _post_to_talk(
-                    msg,
-                    [talk_rooms["apd"], talk_rooms["incidents"]],
-                    talk_base, talk_user, talk_pass,
-                    log_tag="apd-news",
-                )
-            else:
-                # No radio match — create a new incident from the press release
-                conn = sqlite3.connect(db_path)
-                cur  = conn.execute(
-                    "INSERT INTO incidents "
-                    "(ts_start, ts_updated, itype, description, agencies, "
-                    "tgids, location, lat, lon, article_url, status) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,'active')",
-                    (ts, ts, itype, desc, '["APD"]', "[]", address, lat, lon, url),
-                )
-                inc_id = cur.lastrowid
-                conn.commit()
-                conn.close()
+                _resume_recorded_seed_append(identity, article)
+                return
 
-                _store_article_link(inc_id, ts, article["title"], url, "apd_pr",
-                                    summary[:300], 0.0, db_path)
+        matched_id, match_score = _match_article_to_incident(
+            article["title"], itype, ts, db_path
+        )
 
-                if itype == "HOMICIDE":
-                    _append_homicide_json(
-                        inc_id=inc_id,
-                        date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
-                        address=address or "",
-                        victim="",
-                        summary=article["title"].rsplit(" - ", 1)[0],
-                        url=url,
-                        lat=lat,
-                        lon=lon,
-                    )
+        if matched_id:
+            # Article matches a radio incident — link and notify
+            _store_article_link(
+                matched_id, ts, article["title"], url,
+                "apd_pr", summary[:300], match_score, db_path,
+            )
+            _commit_article_identity(db_path, rss_link, matched_id)
+            if itype == "HOMICIDE":
+                _append_homicide_json(
+                    inc_id=matched_id,
+                    date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                    address=address or "",
+                    victim="",
+                    summary=article["title"].rsplit(" - ", 1)[0],
+                    url=url,
+                    lat=lat,
+                    lon=lon,
+                )
+            logger.info(
+                "[apd-news] LINKED: '%s' → incident %s (score=%.1f)",
+                article["title"], matched_id, match_score,
+            )
+            loc_str = f" @ {address}" if address else ""
+            msg = (
+                f"\U0001f4f0 [PRESS COVERAGE] Radio incident #{matched_id} now in the news\n"
+                f"\U0001f4f0 {article['title']}\n"
+                f"\U0001f517 {url}\n"
+                f"\U0001f4cd{loc_str}"
+            )
+            _post_to_talk(
+                msg,
+                [talk_rooms["apd"], talk_rooms["incidents"]],
+                talk_base, talk_user, talk_pass,
+                log_tag="apd-news",
+            )
+        else:
+            # No radio match — create a new incident from the press release
+            conn = sqlite3.connect(db_path)
+            cur  = conn.execute(
+                "INSERT INTO incidents "
+                "(ts_start, ts_updated, itype, description, agencies, "
+                "tgids, location, lat, lon, article_url, status) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,'active')",
+                (ts, ts, itype, desc, '["APD"]', "[]", address, lat, lon, url),
+            )
+            inc_id = cur.lastrowid
+            conn.commit()
+            conn.close()
 
-                loc_str = f" @ {address}" if address else ""
-                msg = (
-                    f"\U0001f6a8 [APD PRESS RELEASE] {article['title']}\n"
-                    f"\U0001f517 {url}\n"
-                    f"\U0001f4cd{loc_str}\n"
-                    f"{summary[:300]}"
+            _store_article_link(inc_id, ts, article["title"], url, "apd_pr",
+                                summary[:300], 0.0, db_path)
+
+            # Outcome is durable from here: the identity now points at the
+            # incident, so a later retry (even one that resolves a different
+            # URL) re-runs nothing below and only finishes the seed append.
+            _commit_article_identity(db_path, rss_link, inc_id)
+
+            if itype == "HOMICIDE":
+                _append_homicide_json(
+                    inc_id=inc_id,
+                    date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                    address=address or "",
+                    victim="",
+                    summary=article["title"].rsplit(" - ", 1)[0],
+                    url=url,
+                    lat=lat,
+                    lon=lon,
                 )
-                _post_to_talk(
-                    msg,
-                    [talk_rooms["apd"], talk_rooms["incidents"]],
-                    talk_base, talk_user, talk_pass,
-                    log_tag="apd-news",
-                )
+
+            loc_str = f" @ {address}" if address else ""
+            msg = (
+                f"\U0001f6a8 [APD PRESS RELEASE] {article['title']}\n"
+                f"\U0001f517 {url}\n"
+                f"\U0001f4cd{loc_str}\n"
+                f"{summary[:300]}"
+            )
+            _post_to_talk(
+                msg,
+                [talk_rooms["apd"], talk_rooms["incidents"]],
+                talk_base, talk_user, talk_pass,
+                log_tag="apd-news",
+            )
+            threading.Thread(
+                target=send_dm_alert,
+                args=(itype, desc, address, "APD", "APD"),
+                daemon=True,
+            ).start()
+
+            if lat is not None and lon is not None:
                 threading.Thread(
-                    target=send_dm_alert,
-                    args=(itype, desc, address, "APD", "APD"),
+                    target=atak_post_fn,
+                    args=(inc_id, lat, lon, itype, address, desc),
                     daemon=True,
                 ).start()
-
-                if lat is not None and lon is not None:
-                    threading.Thread(
-                        target=atak_post_fn,
-                        args=(inc_id, lat, lon, itype, address, desc),
-                        daemon=True,
-                    ).start()
 
     def _poll_traffic_news(
         self,
@@ -889,7 +1497,14 @@ class APDNewsPoller(BasePoller):
         pi_fetch_token: str,
         geocode_fn,
     ) -> None:
-        """Fetch Austin traffic fatality news and link to existing radio incidents."""
+        """Fetch Austin traffic fatality news and link to existing radio incidents.
+
+        Raises on fetch failure, and on :class:`APDNewsArticleError` when any
+        new article failed processing; run() aggregates either so the
+        press-release sub-poll still runs before the cycle is reported as
+        failed. Same seen-set contract as the press-release sub-poll: mark
+        seen only after the outcome is handled, so a failure is retried.
+        """
         try:
             treq = urllib.request.Request(
                 TRAFFIC_NEWS_URL,
@@ -901,69 +1516,109 @@ class APDNewsPoller(BasePoller):
             txml_text = urllib.request.urlopen(treq, timeout=15).read().decode("utf-8", errors="replace")
         except Exception as exc:
             logger.warning("[traffic-news] fetch error: %s", exc)
-            return
+            raise
 
         tarticles = _apd_parse_rss(txml_text)
 
+        # Read-only dedup; _mark_seen() runs after each outcome is handled.
         with self._lock:
-            conn_t     = sqlite3.connect(db_path)
-            t_existing = {row[0] for row in conn_t.execute("SELECT url FROM apd_seen")}
-            t_new      = [a for a in tarticles if a["link"] not in t_existing]
-            if t_new:
-                conn_t.executemany(
-                    "INSERT OR IGNORE INTO apd_seen (url, ts) VALUES (?,?)",
-                    [(a["link"], time.time()) for a in t_new],
-                )
-                conn_t.commit()
-            conn_t.close()
+            t_new = _select_unseen(db_path, tarticles)
 
+        t_handled: list[str] = []
+        t_failures: list[tuple[str, BaseException]] = []
         for ta in t_new:
-            ttitle = ta["title"].lower()
-            if not any(kw in ttitle for kw in ("fatal", "killed", "pedestrian", "hit-and-run", "deadly")):
+            link = ta["link"]
+            try:
+                self._process_traffic_article(
+                    ta,
+                    db_path=db_path,
+                    google_cse_api_key=google_cse_api_key,
+                    google_cse_id=google_cse_id,
+                    pi_fetch_url=pi_fetch_url,
+                    pi_fetch_token=pi_fetch_token,
+                    geocode_fn=geocode_fn,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[traffic-news] FAILED (stays unseen, retried next cycle): %s — %s",
+                    link, exc,
+                )
+                t_failures.append((link, exc))
                 continue
+            t_handled.append(link)
 
-            turl      = _resolve_article_url(
-                ta.get("source_url", ""), ta["title"], ta["link"],
-                google_cse_api_key, google_cse_id,
-            )
-            art_itype = (
-                "FATAL CRASH"
-                if any(w in ttitle for w in ("fatal", "killed", "dead", "deadly"))
-                else "CRASH/COLLISION"
-            )
-            tts = ta.get("pub_ts")
-            if not tts:
-                logger.info("[news] SKIP traffic-news (no pub_ts): %s", ta["title"])
-                continue
-            age = time.time() - tts
-            if age > _ARTICLE_MAX_AGE_SECS:
-                logger.info("[news] SKIP traffic-news (stale %.1fh): %s", age / 3600, ta["title"])
-                continue
+        with self._lock:
+            _mark_seen(db_path, t_handled)
 
-            t_inc_id, t_score = _match_article_to_incident(ta["title"], art_itype, tts, db_path)
-            if not t_inc_id:
-                continue
+        if t_failures:
+            raise APDNewsArticleError(t_failures)
 
-            t_detail  = _apd_fetch_article(turl, pi_fetch_url, pi_fetch_token)
-            t_snippet = t_detail.get("summary", "")
-            t_address = t_detail.get("address")
+    def _process_traffic_article(
+        self,
+        ta: dict,
+        *,
+        db_path: str,
+        google_cse_api_key: str,
+        google_cse_id: str,
+        pi_fetch_url: str,
+        pi_fetch_token: str,
+        geocode_fn,
+    ) -> None:
+        """Link one unseen traffic-fatality article to a radio incident.
 
-            if t_address:
-                t_coords = geocode_fn(t_address)
-                if t_coords:
-                    conn_ta = sqlite3.connect(db_path)
-                    conn_ta.execute(
-                        "UPDATE incidents SET location=?, lat=?, lon=? "
-                        "WHERE id=? AND (location IS NULL OR location='')",
-                        (t_address, t_coords[0], t_coords[1], t_inc_id),
-                    )
-                    conn_ta.commit()
-                    conn_ta.close()
+        Returns normally when the outcome is decided — linked to a matching
+        incident, or deliberately skipped (no fatality keyword, missing or
+        stale pubDate, no matching radio incident). Any exception means the
+        outcome is unknown, so the caller leaves the article unseen.
+        """
+        ttitle = ta["title"].lower()
+        if not any(kw in ttitle for kw in ("fatal", "killed", "pedestrian", "hit-and-run", "deadly")):
+            logger.info("[news] SKIP traffic-news (headline): %s", ta["title"])
+            return
 
-            _store_article_link(t_inc_id, tts, ta["title"], turl,
-                                "traffic-news", t_snippet, t_score, db_path)
-            logger.info(
-                "[traffic-news] LINKED: '%s' → incident %s (score=%.1f)%s",
-                ta["title"], t_inc_id, t_score,
-                f" addr={t_address}" if t_address else "",
-            )
+        turl      = _resolve_article_url(
+            ta.get("source_url", ""), ta["title"], ta["link"],
+            google_cse_api_key, google_cse_id,
+        )
+        art_itype = (
+            "FATAL CRASH"
+            if any(w in ttitle for w in ("fatal", "killed", "dead", "deadly"))
+            else "CRASH/COLLISION"
+        )
+        tts = ta.get("pub_ts")
+        if not tts:
+            logger.info("[news] SKIP traffic-news (no pub_ts): %s", ta["title"])
+            return
+        age = time.time() - tts
+        if age > _ARTICLE_MAX_AGE_SECS:
+            logger.info("[news] SKIP traffic-news (stale %.1fh): %s", age / 3600, ta["title"])
+            return
+
+        t_inc_id, t_score = _match_article_to_incident(ta["title"], art_itype, tts, db_path)
+        if not t_inc_id:
+            logger.info("[news] SKIP traffic-news (no radio match): %s", ta["title"])
+            return
+
+        t_detail  = _apd_fetch_article(turl, pi_fetch_url, pi_fetch_token)
+        t_snippet = t_detail.get("summary", "")
+        t_address = t_detail.get("address")
+
+        if t_address:
+            t_coords = geocode_fn(t_address)
+            if t_coords:
+                conn_ta = sqlite3.connect(db_path)
+                conn_ta.execute(
+                    "UPDATE incidents SET location=?, lat=?, lon=? "
+                    "WHERE id=? AND (location IS NULL OR location='')",
+                    (t_address, t_coords[0], t_coords[1], t_inc_id),
+                )
+                conn_ta.commit()
+                conn_ta.close()
+
+        _store_article_link(t_inc_id, tts, ta["title"], turl,
+                            "traffic-news", t_snippet, t_score, db_path)
+        logger.info(
+            "[traffic-news] LINKED: '%s' → incident %s (score=%.1f)%s",
+            ta["title"], t_inc_id, t_score,
+            f" addr={t_address}" if t_address else "",
+        )

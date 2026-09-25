@@ -5,6 +5,7 @@ pipeline. Mounted as a Flask Blueprint named public_bp and registered in
 audio_receiver.py.
 """
 
+import logging
 import re
 import sqlite3
 import time
@@ -13,6 +14,8 @@ from datetime import datetime
 from flask import Blueprint, jsonify
 
 from modules.config import DB_PATH
+
+logger = logging.getLogger("bb.public")
 
 public_bp = Blueprint("public", __name__)
 
@@ -302,9 +305,14 @@ async function loadStats() {
     // fetch homicide count separately
     try {
       const rh = await fetch('/api/homicides');
-      const dh = await rh.json();
-      const total = dh.total_area_homicides || 0;
-      document.getElementById('s-homicides').textContent = total;
+      if (!rh.ok) {
+        // Seed unavailable (503) — never render a fabricated zero.
+        document.getElementById('s-homicides').textContent = 'unavailable';
+      } else {
+        const dh = await rh.json();
+        const total = dh.total_area_homicides || 0;
+        document.getElementById('s-homicides').textContent = total;
+      }
     } catch(eh) {}
     document.getElementById('s-agencies').textContent = d.agencies_24h.toLocaleString();
     document.getElementById('s-updated').textContent = 'Updated ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -1163,9 +1171,14 @@ async function loadStats() {
   } catch(e) {}
   try {
     const r2 = await fetch("/api/homicides");
-    const d2 = await r2.json();
-    const total = d2.total_area_homicides || 0;
-    document.getElementById("ss-homicides").textContent = total;
+    if (!r2.ok) {
+      // Seed unavailable (503) — never render a fabricated zero.
+      document.getElementById("ss-homicides").textContent = "unavailable";
+    } else {
+      const d2 = await r2.json();
+      const total = d2.total_area_homicides || 0;
+      document.getElementById("ss-homicides").textContent = total;
+    }
   } catch(e) {}
 }
 loadStats();
@@ -1190,16 +1203,36 @@ def api_homicides():
     """Return 2026 homicide data for the heat map — canonical deduped counts.
 
     Merges the static seed file with live DB incidents, deduplicates by URL,
-    and exposes validated area-wide totals alongside the raw lists.
+    and exposes validated area-wide totals alongside the raw lists. Both come
+    from the seed resolved by ``modules.config`` (``HOMICIDE_SEED_PATH`` /
+    data dir), so a redirected deployment never reads the production seed.
+
+    A missing or corrupt seed is answered with 503 and an explicit error: the
+    curated dataset is authoritative, and reporting ``total_area_homicides: 0``
+    because of a deployment fault would publish a false zero.
+
+    This route is unauthenticated, so the 503 body is a fixed, generic message.
+    The exception text carries the resolved absolute seed path and the
+    deployment variables that relocate it, so it is logged server-side only.
     """
     from modules.homicide_count import (
+        HomicideSeedUnavailable,
         canonical_homicides,
         fetch_live_homicides,
-        load_seed,
+        load_seed_strict,
         means_of,
     )
 
-    seed = load_seed()
+    try:
+        seed = load_seed_strict()
+    except HomicideSeedUnavailable as exc:
+        # Server-side only: str(exc) names the absolute seed path and the env
+        # vars that relocate it, which must not reach an anonymous client.
+        logger.error("[api/homicides] seed unavailable: %s", exc)
+        return jsonify({
+            "error": "homicide seed unavailable",
+        }), 503
+
     live = fetch_live_homicides(DB_PATH)
     canonical, total_area, by_agency = canonical_homicides(seed, live)
     for entry in canonical:

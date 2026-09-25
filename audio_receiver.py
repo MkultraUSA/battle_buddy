@@ -16,6 +16,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import sqlite3
@@ -44,7 +45,7 @@ urllib.request.install_opener(
     urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ssl_ctx))
 )
 
-from flask import Flask, jsonify, render_template_string, request  # noqa: E402
+from flask import Flask, jsonify, render_template_string, request  # noqa: E402, I001
 
 from modules import atak as _atak_mod  # noqa: E402
 from modules import maintenance as __maintenance_mod  # noqa: E402
@@ -81,6 +82,7 @@ from modules.pi_watchdog import (  # noqa: E402
     _pi_watchdog_alert,
 )
 from modules.pollers import *  # noqa: E402
+from modules.raw_audio_queue import get_raw_audio_queue_counts  # noqa: E402
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
@@ -110,6 +112,186 @@ _BACKLOG_MAX_ITEMS = 300
 _BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
+
+
+def _get_backlog_metric_state() -> dict:
+    with _backlog_lock:
+        memory_pending = len(_backlog_queue)
+    try:
+        file_counts = get_raw_audio_queue_counts()
+    except Exception:
+        file_counts = {"pending": 0, "failed": 0, "scan_error": 1}
+    return {
+        "memory_pending": memory_pending,
+        "file_pending": file_counts["pending"],
+        "file_failed": file_counts["failed"],
+        "file_scan_error": file_counts["scan_error"],
+        "total_pending": memory_pending + file_counts["pending"],
+    }
+
+
+def _backlog_file_metric_specs(state: dict) -> tuple[tuple[str, str, int], ...]:
+    return (
+        (
+            "battlebuddy_backlog_files_pending",
+            "Audio clips waiting in the file-backed backlog pending directory; failed items are excluded",
+            state["file_pending"],
+        ),
+        (
+            "battlebuddy_backlog_files_failed",
+            "Audio clips in the file-backed backlog failed directory; excluded from pending and total depth",
+            state["file_failed"],
+        ),
+        (
+            "battlebuddy_backlog_total_depth",
+            "Audio clips waiting in the in-memory remote-worker queue and file-backed pending directory; "
+            "failed items are excluded and file counts may be incomplete when scan-error is 1",
+            state["total_pending"],
+        ),
+        (
+            "battlebuddy_backlog_files_scan_error",
+            "File-backed backlog scan status (1 = scan error, 0 = successful scan)",
+            state["file_scan_error"],
+        ),
+    )
+
+
+def _poller_health_metric_specs() -> tuple[tuple[str, str, float], ...]:
+    try:
+        from modules.pollers.base import get_poller_health
+
+        health = list(get_poller_health())
+    except Exception:
+        return ()
+
+    specs = []
+    seen = set()
+    for record in health:
+        try:
+            name = record["name"]
+            if not isinstance(name, str):
+                continue
+            if re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", name) is None:
+                continue
+            if name in seen:
+                continue
+            consecutive_failures = float(record["consecutive_failures"])
+            last_success_age = float(record["last_success_age_seconds"])
+            active = record["active"]
+            if not all(math.isfinite(value) for value in (consecutive_failures, last_success_age)):
+                continue
+            if not isinstance(active, bool):
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        seen.add(name)
+        consecutive_failures = max(0.0, min(consecutive_failures, 1_000_000.0))
+        if last_success_age < 0:
+            last_success_age = -1.0
+        specs.extend((
+            ("battlebuddy_poller_consecutive_failures", name, consecutive_failures),
+            ("battlebuddy_poller_last_success_age_seconds", name, last_success_age),
+            ("battlebuddy_poller_active", name, float(active)),
+        ))
+    return tuple(specs)
+
+
+def _homicide_seed_metrics() -> tuple[int, int, float]:
+    """Return ``(victims, incidents, newest_ts)`` from the curated seed.
+
+    Reads through ``modules.homicide_count.load_seed_strict``, i.e. the single
+    seed-path contract in ``modules.config`` (HOMICIDE_SEED_PATH /
+    BATTLE_BUDDY_DATA_DIR / BATTLE_BUDDY_HOME). These metrics therefore observe
+    the seed the rest of the deployment reads and writes — previously they read
+    ``homicides_2026.json`` next to this file, which in a relocated deployment
+    is either a different file or missing, silently publishing a zero.
+
+    Raises :class:`modules.homicide_count.HomicideSeedUnavailable` when the seed
+    is missing or corrupt, so callers can report the fault instead of a false
+    zero. The path is resolved per call, so a redirected deployment picks the
+    change up without a restart.
+    """
+    # Deferred import: keeps this module importable before config bootstrap and
+    # matches how the other optional callers in this file reach the helper.
+    from modules.homicide_count import load_seed_strict
+
+    seed = load_seed_strict()
+    victims = 0
+    newest_ts = 0.0
+    for entry in seed:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            victims += int(entry.get("count", 1))
+        except (TypeError, ValueError):
+            print(f"[homicide-seed] entry n={entry.get('n')!r} has an unusable "
+                  f"count {entry.get('count')!r}; counting 1 victim", flush=True)
+            victims += 1
+        try:
+            entry_ts = datetime.strptime(
+                entry.get("date", "2026-01-01"), "%Y-%m-%d").timestamp()
+        except (TypeError, ValueError):
+            continue
+        newest_ts = max(newest_ts, entry_ts)
+    return victims, len(seed), newest_ts
+
+
+def _homicide_seed_metric_specs() -> tuple[tuple[str, str, float], ...]:
+    """Gauge specs for the curated homicide seed.
+
+    A missing or corrupt seed is a deployment fault, not a zero homicide year,
+    so the fault is logged and exported as
+    ``battlebuddy_homicides_seed_error`` = 1 while the count gauges read 0. An
+    ops check can then tell "no homicides recorded" from "no data", which the
+    old silent-zero path could not. ``battlebuddy_homicides_seed_newest_ts``
+    also falls to 0, failing the ops freshness gate.
+    """
+    try:
+        victims, incidents, newest_ts = _homicide_seed_metrics()
+    except Exception as exc:
+        print(f"[metrics] homicide seed unavailable: {exc}", flush=True)
+        victims, incidents, newest_ts = 0, 0, 0.0
+        seed_error = 1.0
+    else:
+        seed_error = 0.0
+    return (
+        (
+            "battlebuddy_homicides_ytd_victims",
+            "Austin homicide victims tracked by Battle Buddy, year-to-date 2026",
+            float(victims),
+        ),
+        (
+            "battlebuddy_homicides_ytd",
+            "Austin homicide incidents tracked by Battle Buddy, year-to-date 2026",
+            float(incidents),
+        ),
+        (
+            "battlebuddy_homicides_seed_newest_ts",
+            "Newest incident date in curated homicides file (unixtime)",
+            float(newest_ts),
+        ),
+        (
+            "battlebuddy_homicides_seed_error",
+            "Curated homicide seed read status (1 = missing/corrupt, 0 = read); "
+            "while 1 the homicide gauges above are not a real zero",
+            seed_error,
+        ),
+    )
+
+
+def _homicide_seed_summary() -> str:
+    """One-line homicide YTD summary for the !query bot context.
+
+    Same configured seed as the gauges; an unreadable seed reports itself as
+    unavailable (and is logged) rather than as a zero homicide year.
+    """
+    try:
+        victims, incidents, _newest_ts = _homicide_seed_metrics()
+    except Exception as exc:
+        print(f"[bot] homicide seed unavailable: {exc}", flush=True)
+        return "homicide data unavailable"
+    return f"{incidents} homicide incidents, {victims} victims YTD 2026"
+
 
 # Network-wide ADSB.lol snapshot pushed by the authorized feeder Pi.  The
 # feeder-only re-api is source-IP restricted, so browsers and this VPS cannot
@@ -428,6 +610,35 @@ try:
 
     class _BBMetricsCollector:
         def collect(self):
+            g_poller_failures = GaugeMetricFamily(
+                "battlebuddy_poller_consecutive_failures",
+                "Consecutive failed poll cycles by poller; zero means the last cycle succeeded",
+                labels=["poller"],
+            )
+            g_poller_last_success = GaugeMetricFamily(
+                "battlebuddy_poller_last_success_age_seconds",
+                "Seconds since the last successful poll cycle; -1 means no success has been observed",
+                labels=["poller"],
+            )
+            g_poller_active = GaugeMetricFamily(
+                "battlebuddy_poller_active",
+                "Whether a poller thread is currently running; 1 means active and 0 means inactive",
+                labels=["poller"],
+            )
+            try:
+                for _metric_name, _poller_name, _value in _poller_health_metric_specs():
+                    if _metric_name == "battlebuddy_poller_consecutive_failures":
+                        g_poller_failures.add_metric([_poller_name], _value)
+                    elif _metric_name == "battlebuddy_poller_last_success_age_seconds":
+                        g_poller_last_success.add_metric([_poller_name], _value)
+                    elif _metric_name == "battlebuddy_poller_active":
+                        g_poller_active.add_metric([_poller_name], _value)
+            except Exception:
+                pass
+            yield g_poller_failures
+            yield g_poller_last_success
+            yield g_poller_active
+
             try:
                 c = sqlite3.connect(DB_PATH, timeout=5.0)
                 cur = c.cursor()
@@ -478,47 +689,18 @@ try:
                     m3.add_metric([str(agency)], float(count))
                 yield m3
 
-                # --- homicide YTD gauge — sourced from curated homicides_2026.json ---
-                try:
-                    import json as _json
-                    import os as _os
-                    _hf = _os.path.join(_os.path.dirname(__file__), "homicides_2026.json")
-                    _hdata = _json.load(open(_hf))
-                    _homicide_victims = sum(h.get("count", 1) for h in _hdata)
-                    _homicide_incidents = len(_hdata)
-                except Exception:
-                    _homicide_victims = 0
-                    _homicide_incidents = 0
-                g_hom_v = GaugeMetricFamily(
-                    "battlebuddy_homicides_ytd_victims",
-                    "Austin homicide victims tracked by Battle Buddy, year-to-date 2026",
-                )
-                g_hom_v.add_metric([], float(_homicide_victims))
-                yield g_hom_v
-                g_hom_i = GaugeMetricFamily(
-                    "battlebuddy_homicides_ytd",
-                    "Austin homicide incidents tracked by Battle Buddy, year-to-date 2026",
-                )
-                g_hom_i.add_metric([], float(_homicide_incidents))
-                yield g_hom_i
+                # --- homicide YTD gauges — sourced from the configured seed ---
+                # _homicide_seed_metric_specs() resolves the seed through
+                # modules.config, so these gauges (and the ops freshness gate
+                # that reads them) observe the same seed as the API, and an
+                # unreadable seed is reported as a seed error, not a zero.
+                for _name, _help, _val in _homicide_seed_metric_specs():
+                    _g = GaugeMetricFamily(_name, _help)
+                    _g.add_metric([], float(_val))
+                    yield _g
 
                 # --- map/investigation health gauges (added 2026-09-23) ---
                 import time as _mtime
-                try:
-                    from datetime import datetime as _dt
-                    _newest = max(
-                        _dt.strptime(h.get("date", "2026-01-01"), "%Y-%m-%d").timestamp()
-                        for h in _hdata
-                    )
-                except Exception:
-                    _newest = 0
-                g_hom_fresh = GaugeMetricFamily(
-                    "battlebuddy_homicides_seed_newest_ts",
-                    "Newest incident date in curated homicides file (unixtime)",
-                )
-                g_hom_fresh.add_metric([], float(_newest))
-                yield g_hom_fresh
-
                 _1h = _mtime.time() - 3600
                 cur.execute(
                     "SELECT COUNT(*) FROM incidents WHERE ts_start >= ? "
@@ -656,13 +838,12 @@ try:
                 yield g_calls
 
                 # --- backlog overflow metrics ---
-                with _backlog_lock:
-                    _backlog_depth = len(_backlog_queue)
+                _backlog = _get_backlog_metric_state()
                 g_backlog = GaugeMetricFamily(
                     "battlebuddy_backlog_queue_depth",
-                    "Number of audio clips waiting in the backlog queue for remote workers (pie3)",
+                    "Number of audio clips waiting in the in-memory backlog queue for remote workers (pie3)",
                 )
-                g_backlog.add_metric([], float(_backlog_depth))
+                g_backlog.add_metric([], float(_backlog["memory_pending"]))
                 yield g_backlog
 
                 g_backlog_done = CounterMetricFamily(
@@ -671,6 +852,11 @@ try:
                 )
                 g_backlog_done.add_metric([], float(_backlog_completed))
                 yield g_backlog_done
+
+                for _name, _help, _val in _backlog_file_metric_specs(_backlog):
+                    _g = GaugeMetricFamily(_name, _help)
+                    _g.add_metric([], float(_val))
+                    yield _g
 
                 # --- transcript reliability / ASR quality metrics ---
                 _quality_windows = [
@@ -1490,7 +1676,6 @@ def bot_talk():
             def _do_query(q, tok, name):
                 try:
                     import json as _j
-                    import os as _os
                     import time as _t
                     import urllib.request as _ur
                     _now = _t.time()
@@ -1514,12 +1699,8 @@ def bot_talk():
 
                     conn.close()
 
-                    try:
-                        _hf = _os.path.join(_os.path.dirname(__file__), "homicides_2026.json")
-                        _hdata = _j.load(open(_hf))
-                        hom_summary = f"{len(_hdata)} homicide incidents, {sum(h.get('count',1) for h in _hdata)} victims YTD 2026"
-                    except Exception:
-                        hom_summary = "homicide data unavailable"
+                    # Same configured seed as /api/homicides and the gauges.
+                    hom_summary = _homicide_seed_summary()
 
                     inc_text = "\n".join(
                         f"[{r[4]}] {r[0]} @ {r[1] or 'unknown location'} | {r[2] or 'no desc'} | agencies: {r[3]} | {r[5]}"
@@ -3005,52 +3186,26 @@ def api_premium_homicides_summary():
     sess = _get_session(request)
     if not sess or not sess.get("is_premium"):
         return jsonify({"error": "premium required"}), 403
-    import os
-    seed_count = 0
-    seed_path  = "/opt/battlebuddy/homicides_2026.json"
-    if os.path.exists(seed_path):
-        try:
-            import json as _json
-            seed_data = _json.load(open(seed_path))
-            seed_count = sum(int(e.get("count", 1)) for e in seed_data)
-        except Exception:
-            pass
-    conn = sqlite3.connect(DB_PATH, timeout=5.0)
-    rows = conn.execute(
-        """SELECT ts_start, location FROM incidents
-           WHERE itype = 'HOMICIDE'
-             AND lat IS NOT NULL AND lon IS NOT NULL
-             AND ts_start > strftime('%s','2026-01-01')
-             AND is_test = 0
-           ORDER BY ts_start DESC"""
-    ).fetchall()
-    conn.close()
-    live_count = len(rows)
-    # Derive "last" — prefer live geocoded entry, fall back to seed file
-    last = None
-    if rows:
-        import datetime as _dt
-        last = {
-            "date":     _dt.datetime.fromtimestamp(rows[0][0]).strftime("%b %d"),
-            "location": rows[0][1] or "",
-        }
-    elif seed_count:
-        try:
-            import json as _json2
-            seed_data = sorted(_json2.load(open(seed_path)), key=lambda x: x.get("date",""))
-            newest = seed_data[-1]
-            from datetime import datetime as _dt2
-            last = {
-                "date":     _dt2.strptime(newest["date"], "%Y-%m-%d").strftime("%b %d"),
-                "location": newest.get("address", ""),
-            }
-        except Exception:
-            pass
-    return jsonify({
-        "ytd":   seed_count + live_count,
-        "year":  2026,
-        "last":  last,
-    })
+    # Same resolved seed as /api/homicides: modules.config owns the
+    # HOMICIDE_SEED_PATH / BATTLE_BUDDY_DATA_DIR precedence, so this route can
+    # never read a different (e.g. production) seed than the public map.
+    from modules.homicide_count import HomicideSeedUnavailable, premium_homicide_summary
+    try:
+        summary = premium_homicide_summary(DB_PATH)
+    except HomicideSeedUnavailable as exc:
+        # A missing/corrupt curated seed is a deployment fault, not a zero
+        # homicide year — answer explicitly instead of under-reporting.
+        # str(exc) names the absolute seed path and the variables that relocate
+        # it, so it stays in the server log; the body is the same fixed, generic
+        # message the anonymous /api/homicides 503 uses.
+        print(f"[premium] homicide seed unavailable: {exc}", flush=True)
+        return jsonify({
+            "error":  "homicide seed unavailable",
+            "ytd":    None,
+            "year":   2026,
+            "last":   None,
+        }), 503
+    return jsonify(summary)
 
 
 @app.route("/api/premium/atak/status")
@@ -4189,7 +4344,7 @@ if __name__ == "__main__":
     AustinEventsPoller().start()
     APDCADPoller().start()
     APDNewsPoller().start()
-    RedditIntelPoller().start()
+    # RedditIntelPoller().start()  # DISABLED 2026-09-24: Reddit RSS 429 on all 4 feeds; re-enable with OAuth/fix
     ADSBAirAssetPoller().start()
     # --- Phase 3: Maintenance loops ---
     threading.Thread(target=__maintenance_mod._kg_prune_loop, daemon=True).start()

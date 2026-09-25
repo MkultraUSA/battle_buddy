@@ -94,7 +94,7 @@ class TrafficOpenDataPoller(BasePoller):
                 incidents = json.loads(resp.read())
         except Exception as exc:
             logger.warning("[traffic] fetch error: %s", exc)
-            return
+            raise
 
         with self._state_lock:
             current_ids = {inc["traffic_report_id"] for inc in incidents}

@@ -13,9 +13,15 @@ Coverage:
   - _apd_fetch_article()        — article fetch + address extraction (mocked)
   - _match_article_to_incident()— DB scoring logic (in-memory SQLite)
   - _store_article_link()       — DB write helpers (in-memory SQLite)
+  - _prior_article_work()       — idempotency lookup for a retried article
+  - the apd_article_identity ledger — claim/commit/lookup, its migration
+    safety, and idempotency across a retry whose resolver returns a different
+    URL (no duplicate incident, link, alert, Talk post or seed entry)
   - _post_to_talk()             — Talk posting (mocked urllib)
   - APDNewsPoller._poll_apd_press_releases() — full press-release sub-poll
   - APDNewsPoller._poll_traffic_news()       — traffic fatality sub-poll
+  - APDNewsPoller._process_apd_article()      — idempotency across a
+    post-insert failure (no duplicate incident, article link or DM alert)
   - Package __init__ re-exports
 
 All network calls are monkey-patched / mocked — no real HTTP happens.
@@ -24,8 +30,10 @@ All DB operations use a fresh in-memory (or tmp-file) SQLite database.
 
 from __future__ import annotations
 
+import builtins
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -57,6 +65,13 @@ def _stub_leaf(name: str, **attrs):
     that we don't need the full application environment at test-collection
     time.
     """
+    if name == "modules.config" and "resolve_homicide_seed_path" not in attrs:
+        # apd_news._homicide_seed_path() defers to modules.config, so every
+        # config stub in this suite carries the *real* resolver: the delegation
+        # is then exercised against the shared precedence instead of a fake,
+        # and a stub that omitted it would turn any seed write into an
+        # ImportError rather than a seed result.
+        attrs["resolve_homicide_seed_path"] = _real_homicide_seed_resolver()
     mod = type(sys)(name)
     mod.__name__    = name
     mod.__package__ = name.rsplit(".", 1)[0] if "." in name else name
@@ -65,6 +80,72 @@ def _stub_leaf(name: str, **attrs):
     sys.modules[name] = mod
     _attach_to_parent(name, mod)
     return mod
+
+
+_REAL_CONFIG_MODULE = None
+_CONFIG_MODULE_INSTALL: dict = {}
+
+
+def _real_config_module():
+    """Load the real ``modules.config`` from disk, once.
+
+    Loaded under a private module name so installing the ``modules.config``
+    stub below can never displace it.
+    """
+    global _REAL_CONFIG_MODULE
+    if _REAL_CONFIG_MODULE is None:
+        import importlib.util as _ilu
+
+        spec = _ilu.spec_from_file_location(
+            "bb_apd_real_config", str(_ROOT / "modules" / "config.py")
+        )
+        mod = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _REAL_CONFIG_MODULE = mod
+    return _REAL_CONFIG_MODULE
+
+
+def _real_homicide_seed_resolver():
+    """The real ``modules.config.resolve_homicide_seed_path``."""
+    return _real_config_module().resolve_homicide_seed_path
+
+
+def setUpModule():
+    """Point ``modules.config`` at the real module for this file's tests.
+
+    Other suites register minimal ``modules.config`` stubs at import time and
+    never remove them (tests/test_apd_cad_poller.py), so which stub is in
+    sys.modules when this file's tests run depends on collection order. The
+    poller defers its seed lookup to
+    ``modules.config.resolve_homicide_seed_path``, so this module installs the
+    real one for the duration of its own run; individual test classes may still
+    pin their own stub (those stubs carry the resolver too, see _stub_leaf).
+    """
+    pkg = sys.modules.get("modules")
+    _CONFIG_MODULE_INSTALL.update(
+        previous=sys.modules.get("modules.config"),
+        pkg=pkg,
+        pkg_attr=getattr(pkg, "config", None) if pkg is not None else None,
+    )
+    real = _real_config_module()
+    sys.modules["modules.config"] = real
+    if pkg is not None:
+        pkg.config = real
+
+
+def tearDownModule():
+    prev = _CONFIG_MODULE_INSTALL.pop("previous", None)
+    pkg = _CONFIG_MODULE_INSTALL.pop("pkg", None)
+    pkg_attr = _CONFIG_MODULE_INSTALL.pop("pkg_attr", None)
+    if prev is not None:
+        sys.modules["modules.config"] = prev
+    else:
+        sys.modules.pop("modules.config", None)
+    if pkg is not None:
+        if pkg_attr is not None:
+            pkg.config = pkg_attr
+        elif hasattr(pkg, "config"):
+            delattr(pkg, "config")
 
 
 def _attach_to_parent(dotted_name: str, mod):
@@ -171,18 +252,30 @@ from modules.pollers.impl.apd_news import (  # noqa: E402
     _APD_SOURCE_RSS,
     _ARTICLE_MAX_AGE_SECS,
     _ARTICLE_STOP_WORDS,
+    _IDENTITY_COLUMNS,
     _NEWS_ITYPE_COMPAT,
     APD_NEWS_INTERVAL,
     APD_NEWS_URL,
     TRAFFIC_NEWS_URL,
+    APDNewsArticleError,
+    APDNewsFetchError,
     APDNewsPoller,
+    HomicideSeedError,
     _apd_fetch_article,
     _apd_parse_rss,
+    _append_homicide_json,
     _article_itype_from_title,
+    _claim_article_identity,
+    _commit_article_identity,
+    _homicide_seed_path,
+    _identity_is_recorded,
+    _lookup_article_identity,
     _match_article_to_incident,
     _pi_fetch,
     _post_to_talk,
+    _prior_article_work,
     _resolve_article_url,
+    _resume_recorded_seed_append,
     _store_article_link,
 )
 
@@ -1005,10 +1098,10 @@ class TestPollAPDPressReleases(unittest.TestCase):
         time.sleep(0.2)
         atak_fn.assert_called()
 
-    def test_rss_fetch_error_does_not_raise(self):
-        """Network errors during RSS fetch should be caught silently."""
+    def test_rss_fetch_error_propagates(self):
+        """Network errors during RSS fetch must reach run() so BasePoller backs off."""
         with mock.patch("urllib.request.urlopen", side_effect=Exception("timeout")):
-            try:
+            with self.assertRaises(Exception) as ctx:
                 self.poller._poll_apd_press_releases(
                     db_path=self.db_path,
                     talk_base="http://talk.test",
@@ -1019,8 +1112,27 @@ class TestPollAPDPressReleases(unittest.TestCase):
                     geocode_fn=lambda a: None,
                     atak_post_fn=mock.MagicMock(),
                 )
-            except Exception as exc:
-                self.fail(f"_poll_apd_press_releases raised unexpectedly: {exc}")
+        self.assertIn("timeout", str(ctx.exception))
+
+    def test_rss_fetch_error_marks_nothing_seen(self):
+        """A failed fetch must not mark articles as seen and suppress them later."""
+        link = "https://kxan.com/never_seen"
+        with mock.patch("urllib.request.urlopen", side_effect=Exception("timeout")):
+            with self.assertRaises(Exception):
+                self.poller._poll_apd_press_releases(
+                    db_path=self.db_path,
+                    talk_base="http://talk.test",
+                    talk_user="u", talk_pass="p",
+                    talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+                    google_cse_api_key="", google_cse_id="",
+                    pi_fetch_url="", pi_fetch_token="",
+                    geocode_fn=lambda a: None,
+                    atak_post_fn=mock.MagicMock(),
+                )
+        conn = sqlite3.connect(self.db_path)
+        seen = conn.execute("SELECT url FROM apd_seen WHERE url=?", (link,)).fetchall()
+        conn.close()
+        self.assertEqual(seen, [])
 
 
 # ===========================================================================
@@ -1047,7 +1159,7 @@ class TestPollTrafficNews(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
-                        side_effect=lambda su, t, l, k, cid: l):  # noqa: E741
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link):
             self.poller._poll_traffic_news(
                 db_path=self.db_path,
                 google_cse_api_key="",
@@ -1115,17 +1227,17 @@ class TestPollTrafficNews(unittest.TestCase):
         conn.close()
         self.assertTrue(len(linked) >= 1)
 
-    def test_traffic_rss_fetch_error_does_not_raise(self):
+    def test_traffic_rss_fetch_error_propagates(self):
+        """Network errors during traffic RSS fetch must reach run()."""
         with mock.patch("urllib.request.urlopen", side_effect=Exception("timeout")):
-            try:
+            with self.assertRaises(Exception) as ctx:
                 self.poller._poll_traffic_news(
                     db_path=self.db_path,
                     google_cse_api_key="", google_cse_id="",
                     pi_fetch_url="", pi_fetch_token="",
                     geocode_fn=lambda a: None,
                 )
-            except Exception as exc:
-                self.fail(f"_poll_traffic_news raised unexpectedly: {exc}")
+        self.assertIn("timeout", str(ctx.exception))
 
     def test_traffic_coordinates_update_incident_location(self):
         ts_event = time.time() - 900
@@ -1150,7 +1262,7 @@ class TestPollTrafficNews(unittest.TestCase):
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
                         return_value={"address": "183 Freeway at Airport Blvd", "summary": "Fatal crash"}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
-                        side_effect=lambda su, t, l, k, cid: l):  # noqa: E741
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link):
             self.poller._poll_traffic_news(
                 db_path=self.db_path,
                 google_cse_api_key="", google_cse_id="",
@@ -1164,6 +1276,256 @@ class TestPollTrafficNews(unittest.TestCase):
         self.assertIsNotNone(row[0])
         self.assertIsNotNone(row[1])
         self.assertIn("183", row[2])
+
+
+# ---------------------------------------------------------------------------
+# Homicide seed sandbox
+# ---------------------------------------------------------------------------
+# The seed used to be a hardcoded "/opt/battlebuddy/homicides_2026.json".  On a
+# clean clone that path does not exist, so any test that reached
+# _append_homicide_json tried to create /opt/battlebuddy/homicides_2026.json.tmp
+# and failed -- and on the production host the same write would have clobbered
+# the curated seed with a single new entry.  _install_seed_sandbox() points the
+# seed at a temp file and restores every global it touches, so a test run can
+# never read or write the production tree.
+
+_PROD_TREE = "/opt/battlebuddy"
+_SEED_BASENAME = "homicides_2026.json"
+
+
+def _assert_seed_stays_in_sandbox(tmpdir):
+    """Cleanup guard: the resolved seed path must never leave *tmpdir*.
+
+    Registered via addCleanup so a test that redirects the seed to a different
+    location (e.g. a read-only fixture dir) is still checked for containment
+    rather than exact equality.
+    """
+    resolved = os.path.realpath(_homicide_seed_path())
+    if resolved.startswith(_PROD_TREE):
+        raise AssertionError(
+            f"seed path points into the production tree: {resolved}")
+    if not (resolved == os.path.realpath(tmpdir)
+            or resolved.startswith(os.path.realpath(tmpdir) + os.sep)):
+        raise AssertionError(
+            f"seed path escaped the sandbox {tmpdir!r}: {_homicide_seed_path()!r}")
+
+
+def _install_seed_sandbox(testcase):
+    """Redirect the homicide seed into a fresh temp dir for *testcase*.
+
+    Returns the temp dir. Registers cleanups that restore os.environ, remove
+    the temp dir, and assert the resolved seed path stayed inside the sandbox
+    and outside the production tree.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="apd-seed-")
+    env_patch = mock.patch.dict(
+        os.environ, {"HOMICIDE_SEED_PATH": os.path.join(tmpdir, _SEED_BASENAME)},
+        clear=False,
+    )
+    env_patch.start()
+    testcase.addCleanup(env_patch.stop)
+    testcase.addCleanup(shutil.rmtree, tmpdir, True)
+    testcase.addCleanup(_assert_seed_stays_in_sandbox, tmpdir)
+    return tmpdir
+
+
+# ===========================================================================
+# 12b. APDNewsPoller.run() — feed-failure aggregation
+# ===========================================================================
+
+class TestRunFeedFailureAggregation(unittest.TestCase):
+    """run() must attempt both feeds, then surface every failure to BasePoller."""
+
+    def setUp(self):
+        self.db_path = _tmp_db()
+        self.poller = APDNewsPoller()
+        # run() reads the full modules.config surface, unlike the sub-polls which
+        # take their config as arguments. Other test modules in this suite
+        # register their own minimal sys.modules["modules.config"] (e.g. the CAD
+        # suite installs DB_PATH only), so pin a complete stub for the duration
+        # of each test and restore whatever was there afterwards.
+        self._prev_config = sys.modules.get("modules.config")
+        _pkg = sys.modules.get("modules")
+        self._prev_pkg_attr = getattr(_pkg, "config", None) if _pkg is not None else None
+        self._has_pkg_attr = _pkg is not None and hasattr(_pkg, "config")
+        _stub_leaf(
+            "modules.config",
+            DB_PATH=self.db_path,
+            TALK_BASE="http://talk.test",
+            TALK_USER="user",
+            TALK_PASS="pass",
+            TALK_ROOMS={"apd": "room_apd", "incidents": "room_inc"},
+            GOOGLE_CSE_API_KEY="",
+            GOOGLE_CSE_ID="",
+            PI_FETCH_URL="",
+            PI_FETCH_TOKEN="",
+        )
+
+        # The homicide press-release path appends to the seed. Give it a valid
+        # temp seed so these tests exercise feed aggregation, not seed faults.
+        self._seed_tmpdir = _install_seed_sandbox(self)
+        with open(os.path.join(self._seed_tmpdir, _SEED_BASENAME), "w") as f:
+            json.dump([], f)
+
+    def tearDown(self):
+        if self._prev_config is None:
+            sys.modules.pop("modules.config", None)
+        else:
+            sys.modules["modules.config"] = self._prev_config
+        _pkg = sys.modules.get("modules")
+        if _pkg is not None:
+            if self._has_pkg_attr:
+                _pkg.config = self._prev_pkg_attr
+            elif hasattr(_pkg, "config"):
+                del _pkg.config
+        os.unlink(self.db_path)
+
+    def _urlopen_for(self, *, apd_ok: bool, traffic_ok: bool, rss: str = ""):
+        """Build a urlopen stub that fails or serves *rss* per feed."""
+        def _fake_urlopen(req, timeout=None):
+            url = getattr(req, "full_url", req)
+            if url == TRAFFIC_NEWS_URL:
+                if not traffic_ok:
+                    raise Exception("traffic upstream down")
+                resp = mock.MagicMock()
+                resp.read.return_value = rss.encode()
+                return resp
+            if not apd_ok:
+                raise Exception("apd upstream down")
+            resp = mock.MagicMock()
+            resp.read.return_value = rss.encode()
+            return resp
+        return _fake_urlopen
+
+    def _insert_incident(self, itype: str, description: str) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO incidents (ts_start, ts_updated, itype, description, "
+            "agencies, tgids, location, lat, lon, status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,'active')",
+            (time.time() - 900, time.time() - 900, itype, description,
+             '["APD"]', "[]", None, None, None),
+        )
+        conn.commit()
+        inc_id = cur.lastrowid
+        conn.close()
+        return inc_id
+
+    def test_both_feeds_failing_raises_aggregate_naming_both(self):
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=self._urlopen_for(apd_ok=False, traffic_ok=False)):
+            with self.assertRaises(APDNewsFetchError) as ctx:
+                self.poller.run()
+
+        names = [name for name, _exc in ctx.exception.errors]
+        self.assertEqual(names, ["apd-news", "traffic-news"])
+        self.assertIn("2 news feed(s) failed", str(ctx.exception))
+        self.assertIn("apd upstream down", str(ctx.exception))
+        self.assertIn("traffic upstream down", str(ctx.exception))
+
+    def test_single_feed_failure_still_runs_the_other_feed(self):
+        """A failing press-release feed must not starve the traffic feed."""
+        inc_id = self._insert_incident("FATAL CRASH", "Fatal crash on IH-35")
+        rss = _make_rss([
+            {"title": "Person killed in fatal crash on IH-35",
+             "link": "https://kvue.com/fatal_run1", "pubDate": _PUB_DATE},
+        ])
+
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=self._urlopen_for(apd_ok=False, traffic_ok=True, rss=rss),
+        ), mock.patch(
+            "modules.pollers.impl.apd_news._apd_fetch_article", return_value={},
+        ), mock.patch(
+            "modules.pollers.impl.apd_news._resolve_article_url",
+            side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link,
+        ):
+            with self.assertRaises(APDNewsFetchError) as ctx:
+                self.poller.run()
+
+        # Only the press-release feed is reported as failed...
+        names = [name for name, _exc in ctx.exception.errors]
+        self.assertEqual(names, ["apd-news"])
+
+        # ...but the healthy traffic feed was still fully processed and committed.
+        conn = sqlite3.connect(self.db_path)
+        linked = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE source='traffic-news'"
+        ).fetchall()
+        seen = conn.execute(
+            "SELECT url FROM apd_seen WHERE url=?", ("https://kvue.com/fatal_run1",)
+        ).fetchall()
+        conn.close()
+        self.assertEqual(linked, [(inc_id,)])
+        self.assertEqual(len(seen), 1)
+
+    def test_traffic_failure_still_runs_press_release_feed(self):
+        rss = _make_rss([
+            {"title": "APD Press Release: Homicide Investigation",
+             "link": "https://kxan.com/pr_run1", "pubDate": _PUB_DATE},
+        ])
+
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=self._urlopen_for(apd_ok=True, traffic_ok=False, rss=rss),
+        ):
+            with self.assertRaises(APDNewsFetchError) as ctx:
+                self.poller.run()
+
+        names = [name for name, _exc in ctx.exception.errors]
+        self.assertEqual(names, ["traffic-news"])
+
+        conn = sqlite3.connect(self.db_path)
+        seen = conn.execute(
+            "SELECT url FROM apd_seen WHERE url=?", ("https://kxan.com/pr_run1",)
+        ).fetchall()
+        conn.close()
+        self.assertEqual(len(seen), 1)
+
+    def test_all_feeds_healthy_does_not_raise(self):
+        rss = _make_rss([
+            {"title": "APD Press Release: Homicide Investigation",
+             "link": "https://kxan.com/pr_ok", "pubDate": _PUB_DATE},
+        ])
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=self._urlopen_for(apd_ok=True, traffic_ok=True, rss=rss),
+        ):
+            self.poller.run()  # must not raise
+
+    def test_fetch_error_class_is_runtime_error_for_backoff_loop(self):
+        """BasePoller._loop catches Exception; the aggregate must be one."""
+        self.assertTrue(issubclass(APDNewsFetchError, RuntimeError))
+        self.assertTrue(issubclass(APDNewsFetchError, Exception))
+
+    def test_run_failure_marks_cycle_failed_for_base_poller(self):
+        """End-to-end: a failing run() drives BasePoller's failure counter."""
+        poller = APDNewsPoller()
+
+        def _fail_once():
+            poller.stop_event.set()  # stop after this single cycle
+            raise APDNewsFetchError([("apd-news", Exception("apd upstream down"))])
+
+        poller.run = _fail_once
+        poller._loop()
+
+        self.assertEqual(poller.consecutive_failures, 1)
+        self.assertEqual(poller.last_success_ts, 0.0)
+
+    def test_successful_run_clears_failure_counter(self):
+        """A healthy cycle after failures must reset the counter and stamp success."""
+        poller = APDNewsPoller()
+        poller._record_failure()
+        self.assertEqual(poller.consecutive_failures, 1)
+
+        def _succeed_once():
+            poller.stop_event.set()  # stop after this single cycle
+
+        poller.run = _succeed_once
+        poller._loop()
+
+        self.assertEqual(poller.consecutive_failures, 0)
+        self.assertGreater(poller.last_success_ts, 0.0)
 
 
 # ===========================================================================
@@ -1234,6 +1596,1577 @@ class TestConcurrentDedup(unittest.TestCase):
         self.assertEqual(len(rows), 1, "URL should be inserted exactly once")
         self.assertEqual(results.count("inserted"), 1)
         self.assertEqual(results.count("skipped"), 9)
+
+
+# ===========================================================================
+# 14. Homicide seed path isolation + valid/missing seed behaviour
+# ===========================================================================
+# Every test below redirects HOMICIDE_SEED_PATH into its own temp dir (see
+# _install_seed_sandbox) and audits that nothing under /opt/battlebuddy is
+# touched.
+
+
+class _WriteAuditor:
+    """Record every path opened for writing or renamed inside the block.
+
+    Used to prove that a test run cannot read or write the production seed,
+    which is the property the hardcoded path violated.
+    """
+
+    def __init__(self) -> None:
+        self.paths: list[str] = []
+
+    def _record(self, target) -> None:
+        try:
+            self.paths.append(os.fspath(target))
+        except TypeError:
+            self.paths.append(str(target))
+
+    def __enter__(self) -> "_WriteAuditor":
+        self._real_open = builtins.open
+        self._real_replace = os.replace
+
+        def _open_spy(file, mode="r", *args, **kwargs):
+            if any(flag in str(mode) for flag in ("w", "a", "x", "+")):
+                self._record(file)
+            return self._real_open(file, mode, *args, **kwargs)
+
+        def _replace_spy(src, dst, *args, **kwargs):
+            self._record(src)
+            self._record(dst)
+            return self._real_replace(src, dst, *args, **kwargs)
+
+        builtins.open = _open_spy
+        os.replace = _replace_spy
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        builtins.open = self._real_open
+        os.replace = self._real_replace
+
+    @property
+    def production_writes(self) -> list[str]:
+        return [p for p in self.paths if p.startswith(_PROD_TREE)]
+
+
+class _SeedSandboxTest(unittest.TestCase):
+    """Base: point the seed at a temp file, then restore every global touched."""
+
+    def setUp(self):
+        self._tmpdir = _install_seed_sandbox(self)
+        self.seed_path = os.path.join(self._tmpdir, _SEED_BASENAME)
+        self.assertEqual(_homicide_seed_path(), self.seed_path)
+
+    def _write_seed(self, entries) -> None:
+        with open(self.seed_path, "w") as f:
+            json.dump(entries, f, indent=4)
+
+    def _write_raw_seed(self, text: str) -> None:
+        with open(self.seed_path, "w") as f:
+            f.write(text)
+
+    def _read_seed(self) -> list:
+        with open(self.seed_path) as f:
+            return json.load(f)
+
+    def _append(self, url: str, **overrides):
+        kwargs = {
+            "inc_id": 1,
+            "date": "2026-03-01",
+            "address": "100 Main St",
+            "victim": "",
+            "summary": "APD Press Release: Homicide Investigation",
+            "url": url,
+            "lat": None,
+            "lon": None,
+        }
+        kwargs.update(overrides)
+        return _append_homicide_json(**kwargs)
+
+
+class TestHomicideSeedPathResolution(unittest.TestCase):
+    """The seed path must follow the configured data/home directory."""
+
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {}, clear=True)
+        patcher.start()
+        for key in ("HOMICIDE_SEED_PATH", "BATTLE_BUDDY_DATA_DIR", "BATTLE_BUDDY_HOME"):
+            os.environ.pop(key, None)
+        self.addCleanup(patcher.stop)
+
+    def test_production_default_is_preserved(self):
+        # No env at all must still resolve to the production seed path.
+        self.assertEqual(
+            _homicide_seed_path(), f"{_PROD_TREE}/homicides_2026.json"
+        )
+
+    def test_home_override_redirects_seed_into_sandbox(self):
+        os.environ["BATTLE_BUDDY_HOME"] = "/tmp/bb-sandbox"
+        self.assertEqual(
+            _homicide_seed_path(), "/tmp/bb-sandbox/homicides_2026.json"
+        )
+        self.assertFalse(_homicide_seed_path().startswith(_PROD_TREE))
+
+    def test_data_dir_override_wins_over_home(self):
+        os.environ["BATTLE_BUDDY_HOME"] = "/tmp/bb-sandbox"
+        os.environ["BATTLE_BUDDY_DATA_DIR"] = "/tmp/bb-sandbox/data"
+        self.assertEqual(
+            _homicide_seed_path(), "/tmp/bb-sandbox/data/homicides_2026.json"
+        )
+
+    def test_explicit_seed_env_override_wins(self):
+        os.environ["BATTLE_BUDDY_HOME"] = "/tmp/bb-sandbox"
+        os.environ["BATTLE_BUDDY_DATA_DIR"] = "/tmp/bb-sandbox/data"
+        os.environ["HOMICIDE_SEED_PATH"] = "/tmp/bb-sandbox/custom_seed.json"
+        self.assertEqual(_homicide_seed_path(), "/tmp/bb-sandbox/custom_seed.json")
+
+    def test_empty_seed_env_falls_back_to_home(self):
+        os.environ["BATTLE_BUDDY_HOME"] = "/tmp/bb-sandbox"
+        os.environ["HOMICIDE_SEED_PATH"] = ""
+        self.assertEqual(
+            _homicide_seed_path(), "/tmp/bb-sandbox/homicides_2026.json"
+        )
+
+    def test_module_source_has_no_hardcoded_production_seed_path(self):
+        """Regression guard: the literal seed path must not come back."""
+        source = Path(apd_news.__file__).read_text()
+        self.assertNotIn(f'"{_PROD_TREE}/homicides_2026.json"', source)
+        self.assertNotIn(f"'{_PROD_TREE}/homicides_2026.json'", source)
+
+
+class TestAppendHomicideJson(_SeedSandboxTest):
+    """Valid and missing seed behaviour, and sandbox-only writes."""
+
+    def setUp(self):
+        super().setUp()
+        self._write_seed([
+            {"n": 1, "date": "2026-01-01", "address": "A", "victim": "",
+             "summary": "first", "url": "https://kxan.com/first"},
+            {"n": 2, "date": "2026-01-02", "address": "B", "victim": "",
+             "summary": "second", "url": "https://kxan.com/second"},
+        ])
+
+    def test_appends_with_next_sequence_number(self):
+        self._append("https://kxan.com/third")
+        data = self._read_seed()
+        self.assertEqual(len(data), 3)
+        self.assertEqual(data[-1]["n"], 3)
+        self.assertEqual(data[-1]["url"], "https://kxan.com/third")
+        self.assertEqual(data[-1]["date"], "2026-03-01")
+
+    def test_append_preserves_existing_entries(self):
+        self._append("https://kxan.com/third")
+        data = self._read_seed()
+        self.assertEqual([e["url"] for e in data[:2]],
+                         ["https://kxan.com/first", "https://kxan.com/second"])
+
+    def test_coordinates_only_included_when_given(self):
+        self._append("https://kxan.com/with-geo", lat=30.27, lon=-97.74)
+        entry = self._read_seed()[-1]
+        self.assertEqual(entry["lat"], 30.27)
+        self.assertEqual(entry["lon"], -97.74)
+
+        self._append("https://kxan.com/no-geo")
+        entry = self._read_seed()[-1]
+        self.assertNotIn("lat", entry)
+        self.assertNotIn("lon", entry)
+
+    def test_duplicate_url_is_deduped(self):
+        self._append("https://kxan.com/first")
+        self.assertEqual(len(self._read_seed()), 2)
+
+    def test_empty_url_is_dropped_without_writing(self):
+        with _WriteAuditor() as auditor:
+            self._append("")
+        self.assertEqual(len(self._read_seed()), 2)
+        self.assertNotIn(self.seed_path, auditor.paths)
+
+    def test_write_stays_inside_sandbox(self):
+        with _WriteAuditor() as auditor:
+            self._append("https://kxan.com/third")
+        self.assertEqual(auditor.production_writes, [])
+        self.assertIn(self.seed_path, auditor.paths)
+
+    def test_no_tmp_file_left_behind(self):
+        self._append("https://kxan.com/third")
+        self.assertFalse(os.path.exists(self.seed_path + ".tmp"))
+
+    def test_missing_seed_raises_and_creates_nothing(self):
+        os.unlink(self.seed_path)
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("not found", str(ctx.exception))
+        # A missing seed must NOT be silently recreated from an empty list.
+        self.assertFalse(os.path.exists(self.seed_path))
+        self.assertFalse(os.path.exists(self.seed_path + ".tmp"))
+
+    def test_corrupt_seed_raises_and_is_not_overwritten(self):
+        self._write_raw_seed("{not json at all")
+        with self.assertRaises(HomicideSeedError):
+            self._append("https://kxan.com/third")
+        with open(self.seed_path) as f:
+            self.assertEqual(f.read(), "{not json at all")
+
+    def test_non_list_seed_raises(self):
+        self._write_raw_seed('{"n": 1}')
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("must be a JSON list", str(ctx.exception))
+
+    def test_seed_error_is_runtime_error_for_backoff_loop(self):
+        # BasePoller only backs off on RuntimeError-derived failures.
+        self.assertTrue(issubclass(HomicideSeedError, RuntimeError))
+
+    def test_seed_path_that_is_a_directory_raises_unreadable(self):
+        """Deterministic OSError branch (root cannot be blocked by chmod)."""
+        os.unlink(self.seed_path)
+        os.mkdir(self.seed_path)
+        os.environ["HOMICIDE_SEED_PATH"] = self.seed_path
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("unreadable", str(ctx.exception))
+        # A directory at the seed path must not be replaced by a fresh file.
+        self.assertTrue(os.path.isdir(self.seed_path))
+        self.assertFalse(os.path.exists(self.seed_path + ".tmp"))
+
+    def test_seed_under_a_non_directory_raises_not_found(self):
+        """The parent not being a directory is a fault, not an empty seed."""
+        blocker = os.path.join(self._tmpdir, "blocker")
+        with open(blocker, "w") as f:
+            f.write("i am a file, not a directory")
+        os.environ["HOMICIDE_SEED_PATH"] = os.path.join(blocker, _SEED_BASENAME)
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_unwritable_seed_raises_instead_of_succeeding(self):
+        ro_dir = os.path.join(self._tmpdir, "ro")
+        os.makedirs(ro_dir)
+        ro_seed = os.path.join(ro_dir, "homicides_2026.json")
+        self._write_seed([])
+        shutil.move(self.seed_path, ro_seed)
+        os.chmod(ro_dir, 0o500)
+        self.addCleanup(os.chmod, ro_dir, 0o700)
+        os.environ["HOMICIDE_SEED_PATH"] = ro_seed
+        if os.access(ro_dir, os.W_OK):
+            self.skipTest("running with write access to a read-only dir")
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("unwritable", str(ctx.exception))
+
+
+class TestHomicideSeedAggregationIsolation(_SeedSandboxTest):
+    """The press-release sub-poll must use the sandbox seed, never /opt."""
+
+    def setUp(self):
+        super().setUp()
+        self.db_path = _tmp_db()
+        self.poller = APDNewsPoller()
+        self._write_seed([])
+        self._rss = _make_rss([{
+            "title": "APD Press Release: Homicide Investigation on 6th St",
+            "link": "https://kxan.com/sandbox-hom1",
+            "pubDate": _PUB_DATE,
+        }])
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.unlink(self.db_path)
+
+    def _mocked_article_fetch(self):
+        return mock.patch(
+            "modules.pollers.impl.apd_news._apd_fetch_article",
+            return_value={"address": "600 6th St", "summary": "APD homicide"},
+        )
+
+    def _run_poll(self):
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = self._rss.encode()
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+             self._mocked_article_fetch(), \
+             mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link), \
+             mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert",
+                               new=mock.MagicMock()):
+            self.poller._poll_apd_press_releases(
+                db_path=self.db_path,
+                talk_base="http://talk.test",
+                talk_user="u",
+                talk_pass="p",
+                talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+                google_cse_api_key="",
+                google_cse_id="",
+                pi_fetch_url="",
+                pi_fetch_token="",
+                geocode_fn=lambda addr: None,
+                atak_post_fn=mock.MagicMock(),
+            )
+
+    def test_homicide_press_release_appends_to_sandbox_seed(self):
+        with _WriteAuditor() as auditor:
+            self._run_poll()
+        self.assertEqual(auditor.production_writes, [])
+        data = self._read_seed()
+        self.assertEqual(len(data), 1, "homicide press release must reach the seed")
+        self.assertEqual(data[0]["n"], 1)
+
+    def test_missing_seed_fails_the_cycle_instead_of_succeeding(self):
+        os.unlink(self.seed_path)
+        with self.assertRaises(HomicideSeedError):
+            self._run_poll()
+        # The curated file must not be recreated behind the operator's back.
+        self.assertFalse(os.path.exists(self.seed_path))
+
+    def test_run_reports_missing_seed_as_a_failed_cycle(self):
+        """A missing seed must reach BasePoller as a failure, not a clean run."""
+        os.unlink(self.seed_path)
+        prev_config = sys.modules.get("modules.config")
+        pkg = sys.modules.get("modules")
+        prev_attr = getattr(pkg, "config", None)
+        _stub_leaf(
+            "modules.config",
+            DB_PATH=self.db_path,
+            TALK_BASE="http://talk.test",
+            TALK_USER="user",
+            TALK_PASS="pass",
+            TALK_ROOMS={"apd": "room_apd", "incidents": "room_inc"},
+            GOOGLE_CSE_API_KEY="",
+            GOOGLE_CSE_ID="",
+            PI_FETCH_URL="",
+            PI_FETCH_TOKEN="",
+        )
+
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = self._rss.encode()
+            return resp
+
+        try:
+            with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+                 mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
+                            return_value={}), \
+                 mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                            side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link):
+                with self.assertRaises(APDNewsFetchError) as ctx:
+                    self.poller.run()
+        finally:
+            if prev_config is None:
+                sys.modules.pop("modules.config", None)
+            else:
+                sys.modules["modules.config"] = prev_config
+            if pkg is not None and hasattr(pkg, "config"):
+                pkg.config = prev_attr
+
+        names = [name for name, _ in ctx.exception.errors]
+        self.assertIn("apd-news", names)
+        self.assertIn("not found", str(ctx.exception))
+        self.assertFalse(os.path.exists(self.seed_path))
+
+
+# ===========================================================================
+# 15. apd_seen write-after-outcome — no silent article loss
+# ===========================================================================
+# Regression coverage for the data-loss bug: the sub-polls used to bulk-insert
+# every new URL into apd_seen and commit *before* processing, so an exception
+# part-way through a cycle permanently swallowed the unprocessed articles.
+# The contract is now: read unseen -> process -> mark seen, and anything that
+# raises stays unseen so the next cycle retries exactly that article.
+
+_LOST_MARKER = "on 12th St"
+_LOST_TITLE  = f"APD Press Release: Homicide Investigation {_LOST_MARKER}"
+_LOST_LINK   = "https://kxan.com/lost_article_1"
+_OK_TITLE    = "APD Press Release: Homicide Investigation on 6th St"
+_OK_LINK     = "https://kxan.com/ok_article_1"
+
+
+class TestSeenMarkedOnlyAfterOutcome(unittest.TestCase):
+    """apd_seen must record an article only once its outcome is handled."""
+
+    def setUp(self):
+        self.db_path = _tmp_db()
+        self.poller = APDNewsPoller()
+        self._seed_dir = _install_seed_sandbox(self)
+        self.seed_path = os.path.join(self._seed_dir, _SEED_BASENAME)
+        with open(self.seed_path, "w") as f:
+            json.dump([], f)
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+
+    # -- helpers ----------------------------------------------------------
+
+    def _seen(self) -> list[str]:
+        conn = sqlite3.connect(self.db_path)
+        rows = [r[0] for r in conn.execute("SELECT url FROM apd_seen")]
+        conn.close()
+        return rows
+
+    def _incident_count(self) -> int:
+        conn = sqlite3.connect(self.db_path)
+        n = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
+        conn.close()
+        return n
+
+    def _insert_incident(self, itype: str, description: str) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO incidents (ts_start, ts_updated, itype, description, "
+            "agencies, tgids, location, lat, lon, status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,'active')",
+            (time.time() - 900, time.time() - 900, itype, description,
+             '["APD"]', "[]", None, None, None),
+        )
+        conn.commit()
+        inc_id = cur.lastrowid
+        conn.close()
+        return inc_id
+
+    def _cycle(self, rss_xml: str, *, fail_titles: tuple = ()):
+        """Run one press-release cycle; fail processing for *fail_titles*.
+
+        Returns the sub-poll return value (None) so a healthy cycle can be
+        asserted to be silent.
+        """
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = rss_xml.encode()
+            return resp
+
+        def _match(title, itype, ts, db_path):
+            if any(marker in title for marker in fail_titles):
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return (None, 0.0)
+
+        send_dm = mock.MagicMock()
+        with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+             mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
+             mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link), \
+             mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                        side_effect=_match), \
+             mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=send_dm):
+            return self.poller._poll_apd_press_releases(
+                db_path=self.db_path,
+                talk_base="",
+                talk_user="u",
+                talk_pass="p",
+                talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+                google_cse_api_key="",
+                google_cse_id="",
+                pi_fetch_url="",
+                pi_fetch_token="",
+                geocode_fn=lambda addr: None,
+                atak_post_fn=mock.MagicMock(),
+            )
+
+    def _traffic_cycle(self, rss_xml: str, *, inc_id: int = 1, fail: bool = False):
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = rss_xml.encode()
+            return resp
+
+        def _match(title, itype, ts, db_path):
+            if fail:
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return (inc_id, 9.0)
+
+        with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+             mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
+             mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link), \
+             mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                        side_effect=_match):
+            return self.poller._poll_traffic_news(
+                db_path=self.db_path,
+                google_cse_api_key="",
+                google_cse_id="",
+                pi_fetch_url="",
+                pi_fetch_token="",
+                geocode_fn=lambda addr: None,
+            )
+
+    # -- regression: failure then successful retry ------------------------
+
+    def test_failed_article_stays_unseen_and_retry_succeeds(self):
+        """A processing failure must not lose the article: the retry sees it."""
+        rss = _make_rss([{
+            "title": _LOST_TITLE,
+            "link": _LOST_LINK,
+            "pubDate": _PUB_DATE,
+        }])
+
+        # Cycle 1: processing raises -> explicit failure, nothing marked seen.
+        with self.assertRaises(APDNewsArticleError) as ctx:
+            self._cycle(rss, fail_titles=(_LOST_MARKER,))
+        self.assertEqual([u for u, _ in ctx.exception.errors], [_LOST_LINK])
+        self.assertIn(_LOST_LINK, str(ctx.exception))
+        self.assertEqual(self._seen(), [], "failed article must stay unseen")
+        self.assertEqual(self._incident_count(), 0)
+
+        # Cycle 2: healthy feed -> the same article is picked up again.
+        self._cycle(rss)
+
+        self.assertEqual(self._seen(), [_LOST_LINK])
+        self.assertEqual(self._incident_count(), 1)
+        with open(self.seed_path) as f:
+            seed = json.load(f)
+        self.assertEqual([e["url"] for e in seed], [_LOST_LINK])
+
+        # Cycle 3: already handled, so no duplicate incident or seed entry.
+        self._cycle(rss)
+        self.assertEqual(self._incident_count(), 1)
+        self.assertEqual(self._seen(), [_LOST_LINK])
+        with open(self.seed_path) as f:
+            self.assertEqual(len(json.load(f)), 1)
+
+    def test_article_failure_is_aggregated_by_run(self):
+        """run() must report an article failure so BasePoller backs off."""
+        # run() reads the whole modules.config surface. Another suite in this
+        # run may have left a partial stub behind (test_apd_cad_poller), so pin
+        # a complete stub for the duration and restore whatever was there.
+        prev_config = sys.modules.get("modules.config")
+        pkg = sys.modules.get("modules")
+        prev_attr = getattr(pkg, "config", None) if pkg is not None else None
+        _stub_leaf(
+            "modules.config",
+            DB_PATH=self.db_path,
+            TALK_BASE="",
+            TALK_USER="user",
+            TALK_PASS="pass",
+            TALK_ROOMS={"apd": "room_apd", "incidents": "room_inc"},
+            GOOGLE_CSE_API_KEY="",
+            GOOGLE_CSE_ID="",
+            PI_FETCH_URL="",
+            PI_FETCH_TOKEN="",
+        )
+        try:
+            with mock.patch.object(
+                APDNewsPoller, "_poll_apd_press_releases",
+                side_effect=APDNewsArticleError([(_LOST_LINK, RuntimeError("boom"))]),
+            ), mock.patch.object(APDNewsPoller, "_poll_traffic_news"):
+                with self.assertRaises(APDNewsFetchError) as ctx:
+                    self.poller.run()
+        finally:
+            if prev_config is None:
+                sys.modules.pop("modules.config", None)
+            else:
+                sys.modules["modules.config"] = prev_config
+            if pkg is not None:
+                if prev_attr is not None:
+                    pkg.config = prev_attr
+                elif hasattr(pkg, "config"):
+                    delattr(pkg, "config")
+
+        names = [name for name, _ in ctx.exception.errors]
+        self.assertIn("apd-news", names)
+        self.assertIn(_LOST_LINK, str(ctx.exception))
+        self.assertTrue(issubclass(APDNewsArticleError, RuntimeError))
+
+    def test_partial_failure_marks_only_handled_articles_seen(self):
+        """A healthy article is committed; only the failed one is retried."""
+        rss = _make_rss([
+            {"title": _OK_TITLE, "link": _OK_LINK, "pubDate": _PUB_DATE},
+            {"title": _LOST_TITLE, "link": _LOST_LINK, "pubDate": _PUB_DATE},
+        ])
+
+        with self.assertRaises(APDNewsArticleError) as ctx:
+            self._cycle(rss, fail_titles=(_LOST_MARKER,))
+
+        self.assertEqual([u for u, _ in ctx.exception.errors], [_LOST_LINK])
+        self.assertEqual(self._seen(), [_OK_LINK])
+        self.assertEqual(self._incident_count(), 1)
+
+        # Next cycle retries only the article that failed.
+        self._cycle(rss)
+        self.assertEqual(sorted(self._seen()), sorted([_OK_LINK, _LOST_LINK]))
+        self.assertEqual(self._incident_count(), 2)
+
+    def test_healthy_single_cycle_marks_every_article_seen(self):
+        """Normal feed processing stays single-cycle: no lost, no duplicates."""
+        links = [f"https://kxan.com/hom_{i}" for i in range(3)]
+        rss = _make_rss([
+            {"title": f"APD Press Release: Homicide Investigation on {i}th St",
+             "link": link, "pubDate": _PUB_DATE}
+            for i, link in enumerate(links)
+        ])
+
+        self.assertIsNone(self._cycle(rss))
+
+        self.assertEqual(sorted(self._seen()), sorted(links))
+        self.assertEqual(self._incident_count(), 3)
+
+    def test_deliberate_skip_is_a_handled_outcome(self):
+        """A keyword-filtered article is decided, so it is marked seen once."""
+        link = "https://kxan.com/awards_ceremony"
+        rss = _make_rss([{"title": "APD awards ceremony downtown",
+                          "link": link, "pubDate": _PUB_DATE}])
+
+        self.assertIsNone(self._cycle(rss))
+
+        self.assertEqual(self._seen(), [link])
+        self.assertEqual(self._incident_count(), 0)
+
+    def test_traffic_failure_stays_unseen_and_retry_links(self):
+        """The traffic sub-poll follows the same write-after-outcome contract."""
+        self._insert_incident("FATAL CRASH", "Fatal crash on IH-35")
+        link = "https://kvue.com/fatal_retry_1"
+        rss = _make_rss([{"title": "Person killed in fatal crash on IH-35",
+                          "link": link, "pubDate": _PUB_DATE}])
+
+        with self.assertRaises(APDNewsArticleError) as ctx:
+            self._traffic_cycle(rss, fail=True)
+        self.assertEqual([u for u, _ in ctx.exception.errors], [link])
+        self.assertEqual(self._seen(), [])
+
+        self._traffic_cycle(rss, inc_id=1)
+
+        self.assertEqual(self._seen(), [link])
+        conn = sqlite3.connect(self.db_path)
+        rows = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE source='traffic-news'"
+        ).fetchall()
+        conn.close()
+        self.assertEqual(len(rows), 1)
+
+        # Already handled: a further cycle neither re-links nor duplicates.
+        self._traffic_cycle(rss, inc_id=1)
+        conn = sqlite3.connect(self.db_path)
+        rows = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE source='traffic-news'"
+        ).fetchall()
+        conn.close()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(self._seen(), [link])
+
+
+# ===========================================================================
+# 16. Idempotency across a post-insert failure
+# ===========================================================================
+# apd_seen write-after-outcome keeps a failed article unseen so the next cycle
+# retries it. The root cause of the duplication this covers: a press-release
+# incident carries the "[APD Press Release]" tag, which
+# _match_article_to_incident() excludes from matching — so a retry could never
+# recognise the incident the interrupted cycle had already created, and inserted
+# a second one (plus a second incident_articles row and a second DM alert).
+#
+# Processing is now idempotent by article URL: the recorded link/incident is
+# found before anything is inserted or alerted, and only the URL-deduped seed
+# append is re-attempted. A failure *before* the insert still records nothing,
+# so write-after-outcome (nothing lost) is unchanged.
+
+_IDEM_TITLE  = "APD Press Release: Homicide Investigation on 6th St"
+_IDEM_LINK   = "https://kxan.com/idem_post_insert_1"
+_IDEM_MATCH  = "APD Press Release: Shooting on Congress Avenue"
+_IDEM_MATCH_LINK = "https://kxan.com/idem_matched_1"
+
+
+class _SyncThread:
+    """Inline stand-in for threading.Thread inside the poller.
+
+    _process_apd_article fires the DM alert and the ATAK marker on daemon
+    threads, so "was the alert sent?" would otherwise be a race. Patching
+    threading.Thread inside the poller's namespace runs them inline and makes
+    those assertions exact.
+    """
+
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs or {}
+
+    def start(self):
+        if self._target is not None:
+            self._target(*self._args, **self._kwargs)
+
+    def join(self, timeout=None):
+        return None
+
+
+class TestPostInsertFailureIsIdempotent(_SeedSandboxTest):
+    """A retry after a post-insert failure must not duplicate the work."""
+
+    def setUp(self):
+        super().setUp()
+        self.db_path = _tmp_db()
+        self.poller = APDNewsPoller()
+        self._write_seed([])
+        self.alerts: list[tuple] = []
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.unlink(self.db_path)
+
+    def _rss(self, title=_IDEM_TITLE, link=_IDEM_LINK) -> str:
+        return _make_rss([{"title": title, "link": link, "pubDate": _PUB_DATE}])
+
+    def _cycle(self, rss: str, *, match=None):
+        """Run one press-release cycle with network, alert and atak stubbed.
+
+        *match* optionally pins ``_match_article_to_incident`` to
+        ``(incident_id, score)`` — used to prove the idempotency guard, not the
+        matcher, is what prevents a duplicate.
+        """
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = rss.encode()
+            return resp
+
+        def _send_dm(*args, **kwargs):
+            self.alerts.append(args)
+
+        patches = [
+            mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen),
+            mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
+                       return_value={"address": "600 6th St", "summary": "APD homicide"}),
+            mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                       side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link),
+            mock.patch("modules.pollers.impl.apd_news.threading.Thread", _SyncThread),
+            mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=_send_dm),
+        ]
+        if match is not None:
+            patches.append(
+                mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                           return_value=match)
+            )
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return self.poller._poll_apd_press_releases(
+            db_path=self.db_path,
+            talk_base="",
+            talk_user="u",
+            talk_pass="p",
+            talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+            google_cse_api_key="",
+            google_cse_id="",
+            pi_fetch_url="",
+            pi_fetch_token="",
+            geocode_fn=lambda addr: None,
+            atak_post_fn=mock.MagicMock(),
+        )
+
+    def _db_state(self) -> tuple[int, int, list[str]]:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            incidents = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
+            links = conn.execute("SELECT COUNT(*) FROM incident_articles").fetchone()[0]
+            seen = [r[0] for r in conn.execute("SELECT url FROM apd_seen")]
+        finally:
+            conn.close()
+        return incidents, links, seen
+
+    def _insert_radio_incident(self) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO incidents (ts_start, ts_updated, itype, description, agencies, "
+            "tgids, location, status) VALUES (?,?,?,?,?,?,?, 'active')",
+            (time.time() - 1800, time.time() - 1800, "SHOOTING",
+             "Shots fired on Congress Ave", '["AFD"]', "[]", "Congress Ave"),
+        )
+        conn.commit()
+        inc_id = cur.lastrowid
+        conn.close()
+        return inc_id
+
+    @staticmethod
+    def _failing_mark_seen():
+        """A _mark_seen that fails on its first call, then behaves normally.
+
+        The seen-marker write is the last thing a cycle does, so a failure there
+        is the realistic post-insert fault: the incident, the article link, the
+        seed entry and the alert are all already committed, yet the article
+        stays unseen and the next cycle retries it.
+        """
+        real = sys.modules["modules.pollers.impl.apd_news"]._mark_seen
+        state = {"calls": 0}
+
+        def _mark_seen(db_path, urls):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return real(db_path, urls)
+
+        return _mark_seen
+
+    # -- regression: outcome committed, seen-marker write failed ----------
+
+    def test_retry_after_seen_write_failure_does_not_duplicate_or_realert(self):
+        rss = self._rss()
+        mark_seen = self._failing_mark_seen()
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", mark_seen):
+            with self.assertRaises(RuntimeError):
+                self._cycle(rss)
+
+        # Everything was committed; only the seen marker was lost.
+        self.assertEqual(self._db_state(), (1, 1, []))
+        self.assertEqual([e["url"] for e in self._read_seed()], [_IDEM_LINK])
+        self.assertEqual(len(self.alerts), 1)
+
+        # The retry must recognise the recorded work and do nothing again.
+        self._cycle(rss)
+
+        self.assertEqual(self._db_state(), (1, 1, [_IDEM_LINK]),
+                         "retry must not add an incident, a link or a second seen row")
+        self.assertEqual([e["url"] for e in self._read_seed()], [_IDEM_LINK],
+                         "the seed append must stay idempotent by article URL")
+        self.assertEqual(len(self.alerts), 1, "retry must not re-send the DM alert")
+
+    def test_repeated_retries_after_seen_write_failure_stay_idempotent(self):
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", self._failing_mark_seen()):
+            with self.assertRaises(RuntimeError):
+                self._cycle(rss)
+        self._cycle(rss)
+        self._cycle(rss)
+
+        self.assertEqual(self._db_state(), (1, 1, [_IDEM_LINK]))
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(len(self._read_seed()), 1)
+
+    def test_matched_article_is_not_relinked_on_retry(self):
+        """The matched branch stores its link too — a retry must not re-store it."""
+        inc_id = self._insert_radio_incident()
+        rss = self._rss(_IDEM_MATCH, _IDEM_MATCH_LINK)
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", self._failing_mark_seen()):
+            with self.assertRaises(RuntimeError):
+                # The matcher is pinned, so it "matches" again on the retry:
+                # only the idempotency guard can prevent a second link row.
+                self._cycle(rss, match=(inc_id, 9.0))
+        self.assertEqual(self._db_state(), (1, 1, []))
+
+        self._cycle(rss, match=(inc_id, 9.0))
+
+        conn = sqlite3.connect(self.db_path)
+        links = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE url=?",
+            (_IDEM_MATCH_LINK,),
+        ).fetchall()
+        conn.close()
+        self.assertEqual(links, [(inc_id,)], "retry must not re-link the article")
+        self.assertEqual(self._db_state()[0], 1)
+
+    # -- regression: seed write failed after the insert --------------------
+
+    def test_seed_failure_after_insert_leaves_no_duplicates_on_retry(self):
+        rss = self._rss()
+        os.unlink(self.seed_path)
+        with self.assertRaises(HomicideSeedError):
+            self._cycle(rss)
+
+        # The incident and the link are committed; the seed append is not.
+        self.assertEqual(self._db_state(), (1, 1, []))
+        self.assertFalse(os.path.exists(self.seed_path),
+                         "a failed append must not recreate the curated seed")
+
+        # Operator restores the seed; the retry finishes the append only.
+        self._write_seed([])
+        self._cycle(rss)
+
+        self.assertEqual(self._db_state(), (1, 1, [_IDEM_LINK]))
+        self.assertEqual([e["url"] for e in self._read_seed()], [_IDEM_LINK],
+                         "the interrupted seed append must complete exactly once")
+        # Deliberate trade-off: the alert is never re-sent. The interrupted
+        # cycle had not reached it, so responders see the incident (already
+        # committed and visible on the public map) exactly once rather than
+        # risking a duplicate alert for the same press release.
+        self.assertEqual(self.alerts, [])
+
+    # -- write-after-outcome is preserved for pre-insert failures ----------
+
+    def test_pre_insert_failure_still_retries_from_scratch(self):
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                        side_effect=RuntimeError("sqlite3.OperationalError: database is locked")):
+            with self.assertRaises(APDNewsArticleError):
+                self._cycle(rss)
+
+        self.assertEqual(self._db_state(), (0, 0, []),
+                         "nothing may be recorded before the insert")
+        self.assertEqual(self.alerts, [])
+        self.assertEqual(self._read_seed(), [])
+
+        # The retry starts from scratch and completes the whole outcome once.
+        self._cycle(rss)
+        self.assertEqual(self._db_state(), (1, 1, [_IDEM_LINK]))
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual([e["url"] for e in self._read_seed()], [_IDEM_LINK])
+
+
+# ===========================================================================
+# 17. _prior_article_work — the idempotency lookup
+# ===========================================================================
+
+class TestPriorArticleWork(unittest.TestCase):
+    """Both durable markers an interrupted article leaves must be found."""
+
+    def setUp(self):
+        self.db_path = _tmp_db()
+        self.addCleanup(lambda: os.path.exists(self.db_path) and os.unlink(self.db_path))
+
+    def _incident(self, article_url=None) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO incidents (ts_start, itype, description, agencies, tgids, "
+            "status, article_url) VALUES (?,?,?,?,?, 'active', ?)",
+            (time.time(), "HOMICIDE", "[APD Press Release] x", '["APD"]', "[]", article_url),
+        )
+        conn.commit()
+        inc_id = cur.lastrowid
+        conn.close()
+        return inc_id
+
+    def _link(self, incident_id, url) -> None:
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO incident_articles (incident_id, ts, headline, url, source) "
+            "VALUES (?,?,?,?, 'apd_pr')",
+            (incident_id, time.time(), "headline", url),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_unknown_article_reports_no_prior_work(self):
+        self.assertEqual(
+            _prior_article_work(self.db_path, "https://kxan.com/unknown"), (False, 0)
+        )
+
+    def test_empty_url_reports_no_prior_work(self):
+        self.assertEqual(_prior_article_work(self.db_path, ""), (False, 0))
+
+    def test_recorded_link_is_found(self):
+        inc_id = self._incident()
+        self._link(inc_id, "https://kxan.com/linked")
+        self.assertEqual(
+            _prior_article_work(self.db_path, "https://kxan.com/linked"), (True, inc_id)
+        )
+
+    def test_incident_article_url_is_found_without_a_link_row(self):
+        """An insert that committed but never stored the link is still found."""
+        inc_id = self._incident(article_url="https://kxan.com/half_done")
+        self.assertEqual(
+            _prior_article_work(self.db_path, "https://kxan.com/half_done"), (True, inc_id)
+        )
+
+    def test_orphaned_link_row_still_counts_as_recorded(self):
+        """A link row with no incident id must not be processed a second time."""
+        self._link(None, "https://kxan.com/orphan")
+        self.assertEqual(
+            _prior_article_work(self.db_path, "https://kxan.com/orphan"), (True, 0)
+        )
+
+
+# ===========================================================================
+# 18. apd_article_identity — the durable, RSS-link-keyed identity ledger
+# ===========================================================================
+# The idempotency guard used to be keyed on the *resolved* article URL, which is
+# not stable: the source-RSS tier, the Google CSE tier and the Google News
+# /articles/ fallback can each return a different URL on a later cycle (feed
+# rotation, CSE reshuffle, a tier that has since started failing). A retry that
+# resolved a different URL therefore missed its own prior work and inserted a
+# second incident, a second article link, a second DM alert, a second Talk post
+# and a second seed entry for one press release.
+#
+# The ledger is keyed on the stable RSS link (article['link']) and holds the
+# association: the resolved URL the work was recorded with, the incident it
+# produced, and the values its seed entry is keyed on. It is written *before*
+# the first side effect; apd_seen keeps its own write-after-outcome contract, so
+# a failure before the claim records nothing and the article is retried whole.
+
+_LEDGER_TITLE = "APD Press Release: Homicide Investigation on 12th St"
+_LEDGER_RSS_LINK = "https://news.google.com/rss/articles/LEDGER0001"
+_LEDGER_URL_A = "https://www.kxan.com/news/local/ledger-1"
+_LEDGER_URL_B = "https://www.kvue.com/news/local/ledger-1-via-cse"
+
+
+class TestArticleIdentityLedger(unittest.TestCase):
+    """The ledger primitives: one row per RSS link, written before effects."""
+
+    def setUp(self):
+        self.db_path = _tmp_db()
+        self.addCleanup(lambda: os.path.exists(self.db_path) and os.unlink(self.db_path))
+        APDNewsPoller.ensure_schema(self.db_path)
+
+    def _claim(self, **overrides):
+        kwargs = {
+            "rss_link": _LEDGER_RSS_LINK,
+            "resolved_url": _LEDGER_URL_A,
+            "source": "apd_pr",
+            "itype": "HOMICIDE",
+            "address": "600 6th St, Austin, TX",
+            "lat": 30.26,
+            "lon": -97.74,
+            "ts": 1_800_000_000.0,
+        }
+        kwargs.update(overrides)
+        return _claim_article_identity(self.db_path, **kwargs)
+
+    # -- lookup -----------------------------------------------------------
+
+    def test_unknown_link_has_no_identity(self):
+        self.assertIsNone(_lookup_article_identity(self.db_path, "https://news.google.com/nope"))
+
+    def test_empty_link_has_no_identity(self):
+        self.assertIsNone(_lookup_article_identity(self.db_path, ""))
+
+    def test_lookup_finds_the_claimed_row(self):
+        self._claim()
+        row = _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)
+        self.assertEqual(row["resolved_url"], _LEDGER_URL_A)
+        self.assertEqual(row["itype"], "HOMICIDE")
+        self.assertEqual(row["address"], "600 6th St, Austin, TX")
+        self.assertEqual((row["lat"], row["lon"]), (30.26, -97.74))
+        self.assertEqual(row["state"], "claimed")
+        self.assertIsNone(row["incident_id"])
+
+    # -- claim ------------------------------------------------------------
+
+    def test_first_claim_is_reported_as_fresh(self):
+        _row, claimed_now = self._claim()
+        self.assertTrue(claimed_now)
+
+    def test_second_claim_is_not_fresh_and_keeps_the_first_association(self):
+        self._claim()
+        row, claimed_now = self._claim(resolved_url=_LEDGER_URL_B, address="nowhere")
+        self.assertFalse(claimed_now, "the second attempt is not the first")
+        self.assertEqual(row["resolved_url"], _LEDGER_URL_A,
+                         "a later resolver result must not rewrite the identity")
+        self.assertEqual(row["address"], "600 6th St, Austin, TX")
+
+    def test_claim_is_keyed_by_the_rss_link_not_the_resolved_url(self):
+        """Two press releases may legitimately resolve to different URLs."""
+        self._claim()
+        other, claimed_now = self._claim(rss_link="https://news.google.com/rss/articles/OTHER")
+        self.assertTrue(claimed_now, "a different RSS link is a different identity")
+        self.assertEqual(other["rss_link"], "https://news.google.com/rss/articles/OTHER")
+
+    # -- commit / recorded state ------------------------------------------
+
+    def test_a_claim_alone_is_not_a_recorded_outcome(self):
+        self._claim()
+        self.assertFalse(_identity_is_recorded(_lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)))
+
+    def test_commit_records_the_incident(self):
+        self._claim()
+        row = _commit_article_identity(self.db_path, _LEDGER_RSS_LINK, 42)
+        self.assertEqual(row["incident_id"], 42)
+        self.assertEqual(row["state"], "committed")
+        self.assertTrue(_identity_is_recorded(row))
+        self.assertEqual(
+            _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)["incident_id"], 42
+        )
+
+    def test_commit_without_an_incident_still_counts_as_recorded(self):
+        """An orphaned link row is a recorded outcome too, not work to redo."""
+        self._claim()
+        row = _commit_article_identity(self.db_path, _LEDGER_RSS_LINK, None)
+        self.assertIsNone(row["incident_id"])
+        self.assertEqual(row["state"], "committed")
+        self.assertTrue(_identity_is_recorded(row))
+
+    def test_recorded_predicate_is_false_for_no_row(self):
+        self.assertFalse(_identity_is_recorded(None))
+
+    def test_commit_keeps_the_recorded_url_and_values(self):
+        self._claim()
+        row = _commit_article_identity(self.db_path, _LEDGER_RSS_LINK, 7)
+        self.assertEqual(row["resolved_url"], _LEDGER_URL_A)
+        self.assertEqual(row["address"], "600 6th St, Austin, TX")
+
+
+class TestIdentityLedgerMigrationSafety(_SeedSandboxTest):
+    """The ledger is created on the poller's own path, without touching data."""
+
+    def setUp(self):
+        super().setUp()
+        # _make_db is the pre-ledger schema: no apd_article_identity table.
+        self.db_path = _tmp_db()
+        self.addCleanup(lambda: os.path.exists(self.db_path) and os.unlink(self.db_path))
+
+    def _table_names(self) -> set:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+        finally:
+            conn.close()
+
+    def _seed_legacy_rows(self) -> None:
+        """Populate the pre-existing tables as an older deployment would have."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO incidents (ts_start, itype, description, agencies, tgids, "
+                "location, status, article_url) "
+                "VALUES (1.0, 'HOMICIDE', '[APD Press Release] legacy', '[\"APD\"]', "
+                "'[]', '700 W 6th St', 'active', ?)", (_LEDGER_URL_A,))
+            conn.execute(
+                "INSERT INTO incident_articles (incident_id, ts, headline, url, source) "
+                "VALUES (1, 1.0, 'legacy headline', ?, 'apd_pr')", (_LEDGER_URL_A,))
+            conn.execute("INSERT INTO apd_seen (url, ts) VALUES (?, 1.0)",
+                         ("https://news.google.com/rss/articles/LEGACY",))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _snapshot(self) -> dict:
+        """Every row of the pre-existing tables, plus their column lists."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            out = {}
+            for table in ("incidents", "incident_articles", "apd_seen"):
+                rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+                out[table] = (cols, rows)
+            return out
+        finally:
+            conn.close()
+
+    def test_ledger_is_absent_before_and_present_after_ensure_schema(self):
+        self.assertNotIn("apd_article_identity", self._table_names())
+        APDNewsPoller.ensure_schema(self.db_path)
+        self.assertIn("apd_article_identity", self._table_names())
+
+    def test_ensure_schema_creates_no_alter_and_loses_no_row(self):
+        self._seed_legacy_rows()
+        before = self._snapshot()
+        self.assertTrue(before["incidents"][1], "the fixture must have rows to protect")
+        APDNewsPoller.ensure_schema(self.db_path)
+        self.assertEqual(self._snapshot(), before,
+                         "an existing deployment's rows and columns must be untouched")
+
+    def test_ensure_schema_is_idempotent(self):
+        APDNewsPoller.ensure_schema(self.db_path)
+        APDNewsPoller.ensure_schema(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            ddl = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='table' AND name='apd_article_identity'").fetchone()[0]
+            idx = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='index' AND name='idx_apd_article_identity_incident'").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual((ddl, idx), (1, 1))
+
+    def test_a_legacy_database_keeps_working_and_earns_the_ledger(self):
+        """An article processed before the ledger existed is still deduped."""
+        self._seed_legacy_rows()
+        self._write_seed([])
+        poller = APDNewsPoller()
+        rss = _make_rss([{"title": _LEDGER_TITLE, "link": _LEDGER_RSS_LINK,
+                          "pubDate": _PUB_DATE}])
+
+        def _resolve(_su, _t, _gnews_link, _k, _cid):
+            return _LEDGER_URL_A
+
+        with mock.patch("urllib.request.urlopen",
+                        return_value=mock.MagicMock(read=lambda: rss.encode())), \
+             mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
+                        return_value={"address": "600 6th St", "summary": "APD homicide"}), \
+             mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        side_effect=_resolve), \
+             mock.patch("modules.pollers.impl.apd_news.threading.Thread", _SyncThread), \
+             mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert",
+                               new=mock.MagicMock()):
+            poller._poll_apd_press_releases(
+                db_path=self.db_path, talk_base="", talk_user="u", talk_pass="p",
+                talk_rooms={"apd": "a", "incidents": "i"}, google_cse_api_key="",
+                google_cse_id="", pi_fetch_url="", pi_fetch_token="",
+                geocode_fn=lambda addr: None, atak_post_fn=mock.MagicMock(),
+            )
+
+        conn = sqlite3.connect(self.db_path)
+        incidents = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
+        conn.close()
+        self.assertEqual(incidents, 1, "the legacy article must not be inserted twice")
+        self.assertEqual([e["url"] for e in self._read_seed()], [_LEDGER_URL_A])
+        row = _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)
+        self.assertEqual(row["state"], "committed")
+        self.assertEqual(row["incident_id"], 1)
+
+    def test_the_runtime_ddl_matches_the_shipped_schema(self):
+        """schema.sql (the normal schema path) and the poller must agree."""
+        schema = (_ROOT / "schema.sql").read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS apd_article_identity", schema)
+        self.assertIn("idx_apd_article_identity_incident", schema)
+
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.executescript(schema)
+            shipped = [(r[1], r[2], r[3], r[4]) for r in conn.execute(
+                "PRAGMA table_info(apd_article_identity)")]
+        finally:
+            conn.close()
+        self.assertEqual([c[0] for c in shipped], list(_IDENTITY_COLUMNS))
+
+        # And the same shape as a database built by the poller itself.
+        runtime = _tmp_db()
+        self.addCleanup(lambda: os.path.exists(runtime) and os.unlink(runtime))
+        APDNewsPoller.ensure_schema(runtime)
+        conn = sqlite3.connect(runtime)
+        try:
+            built = [(r[1], r[2], r[3], r[4]) for r in conn.execute(
+                "PRAGMA table_info(apd_article_identity)")]
+        finally:
+            conn.close()
+        self.assertEqual(built, shipped)
+
+
+class TestRetryWithADifferentResolvedUrl(_SeedSandboxTest):
+    """A retry whose resolver returns a different URL must not duplicate work.
+
+    Every assertion here is about the *stable* RSS link: the resolved URL is
+    allowed to change between cycles, and none of the side effects may follow
+    it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.db_path = _tmp_db()
+        self.addCleanup(lambda: os.path.exists(self.db_path) and os.unlink(self.db_path))
+        self._write_seed([])
+        self.alerts: list[tuple] = []
+        self.talks: list[str] = []
+
+    def _rss(self, title=_LEDGER_TITLE, link=_LEDGER_RSS_LINK) -> str:
+        return _make_rss([{"title": title, "link": link, "pubDate": _PUB_DATE}])
+
+    def _cycle(self, rss: str, *, resolved_url: str):
+        """Run one press-release cycle resolving every article to *resolved_url*.
+
+        A fresh APDNewsPoller per cycle, so nothing is carried over in instance
+        state — only the database survives, which is the point of the ledger.
+        """
+        def _fake_urlopen(req, timeout=None):
+            return mock.MagicMock(read=lambda: rss.encode())
+
+        def _send_dm(*args, **kwargs):
+            self.alerts.append(args)
+
+        def _post_to_talk(message, room_tokens, *_a, **_kw):
+            self.talks.append(message)
+
+        with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+             mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
+                        return_value={"address": "600 6th St", "summary": "APD homicide"}), \
+             mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        return_value=resolved_url), \
+             mock.patch("modules.pollers.impl.apd_news._post_to_talk",
+                        side_effect=_post_to_talk), \
+             mock.patch("modules.pollers.impl.apd_news.threading.Thread", _SyncThread), \
+             mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=_send_dm):
+            return APDNewsPoller()._poll_apd_press_releases(
+                db_path=self.db_path, talk_base="", talk_user="u", talk_pass="p",
+                talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+                google_cse_api_key="", google_cse_id="", pi_fetch_url="",
+                pi_fetch_token="", geocode_fn=lambda addr: None,
+                atak_post_fn=mock.MagicMock(),
+            )
+
+    def _counts(self) -> tuple:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return (
+                conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0],
+                conn.execute("SELECT COUNT(*) FROM incident_articles").fetchone()[0],
+                conn.execute("SELECT COUNT(*) FROM apd_article_identity").fetchone()[0],
+            )
+        finally:
+            conn.close()
+
+    def _failing_mark_seen(self):
+        """A _mark_seen that fails once, so the article stays unseen."""
+        real = sys.modules["modules.pollers.impl.apd_news"]._mark_seen
+        state = {"calls": 0}
+
+        def _mark_seen(db_path, urls):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return real(db_path, urls)
+
+        return _mark_seen
+
+    # -- the finding ------------------------------------------------------
+
+    def test_changed_resolved_url_on_retry_creates_no_duplicates(self):
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", self._failing_mark_seen()):
+            with self.assertRaises(RuntimeError):
+                self._cycle(rss, resolved_url=_LEDGER_URL_A)
+
+        self.assertEqual(self._counts(), (1, 1, 1))
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(len(self.talks), 1)
+
+        # The retry resolves to a *different* URL — the exact case the old
+        # resolved-URL guard missed.
+        self._cycle(rss, resolved_url=_LEDGER_URL_B)
+
+        self.assertEqual(self._counts(), (1, 1, 1),
+                         "a changed resolved URL must not add an incident, link or identity")
+        self.assertEqual(len(self.alerts), 1, "the DM alert must not be re-sent")
+        self.assertEqual(len(self.talks), 1, "the Talk post must not be repeated")
+        self.assertEqual([e["url"] for e in self._read_seed()], [_LEDGER_URL_A],
+                         "the seed entry stays keyed on the URL the incident recorded")
+        row = _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)
+        self.assertEqual(row["resolved_url"], _LEDGER_URL_A)
+        self.assertEqual(row["state"], "committed")
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(
+                conn.execute("SELECT article_url FROM incidents").fetchall(),
+                [(_LEDGER_URL_A,)])
+        finally:
+            conn.close()
+
+    def test_repeated_retries_with_moving_urls_stay_idempotent(self):
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", self._failing_mark_seen()):
+            with self.assertRaises(RuntimeError):
+                self._cycle(rss, resolved_url=_LEDGER_URL_A)
+        self._cycle(rss, resolved_url=_LEDGER_URL_B)
+        self._cycle(rss, resolved_url="https://www.kxan.com/news/local/ledger-1-third-try")
+
+        self.assertEqual(self._counts(), (1, 1, 1))
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(len(self.talks), 1)
+        self.assertEqual([e["url"] for e in self._read_seed()], [_LEDGER_URL_A])
+
+    def test_interrupted_seed_append_completes_with_the_recorded_url(self):
+        """A changed resolver must not fork the seed entry either."""
+        rss = self._rss()
+        os.unlink(self.seed_path)
+        with self.assertRaises(HomicideSeedError):
+            self._cycle(rss, resolved_url=_LEDGER_URL_A)
+        self.assertEqual(self._counts()[:2], (1, 1))
+
+        self._write_seed([])
+        self._cycle(rss, resolved_url=_LEDGER_URL_B)
+
+        self.assertEqual([e["url"] for e in self._read_seed()], [_LEDGER_URL_A],
+                         "the interrupted append completes under the recorded URL")
+        self.assertEqual(self._counts(), (1, 1, 1))
+
+    def test_recorded_article_needs_no_resolver_at_all(self):
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", self._failing_mark_seen()):
+            with self.assertRaises(RuntimeError):
+                self._cycle(rss, resolved_url=_LEDGER_URL_A)
+
+        # Any network attempt on a fully recorded article is a bug: the ledger
+        # is keyed by the stable RSS link, which the feed already gave us.
+        with mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        side_effect=AssertionError("resolver must not be called")), \
+             mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
+                        side_effect=AssertionError("article must not be fetched")):
+            self._cycle(rss, resolved_url=_LEDGER_URL_B)
+
+        self.assertEqual(self._counts(), (1, 1, 1))
+
+    def test_crash_between_the_link_insert_and_the_ledger_commit_is_adopted(self):
+        """The one remaining window: inserted, but the outcome not yet committed."""
+        rss = self._rss()
+        real_commit = sys.modules["modules.pollers.impl.apd_news"]._commit_article_identity
+        state = {"calls": 0}
+
+        def _commit(db_path, rss_link, incident_id):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return real_commit(db_path, rss_link, incident_id)
+
+        with mock.patch("modules.pollers.impl.apd_news._commit_article_identity",
+                        side_effect=_commit):
+            with self.assertRaises(APDNewsArticleError):
+                self._cycle(rss, resolved_url=_LEDGER_URL_A)
+
+        self.assertEqual(self._counts(), (1, 1, 1), "inserted, claimed, not yet committed")
+        self.assertFalse(_identity_is_recorded(
+            _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)))
+        self.assertEqual(self.alerts, [])
+
+        # The retry resolves elsewhere; the claimed row must be adopted.
+        self._cycle(rss, resolved_url=_LEDGER_URL_B)
+
+        self.assertEqual(self._counts(), (1, 1, 1),
+                         "the interrupted insert must be adopted, not repeated")
+        row = _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)
+        self.assertEqual(row["state"], "committed")
+        self.assertEqual(row["incident_id"], 1)
+        self.assertEqual(row["resolved_url"], _LEDGER_URL_A)
+        self.assertEqual([e["url"] for e in self._read_seed()], [_LEDGER_URL_A])
+        self.assertEqual(self.alerts, [], "an adopted insert never re-alerts")
+
+    def test_pre_insert_failure_leaves_a_claim_but_no_outcome(self):
+        """write-after-outcome: nothing durable is created before the first effect.
+
+        The claim itself is written before the insert (that is the point of the
+        ledger), but it records no incident, no link and no alert, and the
+        article is *not* in apd_seen — so the next cycle still processes it
+        whole, from the matcher onwards.
+        """
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                        side_effect=RuntimeError("sqlite3.OperationalError: database is locked")):
+            with self.assertRaises(APDNewsArticleError):
+                self._cycle(rss, resolved_url=_LEDGER_URL_A)
+
+        claimed = _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)
+        self.assertFalse(_identity_is_recorded(claimed),
+                         "a claim is not an outcome")
+        self.assertEqual(self._counts()[:2], (0, 0), "no incident, no link")
+        self.assertEqual(self.alerts, [])
+        self.assertEqual(self._read_seed(), [])
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(conn.execute("SELECT url FROM apd_seen").fetchall(), [],
+                             "a failed article must stay unseen")
+        finally:
+            conn.close()
+
+        self._cycle(rss, resolved_url=_LEDGER_URL_A)
+
+        self.assertEqual(self._counts(), (1, 1, 1))
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual([e["url"] for e in self._read_seed()], [_LEDGER_URL_A])
+
+    def test_claimed_but_uninserted_article_is_finished_with_the_recorded_url(self):
+        """A claim that never reached its insert is completed, not re-resolved.
+
+        The failure is the matcher — after the claim, before any insert.
+        """
+        rss = self._rss()
+        state = {"calls": 0}
+        real_match = sys.modules["modules.pollers.impl.apd_news"]._match_article_to_incident
+
+        def _match(*args, **kwargs):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return real_match(*args, **kwargs)
+
+        with mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                        side_effect=_match):
+            with self.assertRaises(APDNewsArticleError):
+                self._cycle(rss, resolved_url=_LEDGER_URL_A)
+
+        claimed = _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)
+        self.assertFalse(_identity_is_recorded(claimed))
+        self.assertEqual(claimed["resolved_url"], _LEDGER_URL_A)
+        self.assertEqual(self._counts()[:2], (0, 0))
+
+        self._cycle(rss, resolved_url=_LEDGER_URL_B)
+
+        self.assertEqual(self._counts(), (1, 1, 1))
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(
+                conn.execute("SELECT article_url FROM incidents").fetchall(),
+                [(_LEDGER_URL_A,)],
+                "the finished insert must use the URL the claim recorded")
+        finally:
+            conn.close()
+
+    def test_insert_without_a_link_row_is_adopted_not_repeated(self):
+        """A recorded incident is a recorded outcome, link row or not.
+
+        Documents the deliberate limit of the recovery path (unchanged from
+        ``_prior_article_work``): a crash between the incident insert and the
+        link insert is adopted, so the incident is never duplicated, but the
+        missing link row is not backfilled.
+        """
+        rss = self._rss()
+        state = {"calls": 0}
+        real_store = sys.modules["modules.pollers.impl.apd_news"]._store_article_link
+
+        def _store(*args, **kwargs):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return real_store(*args, **kwargs)
+
+        with mock.patch("modules.pollers.impl.apd_news._store_article_link",
+                        side_effect=_store):
+            with self.assertRaises(APDNewsArticleError):
+                self._cycle(rss, resolved_url=_LEDGER_URL_A)
+
+        self.assertEqual(self._counts()[:2], (1, 0))
+
+        self._cycle(rss, resolved_url=_LEDGER_URL_B)
+
+        self.assertEqual(self._counts()[0], 1, "the inserted incident must not be repeated")
+        self.assertTrue(_identity_is_recorded(
+            _lookup_article_identity(self.db_path, _LEDGER_RSS_LINK)))
+
+    def test_the_ledger_survives_a_restart(self):
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", self._failing_mark_seen()):
+            with self.assertRaises(RuntimeError):
+                self._cycle(rss, resolved_url=_LEDGER_URL_A)
+        # A brand new poller object == a restarted process.
+        self._cycle(rss, resolved_url=_LEDGER_URL_B)
+        self.assertEqual(self._counts(), (1, 1, 1))
+        self.assertEqual(len(self.alerts), 1)
+
+
+class TestRecordedSeedResume(_SeedSandboxTest):
+    """_resume_recorded_seed_append finishes one entry, from the ledger alone."""
+
+    def setUp(self):
+        super().setUp()
+        self._write_seed([])
+        self.db_path = _tmp_db()
+        self.addCleanup(lambda: os.path.exists(self.db_path) and os.unlink(self.db_path))
+        APDNewsPoller.ensure_schema(self.db_path)
+        self.article = {"title": f"{_LEDGER_TITLE} - KXAN", "link": _LEDGER_RSS_LINK,
+                        "pub_ts": 1_800_000_000.0}
+
+    def _record(self, **overrides):
+        kwargs = {
+            "rss_link": _LEDGER_RSS_LINK,
+            "resolved_url": _LEDGER_URL_A,
+            "source": "apd_pr",
+            "itype": "HOMICIDE",
+            "address": "600 6th St, Austin, TX",
+            "lat": 30.26,
+            "lon": -97.74,
+            "ts": self.article["pub_ts"],
+        }
+        kwargs.update(overrides)
+        _claim_article_identity(self.db_path, **kwargs)
+        return _commit_article_identity(self.db_path, _LEDGER_RSS_LINK, 11)
+
+    def test_homicide_append_uses_the_recorded_values(self):
+        row = self._record()
+        _resume_recorded_seed_append(row, self.article)
+        entry = self._read_seed()[0]
+        self.assertEqual(entry["url"], _LEDGER_URL_A)
+        self.assertEqual(entry["address"], "600 6th St, Austin, TX")
+        self.assertEqual((entry["lat"], entry["lon"]), (30.26, -97.74))
+        self.assertEqual(entry["n"], 1)
+        self.assertEqual(entry["summary"], _LEDGER_TITLE)
+
+    def test_repeating_the_resume_adds_one_entry(self):
+        row = self._record()
+        _resume_recorded_seed_append(row, self.article)
+        _resume_recorded_seed_append(row, self.article)
+        self.assertEqual(len(self._read_seed()), 1)
+
+    def test_a_non_homicide_article_writes_nothing(self):
+        row = self._record(itype="SHOOTING")
+        _resume_recorded_seed_append(row, self.article)
+        self.assertEqual(self._read_seed(), [])
+
+    def test_a_record_without_a_url_writes_nothing(self):
+        row = self._record(resolved_url="")
+        _resume_recorded_seed_append(row, self.article)
+        self.assertEqual(self._read_seed(), [])
 
 
 # ===========================================================================

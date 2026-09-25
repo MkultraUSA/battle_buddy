@@ -7,9 +7,13 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import types
 import unittest
 import unittest.mock as mock
+from contextlib import contextmanager
 from pathlib import Path
+
+import modules as _modules_package
 
 _HERE = Path(__file__).parent
 _ROOT = _HERE.parent
@@ -68,6 +72,30 @@ from modules.pollers.impl.traffic_open_data import (  # noqa: E402
     TrafficOpenDataPoller,
     _traffic_issue_to_itype,
 )
+
+
+@contextmanager
+def _runtime_modules(incident_engine=None):
+    if incident_engine is None:
+        incident_engine = types.ModuleType("modules.incident_engine")
+        incident_engine._active_incidents = {}
+        incident_engine._atak_clear_marker = mock.Mock()
+        incident_engine._atak_post_marker = mock.Mock()
+        incident_engine._haversine_km = lambda *a, **kw: 999
+        incident_engine._incident_lock = threading.Lock()
+    config = types.ModuleType("modules.config")
+    config.TALK_BASE = "http://talk.test"
+    config.TALK_USER = "user"
+    config.TALK_PASS = "pass"
+    config.TALK_ROOMS = {"incidents": "room_incidents"}
+    runtime = {
+        "modules.config": config,
+        "modules.incident_engine": incident_engine,
+    }
+    with mock.patch.dict(sys.modules, runtime), \
+         mock.patch.object(_modules_package, "config", config, create=True), \
+         mock.patch.object(_modules_package, "incident_engine", incident_engine, create=True):
+        yield
 
 
 class TrafficOpenDataPollerTests(unittest.TestCase):
@@ -189,6 +217,21 @@ class TrafficOpenDataPollerTests(unittest.TestCase):
 
         self.assertIsNone(matched_id)
 
+    @mock.patch.object(
+        traffic_open_data.urllib.request,
+        "urlopen",
+        side_effect=RuntimeError("network down"),
+    )
+    def test_run_propagates_fetch_error_after_logging(self, mock_urlopen):
+        poller = TrafficOpenDataPoller()
+
+        with _runtime_modules(), \
+             self.assertLogs("TrafficOpenDataPoller", level="WARNING") as logs:
+            with self.assertRaisesRegex(RuntimeError, "network down"):
+                poller.run()
+
+        self.assertIn("[traffic] fetch error: network down", logs.output[0])
+
     def test_run_clears_stale_marker_and_processes_payload(self):
         poller = TrafficOpenDataPoller()
         poller._active_ids["old"] = {"issue_reported": "Crash", "address": "Old", "atak_marker_id": -123}
@@ -201,10 +244,14 @@ class TrafficOpenDataPollerTests(unittest.TestCase):
         clear_marker = mock.Mock()
         post_marker = mock.Mock()
         incident_engine = sys.modules["modules.incident_engine"]
+        incident_engine._active_incidents = {}
+        incident_engine._incident_lock = threading.Lock()
+        incident_engine._haversine_km = lambda *a, **kw: 999
         incident_engine._atak_clear_marker = clear_marker
         incident_engine._atak_post_marker = post_marker
 
-        with mock.patch.object(traffic_open_data.urllib.request, "urlopen", return_value=response), \
+        with _runtime_modules(incident_engine), \
+             mock.patch.object(traffic_open_data.urllib.request, "urlopen", return_value=response), \
              mock.patch.object(traffic_open_data.threading.Thread, "start", lambda self: self._target(*self._args)):
             poller.run()
 

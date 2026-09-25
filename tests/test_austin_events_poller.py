@@ -55,11 +55,14 @@ austin_events = _load_from_file(
     "modules/pollers/impl/austin_events.py",
 )
 
-from modules.pollers.base import BasePoller  # noqa: E402
+from modules.pollers.base import BasePoller, get_poller_health  # noqa: E402
 from modules.pollers.impl.austin_events import (  # noqa: E402
     AUSTIN_EVENTS_POLL,
+    AustinEventsLoadError,
     AustinEventsPoller,
     _format_events,
+    _load_events,
+    _load_state,
     _upcoming_events,
 )
 
@@ -166,6 +169,164 @@ class AustinEventsPollerTests(unittest.TestCase):
         AustinEventsPoller._post_to_talk("summary", "http://talk.test", "user", "pass", {})
 
         mock_urlopen.assert_not_called()
+
+
+class AustinEventsLoadFailureTests(unittest.TestCase):
+    """A load failure must reach BasePoller instead of being reported as success."""
+
+    def test_load_events_raises_when_file_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing = str(Path(tmpdir) / "nope.json")
+            with self.assertRaises(AustinEventsLoadError) as ctx:
+                _load_events(missing)
+        self.assertIn(missing, str(ctx.exception))
+
+    def test_load_events_raises_when_file_is_corrupt(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events_path = Path(tmpdir) / "events.json"
+            events_path.write_text('{"events": [', encoding="utf-8")
+            with self.assertRaises(AustinEventsLoadError) as ctx:
+                _load_events(str(events_path))
+        self.assertIn(str(events_path), str(ctx.exception))
+
+    def test_load_events_raises_when_file_is_unreadable(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # A directory is readable as a path but not as a file.
+            unreadable = str(Path(tmpdir) / "events.json")
+            Path(unreadable).mkdir()
+            with self.assertRaises(AustinEventsLoadError):
+                _load_events(unreadable)
+
+    def test_load_events_raises_when_document_is_not_an_object(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events_path = Path(tmpdir) / "events.json"
+            events_path.write_text('["not", "an", "object"]', encoding="utf-8")
+            with self.assertRaises(AustinEventsLoadError):
+                _load_events(str(events_path))
+
+    def test_load_events_raises_when_events_is_not_a_list(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events_path = Path(tmpdir) / "events.json"
+            events_path.write_text(json.dumps({"events": {"id": "one"}}), encoding="utf-8")
+            with self.assertRaises(AustinEventsLoadError):
+                _load_events(str(events_path))
+
+    def test_load_events_preserves_warning_logging(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing = str(Path(tmpdir) / "nope.json")
+            with self.assertLogs(austin_events.logger, level="WARNING") as logs:
+                with self.assertRaises(AustinEventsLoadError):
+                    _load_events(missing)
+        self.assertTrue(
+            any("load failed" in message for message in logs.output),
+            logs.output,
+        )
+
+    def test_load_events_returns_document_for_valid_file(self):
+        doc = {"events": [{"id": "one", "name": "One", "start": "2026-05-04"}]}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events_path = Path(tmpdir) / "events.json"
+            events_path.write_text(json.dumps(doc), encoding="utf-8")
+            self.assertEqual(_load_events(str(events_path)), doc)
+
+    def test_load_events_accepts_document_without_events_key(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events_path = Path(tmpdir) / "events.json"
+            events_path.write_text(json.dumps({"generated": "2026-05-04"}), encoding="utf-8")
+            self.assertEqual(_load_events(str(events_path)), {"generated": "2026-05-04"})
+
+    @mock.patch.object(austin_events.urllib.request, "urlopen")
+    def test_run_propagates_load_failure_without_posting(self, mock_urlopen):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "state.json"
+            poller = AustinEventsPoller(str(Path(tmpdir) / "missing.json"), str(state_path))
+            with self.assertRaises(AustinEventsLoadError):
+                poller.run()
+            self.assertFalse(state_path.exists())
+        mock_urlopen.assert_not_called()
+
+    @mock.patch.object(austin_events.urllib.request, "urlopen")
+    def test_load_failure_marks_cycle_failed_for_base_poller(self, mock_urlopen):
+        """End-to-end: a failing run() drives BasePoller's failure counter."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            poller = AustinEventsPoller(
+                str(Path(tmpdir) / "missing.json"),
+                str(Path(tmpdir) / "state.json"),
+            )
+            real_run = poller.run
+
+            def _fail_once():
+                poller.stop_event.set()  # stop after this single cycle
+                real_run()
+
+            poller.run = _fail_once
+            poller._loop()
+
+        mock_urlopen.assert_not_called()
+        self.assertEqual(poller.consecutive_failures, 1)
+        self.assertEqual(poller.last_success_ts, 0.0)
+        record = next(
+            item
+            for item in get_poller_health()
+            if item["name"] == "austin-events"
+            and item["consecutive_failures"] == 1
+        )
+        self.assertEqual(record["last_success_age_seconds"], -1.0)
+
+    @mock.patch.object(austin_events.urllib.request, "urlopen")
+    def test_valid_empty_events_file_is_a_successful_noop_cycle(self, mock_urlopen):
+        """A readable file with zero events is not a failure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events_path = Path(tmpdir) / "events.json"
+            state_path = Path(tmpdir) / "state.json"
+            events_path.write_text(json.dumps({"events": []}), encoding="utf-8")
+            poller = AustinEventsPoller(str(events_path), str(state_path))
+            real_run = poller.run
+
+            def _run_once():
+                try:
+                    real_run()
+                finally:
+                    poller.stop_event.set()  # stop after this single cycle
+
+            poller.run = _run_once
+            poller._loop()
+
+            self.assertFalse(state_path.exists())
+
+        mock_urlopen.assert_not_called()
+        self.assertEqual(poller.consecutive_failures, 0)
+        self.assertGreater(poller.last_success_ts, 0.0)
+
+    @mock.patch.object(austin_events.urllib.request, "urlopen")
+    def test_recovery_after_load_failure_records_success(self, mock_urlopen):
+        """A restored events file must clear the failure counter on the next cycle."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            events_path = Path(tmpdir) / "events.json"
+            state_path = Path(tmpdir) / "state.json"
+            poller = AustinEventsPoller(str(events_path), str(state_path))
+            poller._record_failure()
+            real_run = poller.run
+
+            def _restore_and_run_once():
+                events_path.write_text(json.dumps({"events": []}), encoding="utf-8")
+                try:
+                    real_run()
+                finally:
+                    poller.stop_event.set()
+
+            poller.run = _restore_and_run_once
+            poller._loop()
+
+        mock_urlopen.assert_not_called()
+        self.assertEqual(poller.consecutive_failures, 0)
+        self.assertGreater(poller.last_success_ts, 0.0)
+
+    def test_load_state_still_defaults_on_missing_file(self):
+        """The state file is a cache: absent on first run, so it must not fail."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = _load_state(str(Path(tmpdir) / "no-state.json"))
+        self.assertEqual(state, {"last_post_date": None, "last_event_ids": []})
 
 
 if __name__ == "__main__":

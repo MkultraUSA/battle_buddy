@@ -7,6 +7,7 @@ huggingface_hub==1.8.0
 networkx==3.6.1
 numpy==2.4.4
 openai-whisper==20250625
+prometheus-client==0.25.0
 pytz
 requests==2.33.1
 tokenizers==0.22.2

@@ -178,6 +178,20 @@ class ATXFloodsPollerTests(unittest.TestCase):
 
         mock_urlopen.assert_not_called()
 
+    @mock.patch.object(
+        atxfloods.urllib.request,
+        "urlopen",
+        side_effect=RuntimeError("network down"),
+    )
+    def test_run_propagates_fetch_error_after_logging(self, mock_urlopen):
+        poller = ATXFloodsPoller()
+
+        with self.assertLogs("ATXFloodsPoller", level="WARNING") as logs:
+            with self.assertRaisesRegex(RuntimeError, "network down"):
+                poller.run()
+
+        self.assertIn("[atxfloods] fetch error: network down", logs.output[0])
+
     def test_run_fetches_payload_and_processes_crossings(self):
         poller = ATXFloodsPoller()
         payload = {"attributes": [self._crossing("open")]}

@@ -87,6 +87,13 @@ class APDCADPoller(BasePoller):
         self._db_ready = False
 
     def run(self) -> None:
+        """Fetch CAD rows, then match and harvest against them.
+
+        A fetch failure propagates out of run() so BasePoller records the
+        failure and backs off. match_and_harvest() is deliberately not
+        reached for that cycle: matching stale rows against a feed we could
+        not read would re-harvest TGID hints from already-matched data.
+        """
         if not self._db_ready:
             self.init_db()
             self._db_ready = True
@@ -146,7 +153,7 @@ class APDCADPoller(BasePoller):
                 records = json.loads(resp.read())
         except Exception as exc:
             logger.warning("[cad] fetch error: %s", exc)
-            return 0
+            raise
 
         now = time.time()
         conn = sqlite3.connect(self.db_path)

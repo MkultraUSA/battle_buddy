@@ -55,7 +55,7 @@ class ATXFloodsPoller(BasePoller):
                 payload = json.loads(resp.read())
         except Exception as exc:
             logger.warning("[atxfloods] fetch error: %s", exc)
-            return
+            raise
 
         crossings = payload.get("attributes", []) if isinstance(payload, dict) else []
         if not crossings:

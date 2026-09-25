@@ -60,6 +60,11 @@ function render() {
 
 async function load() {
   const r = await fetch('/api/homicides');
+  if (!r.ok) {
+    // Seed unavailable (503): show the fault instead of a fake total of 0.
+    document.getElementById('total').textContent = 'unavailable';
+    return;
+  }
   const d = await r.json();
   // Verified APD press releases ONLY. Unverified scanner detections stay
   // in the API for internal review but must never appear on a page

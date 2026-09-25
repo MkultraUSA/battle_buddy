@@ -24,6 +24,42 @@ TIPS_UPLOAD_DIR = os.environ.get("TIPS_UPLOAD_DIR", os.path.join(BATTLE_BUDDY_HO
 TGID_TSV = os.environ.get("TGID_TSV", os.path.join(BATTLE_BUDDY_HOME, "gatrrs-tags.tsv"))
 PI1_OP25_URL = os.environ.get("PI1_OP25_URL", "http://radio-node.example.local:8080/")
 
+# Curated area-wide homicide seed. Single source of truth for every seed
+# reader in the codebase (modules/homicide_count.py, modules/public.py,
+# audio_receiver.py, modules/pollers/impl/apd_news.py). The path is derived
+# from the data dir (not hardcoded to /opt/battlebuddy) so a sandbox/review
+# clone with BATTLE_BUDDY_HOME redirected never reads or writes the production
+# seed. The production default is unchanged: with no env override this is
+# /opt/battlebuddy/homicides_2026.json.
+HOMICIDE_SEED_FILENAME = "homicides_2026.json"
+
+
+def resolve_homicide_seed_path() -> str:
+    """Resolve the curated homicide seed path from the environment (call-time).
+
+    Precedence:
+    1. ``HOMICIDE_SEED_PATH`` — explicit per-file override.
+    2. ``BATTLE_BUDDY_DATA_DIR`` — data directory.
+    3. ``BATTLE_BUDDY_HOME`` — deployment root.
+    4. ``/opt/battlebuddy`` — production default.
+
+    An empty (or whitespace-only) value is treated as *unset* at every level,
+    matching the documented behaviour that an empty ``HOMICIDE_SEED_PATH``
+    falls back to the data dir. Read from the environment on every call rather
+    than at import time so a redirected sandbox picks the change up without a
+    module reload, and so the production default is preserved when nothing is
+    set.
+    """
+    override = (os.environ.get("HOMICIDE_SEED_PATH") or "").strip()
+    if override:
+        return override
+    home = (os.environ.get("BATTLE_BUDDY_HOME") or "").strip() or "/opt/battlebuddy"
+    data_dir = (os.environ.get("BATTLE_BUDDY_DATA_DIR") or "").strip() or home
+    return os.path.join(data_dir, HOMICIDE_SEED_FILENAME)
+
+
+HOMICIDE_SEED_PATH = resolve_homicide_seed_path()
+
 # ---------------------------------------------------------------------------
 # HTTP / TLS behavior
 # ---------------------------------------------------------------------------

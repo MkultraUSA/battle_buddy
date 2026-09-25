@@ -215,6 +215,109 @@ class APDCADPollerTests(unittest.TestCase):
 
         self.assertEqual((matched, harvested), (0, 0))
 
+    @mock.patch.object(apd_cad.urllib.request, "urlopen")
+    def test_fetch_and_store_propagates_fetch_error(self, mock_urlopen):
+        """A fetch failure must raise so BasePoller records the failed cycle."""
+        mock_urlopen.side_effect = Exception("upstream 503")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            poller = APDCADPoller(str(Path(tmpdir) / "cad.db"))
+            poller.init_db()
+            with self.assertRaises(Exception) as ctx:
+                poller.fetch_and_store()
+        self.assertIn("upstream 503", str(ctx.exception))
+
+    @mock.patch.object(apd_cad.urllib.request, "urlopen")
+    def test_run_skips_match_and_harvest_when_fetch_fails(self, mock_urlopen):
+        """Downstream matching must not run on a cycle whose fetch failed."""
+        mock_urlopen.side_effect = Exception("upstream 503")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            poller = APDCADPoller(str(Path(tmpdir) / "cad.db"))
+            match = mock.MagicMock()
+            poller.match_and_harvest = match
+
+            with self.assertRaises(Exception):
+                poller.run()
+
+            match.assert_not_called()
+
+    @mock.patch.object(apd_cad.urllib.request, "urlopen")
+    def test_run_matches_and_harvests_when_fetch_succeeds(self, mock_urlopen):
+        """A healthy cycle must still fetch, then match — the fix is not a blanket skip."""
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps([
+            {
+                "incident_number": "CAD-OK",
+                "response_datetime": "2026-05-04T12:30:00.000",
+                "call_closed_datetime": "2026-05-04T12:45:00.000",
+                "sector": "GE",
+                "initial_problem_category": "Shoot/Stab",
+            },
+        ]).encode()
+        response.__exit__.return_value = None
+        mock_urlopen.return_value = response
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            poller = APDCADPoller(str(Path(tmpdir) / "cad.db"))
+            match = mock.MagicMock(return_value=(0, 0))
+            poller.match_and_harvest = match
+
+            poller.run()
+
+            match.assert_called_once()
+            conn = sqlite3.connect(str(Path(tmpdir) / "cad.db"))
+            stored = conn.execute(
+                "SELECT incident_number FROM apd_cad WHERE incident_number='CAD-OK'"
+            ).fetchall()
+            conn.close()
+
+        self.assertEqual(stored, [("CAD-OK",)])
+
+    def test_run_fetch_failure_marks_cycle_failed_for_base_poller(self):
+        """End-to-end: a failing run() drives BasePoller's failure counter."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            poller = APDCADPoller(str(Path(tmpdir) / "cad.db"))
+            poller.init_db()
+            poller._db_ready = True
+
+            def _fail_once():
+                poller.stop_event.set()  # stop after this single cycle
+                poller.fetch_and_store()
+
+            poller.run = _fail_once
+            with mock.patch.object(
+                apd_cad.urllib.request, "urlopen", side_effect=Exception("upstream 503"),
+            ):
+                poller._loop()
+
+        self.assertEqual(poller.consecutive_failures, 1)
+        self.assertEqual(poller.last_success_ts, 0.0)
+
+    def test_init_db_is_idempotent_across_failed_cycles(self):
+        """A failed cycle must still leave the schema ready for the next run()."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "cad.db")
+            poller = APDCADPoller(db_path)
+            poller.init_db()
+            poller._db_ready = True
+
+            with mock.patch.object(
+                apd_cad.urllib.request, "urlopen", side_effect=Exception("upstream 503"),
+            ):
+                with self.assertRaises(Exception):
+                    poller.run()
+
+            poller.init_db()  # second cycle
+            conn = sqlite3.connect(db_path)
+            tables = {
+                row[0] for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            conn.close()
+
+        self.assertIn("apd_cad", tables)
+        self.assertIn("tgid_sector_hints", tables)
+
 
 if __name__ == "__main__":
     unittest.main()

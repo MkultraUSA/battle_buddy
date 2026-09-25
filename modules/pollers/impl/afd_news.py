@@ -119,7 +119,7 @@ class AFDOpenDataPoller(BasePoller):
                 incidents = json.loads(resp.read())
         except Exception as exc:
             logger.warning("[afd] fetch error: %s", exc)
-            return
+            raise
 
         # ------------------------------------------------------------------
         # Reconcile with current active set
