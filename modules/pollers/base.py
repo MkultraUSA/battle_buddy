@@ -31,13 +31,15 @@ class BasePoller(abc.ABC):
 
     def _loop(self) -> None:
         consecutive_failures = 0
+        backoff_delay = float(self.interval)
         if self.stop_event.is_set():
             return
         while not self.stop_event.is_set():
             try:
                 self.run()
                 consecutive_failures = 0
-                delay = float(self.interval)
+                backoff_delay = float(self.interval)
+                delay = backoff_delay
             except Exception as e:
                 consecutive_failures += 1
                 # Exponential backoff on repeated failures so a down
@@ -46,10 +48,8 @@ class BasePoller(abc.ABC):
                 # small-interval pollers back off, large-interval pollers
                 # never retry faster than their normal cadence.
                 cap = max(float(self.interval), 3600.0)
-                delay = min(
-                    float(self.interval) * (2 ** (consecutive_failures - 1)),
-                    cap,
-                )
+                delay = backoff_delay
+                backoff_delay = min(backoff_delay * 2.0, cap)
                 print(
                     "Poller error: "
                     + str(e)
