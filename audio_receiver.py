@@ -3123,52 +3123,24 @@ def api_premium_homicides_summary():
     sess = _get_session(request)
     if not sess or not sess.get("is_premium"):
         return jsonify({"error": "premium required"}), 403
-    import os
-    seed_count = 0
-    seed_path  = "/opt/battlebuddy/homicides_2026.json"
-    if os.path.exists(seed_path):
-        try:
-            import json as _json
-            seed_data = _json.load(open(seed_path))
-            seed_count = sum(int(e.get("count", 1)) for e in seed_data)
-        except Exception:
-            pass
-    conn = sqlite3.connect(DB_PATH, timeout=5.0)
-    rows = conn.execute(
-        """SELECT ts_start, location FROM incidents
-           WHERE itype = 'HOMICIDE'
-             AND lat IS NOT NULL AND lon IS NOT NULL
-             AND ts_start > strftime('%s','2026-01-01')
-             AND is_test = 0
-           ORDER BY ts_start DESC"""
-    ).fetchall()
-    conn.close()
-    live_count = len(rows)
-    # Derive "last" — prefer live geocoded entry, fall back to seed file
-    last = None
-    if rows:
-        import datetime as _dt
-        last = {
-            "date":     _dt.datetime.fromtimestamp(rows[0][0]).strftime("%b %d"),
-            "location": rows[0][1] or "",
-        }
-    elif seed_count:
-        try:
-            import json as _json2
-            seed_data = sorted(_json2.load(open(seed_path)), key=lambda x: x.get("date",""))
-            newest = seed_data[-1]
-            from datetime import datetime as _dt2
-            last = {
-                "date":     _dt2.strptime(newest["date"], "%Y-%m-%d").strftime("%b %d"),
-                "location": newest.get("address", ""),
-            }
-        except Exception:
-            pass
-    return jsonify({
-        "ytd":   seed_count + live_count,
-        "year":  2026,
-        "last":  last,
-    })
+    # Same resolved seed as /api/homicides: modules.config owns the
+    # HOMICIDE_SEED_PATH / BATTLE_BUDDY_DATA_DIR precedence, so this route can
+    # never read a different (e.g. production) seed than the public map.
+    from modules.homicide_count import HomicideSeedUnavailable, premium_homicide_summary
+    try:
+        summary = premium_homicide_summary(DB_PATH)
+    except HomicideSeedUnavailable as exc:
+        # A missing/corrupt curated seed is a deployment fault, not a zero
+        # homicide year — answer explicitly instead of under-reporting.
+        print(f"[premium] homicide seed unavailable: {exc}", flush=True)
+        return jsonify({
+            "error":  "homicide seed unavailable",
+            "detail": str(exc),
+            "ytd":    None,
+            "year":   2026,
+            "last":   None,
+        }), 503
+    return jsonify(summary)
 
 
 @app.route("/api/premium/atak/status")

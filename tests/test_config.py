@@ -82,3 +82,36 @@ def test_homicide_seed_path_explicit_override_wins(monkeypatch):
     config = _fresh_config_module()
 
     assert config.HOMICIDE_SEED_PATH == "/tmp/battlebuddy-test/seed.json"
+
+
+def test_homicide_seed_path_empty_override_falls_back_to_data_dir(monkeypatch):
+    """An empty HOMICIDE_SEED_PATH is unset, not a path of ''."""
+    monkeypatch.setenv("BATTLE_BUDDY_HOME", "/tmp/battlebuddy-test")
+    monkeypatch.setenv("BATTLE_BUDDY_DATA_DIR", "/tmp/battlebuddy-test/data")
+    monkeypatch.setenv("HOMICIDE_SEED_PATH", "")
+
+    config = _fresh_config_module()
+
+    assert config.HOMICIDE_SEED_PATH == "/tmp/battlebuddy-test/data/homicides_2026.json"
+
+
+def test_homicide_seed_path_empty_home_falls_back_to_production(monkeypatch):
+    """An empty BATTLE_BUDDY_HOME must not resolve the seed to a bare filename."""
+    monkeypatch.delenv("BATTLE_BUDDY_DATA_DIR", raising=False)
+    monkeypatch.setenv("BATTLE_BUDDY_HOME", "")
+    monkeypatch.delenv("HOMICIDE_SEED_PATH", raising=False)
+
+    config = _fresh_config_module()
+
+    assert config.HOMICIDE_SEED_PATH == "/opt/battlebuddy/homicides_2026.json"
+
+
+def test_homicide_seed_path_resolver_is_call_time(monkeypatch):
+    """The resolver reads the environment on every call, not at import time."""
+    monkeypatch.setenv("BATTLE_BUDDY_HOME", "/tmp/battlebuddy-test")
+
+    config = _fresh_config_module()
+    assert config.resolve_homicide_seed_path() == "/tmp/battlebuddy-test/homicides_2026.json"
+
+    monkeypatch.setenv("BATTLE_BUDDY_HOME", "/tmp/battlebuddy-other")
+    assert config.resolve_homicide_seed_path() == "/tmp/battlebuddy-other/homicides_2026.json"

@@ -41,6 +41,15 @@ A URL is considered valid when::
 Any entry that fails this check is silently excluded from the canonical count
 but is preserved in the raw ``homicides`` / ``live`` arrays so the frontend
 can display a "source missing" indicator if desired.
+
+Seed path contract
+------------------
+The seed location is never hardcoded here. :func:`resolve_seed_path` defers to
+``modules.config.resolve_homicide_seed_path`` (the single source of truth for
+``HOMICIDE_SEED_PATH`` / ``BATTLE_BUDDY_DATA_DIR`` / ``BATTLE_BUDDY_HOME``),
+and is resolved at call time so a sandbox clone with ``BATTLE_BUDDY_HOME``
+redirected can never read the production tree. With no env override the
+production default is unchanged: ``/opt/battlebuddy/homicides_2026.json``.
 """
 
 from __future__ import annotations
@@ -57,7 +66,30 @@ from typing import Any
 # Configuration
 # ---------------------------------------------------------------------------
 
-SEED_PATH = "/opt/battlebuddy/homicides_2026.json"
+
+class HomicideSeedUnavailable(RuntimeError):
+    """Raised when the curated homicide seed cannot be read.
+
+    The seed is the authoritative area-wide homicide dataset, so a missing,
+    corrupt, or unwritable seed is a deployment fault. The canonical read
+    path (:func:`load_seed_strict`) raises this instead of reporting an empty
+    seed, which would silently publish a total of zero confirmed homicides.
+    """
+
+
+def resolve_seed_path(path: str | None = None) -> str:
+    """Return the homicide seed path to use.
+
+    An explicit *path* (as passed by tests and one-off callers) wins; otherwise
+    the shared environment/data-dir precedence from ``modules.config`` is
+    applied. The import is deferred so this module stays importable before
+    application config is initialised.
+    """
+    if path:
+        return path
+    from modules.config import resolve_homicide_seed_path  # noqa: PLC0415
+
+    return resolve_homicide_seed_path()
 
 
 # ---------------------------------------------------------------------------
@@ -89,8 +121,15 @@ def _normalise_url(url: str) -> str:
 # Seed loader
 # ---------------------------------------------------------------------------
 
-def load_seed(path: str = SEED_PATH) -> list[dict]:
-    """Load the static seed JSON, returning an empty list on any error."""
+def load_seed(path: str | None = None) -> list[dict]:
+    """Load the static seed JSON, returning an empty list on any error.
+
+    Tolerant variant, kept for callers that genuinely want "no curated
+    history" semantics. The canonical read path (the public and premium
+    homicide APIs) must use :func:`load_seed_strict` instead so a missing or
+    corrupt seed fails visibly instead of reporting zero homicides.
+    """
+    path = resolve_seed_path(path)
     if not os.path.exists(path):
         return []
     try:
@@ -101,6 +140,35 @@ def load_seed(path: str = SEED_PATH) -> list[dict]:
         return data
     except Exception:
         return []
+
+
+def load_seed_strict(path: str | None = None) -> list[dict]:
+    """Load the static seed JSON, raising :class:`HomicideSeedUnavailable`.
+
+    Canonical read path for the homicide APIs: a missing, unreadable, or
+    non-list seed raises so the caller can answer with an explicit error
+    instead of a silent total of zero. The resolved path comes from
+    :func:`resolve_seed_path`, so an env/data-dir override redirects the read
+    and a sandbox clone never touches ``/opt/battlebuddy``.
+    """
+    path = resolve_seed_path(path)
+    if not os.path.exists(path):
+        raise HomicideSeedUnavailable(
+            f"homicide seed not found at {path!r}; set HOMICIDE_SEED_PATH or "
+            f"BATTLE_BUDDY_HOME to the deployment data directory"
+        )
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise HomicideSeedUnavailable(
+            f"homicide seed at {path!r} is unreadable: {exc}"
+        ) from exc
+    if not isinstance(data, list):
+        raise HomicideSeedUnavailable(
+            f"homicide seed at {path!r} must be a JSON list, got {type(data).__name__}"
+        )
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +215,70 @@ def fetch_live_homicides(
             "_db_id": r["id"],
         })
     return results
+
+
+def _fetch_recent_homicide_rows(db_path: str, since: str = "2026-01-01") -> list[tuple]:
+    """Return ``(ts_start, location)`` for confirmed homicides, newest first."""
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    rows = conn.execute(
+        """SELECT ts_start, location FROM incidents
+           WHERE itype = 'HOMICIDE'
+             AND lat IS NOT NULL AND lon IS NOT NULL
+             AND ts_start > strftime('%s', ?)
+             AND is_test = 0
+           ORDER BY ts_start DESC""",
+        (since,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def premium_homicide_summary(db_path: str, *, since: str = "2026-01-01") -> dict:
+    """Build the premium homicide YTD summary from the same resolved seed.
+
+    ``ytd`` is the curated seed count plus the live geocoded homicide count,
+    and ``last`` is the most recent homicide (live rows win, the newest seed
+    entry is the fallback).
+
+    Raises :class:`HomicideSeedUnavailable` when the seed cannot be read: the
+    premium dashboard must not be told the area total is zero because of a
+    deployment fault. The route in ``audio_receiver.py`` turns that into an
+    explicit 503 instead of a fabricated number.
+    """
+    seed = load_seed_strict()
+    seed_count = 0
+    for entry in seed:
+        try:
+            seed_count += int(entry.get("count", 1))
+        except (TypeError, ValueError):
+            seed_count += 1
+
+    rows = _fetch_recent_homicide_rows(db_path, since=since)
+
+    last: dict | None = None
+    if rows:
+        ts_start, location = rows[0]
+        last = {
+            "date":     datetime.fromtimestamp(ts_start).strftime("%b %d"),
+            "location": location or "",
+        }
+    elif seed_count:
+        newest = sorted(seed, key=lambda e: e.get("date", ""))[-1]
+        raw_date = str(newest.get("date", ""))
+        try:
+            pretty_date = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%b %d")
+        except ValueError:
+            pretty_date = raw_date
+        last = {
+            "date":     pretty_date,
+            "location": newest.get("address", ""),
+        }
+
+    return {
+        "ytd":   seed_count + len(rows),
+        "year":  2026,
+        "last":  last,
+    }
 
 
 # ---------------------------------------------------------------------------

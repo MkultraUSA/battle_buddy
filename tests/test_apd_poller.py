@@ -177,6 +177,7 @@ from modules.pollers.impl.apd_news import (  # noqa: E402
     APD_NEWS_INTERVAL,
     APD_NEWS_URL,
     TRAFFIC_NEWS_URL,
+    APDNewsArticleError,
     APDNewsFetchError,
     APDNewsPoller,
     HomicideSeedError,
@@ -1877,6 +1878,282 @@ class TestHomicideSeedAggregationIsolation(_SeedSandboxTest):
         self.assertIn("apd-news", names)
         self.assertIn("not found", str(ctx.exception))
         self.assertFalse(os.path.exists(self.seed_path))
+
+
+# ===========================================================================
+# 15. apd_seen write-after-outcome — no silent article loss
+# ===========================================================================
+# Regression coverage for the data-loss bug: the sub-polls used to bulk-insert
+# every new URL into apd_seen and commit *before* processing, so an exception
+# part-way through a cycle permanently swallowed the unprocessed articles.
+# The contract is now: read unseen -> process -> mark seen, and anything that
+# raises stays unseen so the next cycle retries exactly that article.
+
+_LOST_MARKER = "on 12th St"
+_LOST_TITLE  = f"APD Press Release: Homicide Investigation {_LOST_MARKER}"
+_LOST_LINK   = "https://kxan.com/lost_article_1"
+_OK_TITLE    = "APD Press Release: Homicide Investigation on 6th St"
+_OK_LINK     = "https://kxan.com/ok_article_1"
+
+
+class TestSeenMarkedOnlyAfterOutcome(unittest.TestCase):
+    """apd_seen must record an article only once its outcome is handled."""
+
+    def setUp(self):
+        self.db_path = _tmp_db()
+        self.poller = APDNewsPoller()
+        self._seed_dir = _install_seed_sandbox(self)
+        self.seed_path = os.path.join(self._seed_dir, _SEED_BASENAME)
+        with open(self.seed_path, "w") as f:
+            json.dump([], f)
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+
+    # -- helpers ----------------------------------------------------------
+
+    def _seen(self) -> list[str]:
+        conn = sqlite3.connect(self.db_path)
+        rows = [r[0] for r in conn.execute("SELECT url FROM apd_seen")]
+        conn.close()
+        return rows
+
+    def _incident_count(self) -> int:
+        conn = sqlite3.connect(self.db_path)
+        n = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
+        conn.close()
+        return n
+
+    def _insert_incident(self, itype: str, description: str) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO incidents (ts_start, ts_updated, itype, description, "
+            "agencies, tgids, location, lat, lon, status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,'active')",
+            (time.time() - 900, time.time() - 900, itype, description,
+             '["APD"]', "[]", None, None, None),
+        )
+        conn.commit()
+        inc_id = cur.lastrowid
+        conn.close()
+        return inc_id
+
+    def _cycle(self, rss_xml: str, *, fail_titles: tuple = ()):
+        """Run one press-release cycle; fail processing for *fail_titles*.
+
+        Returns the sub-poll return value (None) so a healthy cycle can be
+        asserted to be silent.
+        """
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = rss_xml.encode()
+            return resp
+
+        def _match(title, itype, ts, db_path):
+            if any(marker in title for marker in fail_titles):
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return (None, 0.0)
+
+        send_dm = mock.MagicMock()
+        with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+             mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
+             mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link), \
+             mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                        side_effect=_match), \
+             mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=send_dm):
+            return self.poller._poll_apd_press_releases(
+                db_path=self.db_path,
+                talk_base="",
+                talk_user="u",
+                talk_pass="p",
+                talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+                google_cse_api_key="",
+                google_cse_id="",
+                pi_fetch_url="",
+                pi_fetch_token="",
+                geocode_fn=lambda addr: None,
+                atak_post_fn=mock.MagicMock(),
+            )
+
+    def _traffic_cycle(self, rss_xml: str, *, inc_id: int = 1, fail: bool = False):
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = rss_xml.encode()
+            return resp
+
+        def _match(title, itype, ts, db_path):
+            if fail:
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return (inc_id, 9.0)
+
+        with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+             mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
+             mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link), \
+             mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                        side_effect=_match):
+            return self.poller._poll_traffic_news(
+                db_path=self.db_path,
+                google_cse_api_key="",
+                google_cse_id="",
+                pi_fetch_url="",
+                pi_fetch_token="",
+                geocode_fn=lambda addr: None,
+            )
+
+    # -- regression: failure then successful retry ------------------------
+
+    def test_failed_article_stays_unseen_and_retry_succeeds(self):
+        """A processing failure must not lose the article: the retry sees it."""
+        rss = _make_rss([{
+            "title": _LOST_TITLE,
+            "link": _LOST_LINK,
+            "pubDate": _PUB_DATE,
+        }])
+
+        # Cycle 1: processing raises -> explicit failure, nothing marked seen.
+        with self.assertRaises(APDNewsArticleError) as ctx:
+            self._cycle(rss, fail_titles=(_LOST_MARKER,))
+        self.assertEqual([u for u, _ in ctx.exception.errors], [_LOST_LINK])
+        self.assertIn(_LOST_LINK, str(ctx.exception))
+        self.assertEqual(self._seen(), [], "failed article must stay unseen")
+        self.assertEqual(self._incident_count(), 0)
+
+        # Cycle 2: healthy feed -> the same article is picked up again.
+        self._cycle(rss)
+
+        self.assertEqual(self._seen(), [_LOST_LINK])
+        self.assertEqual(self._incident_count(), 1)
+        with open(self.seed_path) as f:
+            seed = json.load(f)
+        self.assertEqual([e["url"] for e in seed], [_LOST_LINK])
+
+        # Cycle 3: already handled, so no duplicate incident or seed entry.
+        self._cycle(rss)
+        self.assertEqual(self._incident_count(), 1)
+        self.assertEqual(self._seen(), [_LOST_LINK])
+        with open(self.seed_path) as f:
+            self.assertEqual(len(json.load(f)), 1)
+
+    def test_article_failure_is_aggregated_by_run(self):
+        """run() must report an article failure so BasePoller backs off."""
+        # run() reads the whole modules.config surface. Another suite in this
+        # run may have left a partial stub behind (test_apd_cad_poller), so pin
+        # a complete stub for the duration and restore whatever was there.
+        prev_config = sys.modules.get("modules.config")
+        pkg = sys.modules.get("modules")
+        prev_attr = getattr(pkg, "config", None) if pkg is not None else None
+        _stub_leaf(
+            "modules.config",
+            DB_PATH=self.db_path,
+            TALK_BASE="",
+            TALK_USER="user",
+            TALK_PASS="pass",
+            TALK_ROOMS={"apd": "room_apd", "incidents": "room_inc"},
+            GOOGLE_CSE_API_KEY="",
+            GOOGLE_CSE_ID="",
+            PI_FETCH_URL="",
+            PI_FETCH_TOKEN="",
+        )
+        try:
+            with mock.patch.object(
+                APDNewsPoller, "_poll_apd_press_releases",
+                side_effect=APDNewsArticleError([(_LOST_LINK, RuntimeError("boom"))]),
+            ), mock.patch.object(APDNewsPoller, "_poll_traffic_news"):
+                with self.assertRaises(APDNewsFetchError) as ctx:
+                    self.poller.run()
+        finally:
+            if prev_config is None:
+                sys.modules.pop("modules.config", None)
+            else:
+                sys.modules["modules.config"] = prev_config
+            if pkg is not None:
+                if prev_attr is not None:
+                    pkg.config = prev_attr
+                elif hasattr(pkg, "config"):
+                    delattr(pkg, "config")
+
+        names = [name for name, _ in ctx.exception.errors]
+        self.assertIn("apd-news", names)
+        self.assertIn(_LOST_LINK, str(ctx.exception))
+        self.assertTrue(issubclass(APDNewsArticleError, RuntimeError))
+
+    def test_partial_failure_marks_only_handled_articles_seen(self):
+        """A healthy article is committed; only the failed one is retried."""
+        rss = _make_rss([
+            {"title": _OK_TITLE, "link": _OK_LINK, "pubDate": _PUB_DATE},
+            {"title": _LOST_TITLE, "link": _LOST_LINK, "pubDate": _PUB_DATE},
+        ])
+
+        with self.assertRaises(APDNewsArticleError) as ctx:
+            self._cycle(rss, fail_titles=(_LOST_MARKER,))
+
+        self.assertEqual([u for u, _ in ctx.exception.errors], [_LOST_LINK])
+        self.assertEqual(self._seen(), [_OK_LINK])
+        self.assertEqual(self._incident_count(), 1)
+
+        # Next cycle retries only the article that failed.
+        self._cycle(rss)
+        self.assertEqual(sorted(self._seen()), sorted([_OK_LINK, _LOST_LINK]))
+        self.assertEqual(self._incident_count(), 2)
+
+    def test_healthy_single_cycle_marks_every_article_seen(self):
+        """Normal feed processing stays single-cycle: no lost, no duplicates."""
+        links = [f"https://kxan.com/hom_{i}" for i in range(3)]
+        rss = _make_rss([
+            {"title": f"APD Press Release: Homicide Investigation on {i}th St",
+             "link": link, "pubDate": _PUB_DATE}
+            for i, link in enumerate(links)
+        ])
+
+        self.assertIsNone(self._cycle(rss))
+
+        self.assertEqual(sorted(self._seen()), sorted(links))
+        self.assertEqual(self._incident_count(), 3)
+
+    def test_deliberate_skip_is_a_handled_outcome(self):
+        """A keyword-filtered article is decided, so it is marked seen once."""
+        link = "https://kxan.com/awards_ceremony"
+        rss = _make_rss([{"title": "APD awards ceremony downtown",
+                          "link": link, "pubDate": _PUB_DATE}])
+
+        self.assertIsNone(self._cycle(rss))
+
+        self.assertEqual(self._seen(), [link])
+        self.assertEqual(self._incident_count(), 0)
+
+    def test_traffic_failure_stays_unseen_and_retry_links(self):
+        """The traffic sub-poll follows the same write-after-outcome contract."""
+        self._insert_incident("FATAL CRASH", "Fatal crash on IH-35")
+        link = "https://kvue.com/fatal_retry_1"
+        rss = _make_rss([{"title": "Person killed in fatal crash on IH-35",
+                          "link": link, "pubDate": _PUB_DATE}])
+
+        with self.assertRaises(APDNewsArticleError) as ctx:
+            self._traffic_cycle(rss, fail=True)
+        self.assertEqual([u for u, _ in ctx.exception.errors], [link])
+        self.assertEqual(self._seen(), [])
+
+        self._traffic_cycle(rss, inc_id=1)
+
+        self.assertEqual(self._seen(), [link])
+        conn = sqlite3.connect(self.db_path)
+        rows = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE source='traffic-news'"
+        ).fetchall()
+        conn.close()
+        self.assertEqual(len(rows), 1)
+
+        # Already handled: a further cycle neither re-links nor duplicates.
+        self._traffic_cycle(rss, inc_id=1)
+        conn = sqlite3.connect(self.db_path)
+        rows = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE source='traffic-news'"
+        ).fetchall()
+        conn.close()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(self._seen(), [link])
 
 
 # ===========================================================================

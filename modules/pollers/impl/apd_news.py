@@ -14,6 +14,11 @@ SOA / BasePoller refactor.
 
 For each new article the poller:
   - Deduplicates against the ``apd_seen`` DB table (persistent across restarts).
+    An article is recorded in ``apd_seen`` only *after* its processing outcome
+    is handled, so an article whose processing raises is never lost: it stays
+    unseen and the next cycle retries it (the cycle is reported as failed so
+    BasePoller backs off). Deliberate skips (headline keyword, missing/stale
+    pubDate) are handled outcomes and are marked seen.
   - Filters headlines by keyword list (_APD_HEADLINE_KW).
   - Resolves the real article URL (source RSS → Google CSE → Google /articles/).
   - Optionally fetches the article body via the Pi5 residential-IP fetch agent.
@@ -690,6 +695,66 @@ class APDNewsFetchError(RuntimeError):
         )
 
 
+class APDNewsArticleError(RuntimeError):
+    """Raised when one or more new articles could not be processed this cycle.
+
+    Articles are only recorded in ``apd_seen`` after their processing outcome
+    is safely handled, so a failure here leaves the affected URLs unseen and
+    the next cycle retries exactly those articles. The aggregate is raised
+    after the whole feed has been attempted (and every article that did
+    succeed has been committed) so BasePoller records the cycle as failed and
+    backs off instead of reporting a clean cycle over silently dropped
+    articles.
+
+    Attributes
+    ----------
+    errors : tuple[tuple[str, BaseException], ...]
+        ``(article_url, exception)`` pairs for every article that failed.
+    """
+
+    def __init__(self, errors: list[tuple[str, BaseException]]) -> None:
+        self.errors: tuple[tuple[str, BaseException], ...] = tuple(errors)
+        detail = "; ".join(f"{url}: {exc}" for url, exc in self.errors)
+        super().__init__(
+            f"{len(self.errors)} article(s) failed processing and stay unseen "
+            f"for retry: {detail}"
+        )
+
+
+def _mark_seen(db_path: str, urls: list[str]) -> None:
+    """Record *urls* in ``apd_seen`` once their outcome is safely handled.
+
+    Called only after an article has been processed or deliberately skipped, so
+    a crash or raised error earlier in the cycle leaves the article unseen and
+    the next cycle picks it up again. Never called with an empty list.
+    """
+    if not urls:
+        return
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executemany(
+            "INSERT OR IGNORE INTO apd_seen (url, ts) VALUES (?,?)",
+            [(url, time.time()) for url in urls],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _select_unseen(db_path: str, articles: list[dict]) -> list[dict]:
+    """Return the parsed articles whose ``link`` is not in ``apd_seen``.
+
+    Read-only: articles are marked seen by :func:`_mark_seen` after their
+    outcome is known, never before processing starts.
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        existing = {row[0] for row in conn.execute("SELECT url FROM apd_seen")}
+    finally:
+        conn.close()
+    return [a for a in articles if a.get("link") not in existing]
+
+
 class APDNewsPoller(BasePoller):
     """Poll Google News RSS for APD press releases every 5 minutes.
 
@@ -801,12 +866,12 @@ class APDNewsPoller(BasePoller):
     ) -> None:
         """Fetch and process APD press release articles from Google News RSS.
 
-        Raises on fetch failure; run() aggregates it so the traffic sub-poll
-        still runs before the cycle is reported as failed.
+        Raises on fetch failure, and on :class:`APDNewsArticleError` when any
+        new article failed processing; run() aggregates either so the traffic
+        sub-poll still runs before the cycle is reported as failed. Articles
+        are marked seen only after their outcome is handled, so every URL
+        reported in the aggregate is retried by the next cycle.
         """
-        # Lazy import — avoids circular dependency
-        from modules.pollers import send_dm_alert  # noqa: PLC0415
-
         try:
             req = urllib.request.Request(
                 APD_NEWS_URL,
@@ -822,176 +887,239 @@ class APDNewsPoller(BasePoller):
 
         articles = _apd_parse_rss(xml_text)
 
-        # Dedup against DB — persistent across restarts
+        # Dedup against DB — persistent across restarts. Read-only: an article
+        # is written to apd_seen by _mark_seen() *after* its outcome is known,
+        # so a failure below leaves it unseen and the next cycle retries it.
         with self._lock:
-            conn_d   = sqlite3.connect(db_path)
-            existing = {row[0] for row in conn_d.execute("SELECT url FROM apd_seen")}
-            new_articles = [a for a in articles if a["link"] not in existing]
-            if new_articles:
-                conn_d.executemany(
-                    "INSERT OR IGNORE INTO apd_seen (url, ts) VALUES (?,?)",
-                    [(a["link"], time.time()) for a in new_articles],
-                )
-                conn_d.commit()
-            conn_d.close()
+            new_articles = _select_unseen(db_path, articles)
 
+        handled: list[str] = []
+        failures: list[tuple[str, BaseException]] = []
         for article in new_articles:
-            title_lower = article["title"].lower()
-            if not any(kw in title_lower for kw in _APD_HEADLINE_KW):
-                continue
-
-            logger.info("[apd-news] NEW: %s", article["title"])
-            url    = _resolve_article_url(
-                article.get("source_url", ""), article["title"], article["link"],
-                google_cse_api_key, google_cse_id,
-            )
-            detail  = _apd_fetch_article(url, pi_fetch_url, pi_fetch_token)
-            address = detail.get("address")
-            summary = detail.get("summary", article["title"])
-
-            # Fallback: extract address from article title when fetch fails
-            if not address:
-                import re as _t_re
-                _SUFFIX = (
-                    r"Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Lane|Ln|Boulevard|Blvd|Way|"
-                    r"Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|Loop|Trail|Trl|Pass|"
-                    r"Place|Pl|Cove|Path|Run|Row|Terrace|Terr|Center|Ctr|Plaza|Square|Sq|"
-                    r"Bridge|Brg|Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
-                    r"Point|Ridge|Spring|Trace|Valley|View|Vista|Expressway|Expy|Freeway|Fwy|"
-                    r"Turnpike|Tpke"
+            link = article["link"]
+            try:
+                self._process_apd_article(
+                    article,
+                    db_path=db_path,
+                    talk_base=talk_base,
+                    talk_user=talk_user,
+                    talk_pass=talk_pass,
+                    talk_rooms=talk_rooms,
+                    google_cse_api_key=google_cse_api_key,
+                    google_cse_id=google_cse_id,
+                    pi_fetch_url=pi_fetch_url,
+                    pi_fetch_token=pi_fetch_token,
+                    geocode_fn=geocode_fn,
+                    atak_post_fn=atak_post_fn,
                 )
-                # Pass 1: address with street number (e.g., "8201 Tuscany Way")
+            except HomicideSeedError:
+                # Deployment fault, not a per-article problem: every remaining
+                # article would fail identically. Commit what was already
+                # handled, then let it fail the cycle without marking the rest.
+                with self._lock:
+                    _mark_seen(db_path, handled)
+                raise
+            except Exception as exc:
+                # Deliberately NOT marked seen: the article keeps its place in
+                # the next cycle's unseen set so nothing is lost.
+                logger.warning(
+                    "[apd-news] FAILED (stays unseen, retried next cycle): %s — %s",
+                    link, exc,
+                )
+                failures.append((link, exc))
+                continue
+            handled.append(link)
+
+        with self._lock:
+            _mark_seen(db_path, handled)
+
+        if failures:
+            raise APDNewsArticleError(failures)
+
+    def _process_apd_article(
+        self,
+        article: dict,
+        *,
+        db_path: str,
+        talk_base: str,
+        talk_user: str,
+        talk_pass: str,
+        talk_rooms: dict,
+        google_cse_api_key: str,
+        google_cse_id: str,
+        pi_fetch_url: str,
+        pi_fetch_token: str,
+        geocode_fn,
+        atak_post_fn,
+    ) -> None:
+        """Process one unseen press-release article.
+
+        Returns normally when the article's outcome is decided — either it was
+        linked/created as an incident, or it was deliberately skipped (headline
+        keyword filter, missing or stale pubDate). Both outcomes are "handled"
+        and the caller records the article in apd_seen. Any exception means the
+        outcome is *not* known, so the caller leaves the article unseen.
+        """
+        # Lazy import — avoids circular dependency
+        from modules.pollers import send_dm_alert  # noqa: PLC0415
+
+        title_lower = article["title"].lower()
+        if not any(kw in title_lower for kw in _APD_HEADLINE_KW):
+            logger.info("[news] SKIP apd_pr (headline): %s", article["title"])
+            return
+
+        logger.info("[apd-news] NEW: %s", article["title"])
+        url    = _resolve_article_url(
+            article.get("source_url", ""), article["title"], article["link"],
+            google_cse_api_key, google_cse_id,
+        )
+        detail  = _apd_fetch_article(url, pi_fetch_url, pi_fetch_token)
+        address = detail.get("address")
+        summary = detail.get("summary", article["title"])
+
+        # Fallback: extract address from article title when fetch fails
+        if not address:
+            import re as _t_re
+            _SUFFIX = (
+                r"Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Lane|Ln|Boulevard|Blvd|Way|"
+                r"Court|Ct|Circle|Cir|Parkway|Pkwy|Highway|Hwy|Loop|Trail|Trl|Pass|"
+                r"Place|Pl|Cove|Path|Run|Row|Terrace|Terr|Center|Ctr|Plaza|Square|Sq|"
+                r"Bridge|Brg|Bend|Creek|Hollow|Landing|Manor|Meadow|Orchard|Pine|"
+                r"Point|Ridge|Spring|Trace|Valley|View|Vista|Expressway|Expy|Freeway|Fwy|"
+                r"Turnpike|Tpke"
+            )
+            # Pass 1: address with street number (e.g., "8201 Tuscany Way")
+            _t_addr = _t_re.search(
+                r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
+                r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
+                article["title"],
+            )
+            # Pass 2: street name without number (e.g., "on Tuscany Way")
+            if not _t_addr:
                 _t_addr = _t_re.search(
-                    r"(\d{1,6}(?:\s+block\s+of)?\s+[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
+                    r"(?:on|at|near|in|of)\s+"
+                    r"((?:[A-Z][a-z]*\s+){0,3}[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
                     r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
                     article["title"],
                 )
-                # Pass 2: street name without number (e.g., "on Tuscany Way")
-                if not _t_addr:
-                    _t_addr = _t_re.search(
-                        r"(?:on|at|near|in|of)\s+"
-                        r"((?:[A-Z][a-z]*\s+){0,3}[A-Z][a-zA-Z0-9 ,.'-]*?(?:" + _SUFFIX + r"))"
-                        r"(?:\s+(?:NW|NE|SW|SE|N|S|E|W))?\b",
-                        article["title"],
-                    )
-                if _t_addr:
-                    address = _t_addr.group(1).strip().rstrip(" -.,;")
-                    if "," not in address and "Austin" not in address:
-                        address = address + ", Austin, TX"
+            if _t_addr:
+                address = _t_addr.group(1).strip().rstrip(" -.,;")
+                if "," not in address and "Austin" not in address:
+                    address = address + ", Austin, TX"
 
-            lat: float | None = None
-            lon: float | None = None
-            if address:
-                coords = geocode_fn(address)
-                if coords:
-                    lat, lon = coords
+        lat: float | None = None
+        lon: float | None = None
+        if address:
+            coords = geocode_fn(address)
+            if coords:
+                lat, lon = coords
 
-            itype  = _article_itype_from_title(article["title"])
-            pub_ts = article.get("pub_ts")
+        itype  = _article_itype_from_title(article["title"])
+        pub_ts = article.get("pub_ts")
 
-            if not pub_ts:
-                logger.info("[news] SKIP apd_pr (no pub_ts): %s", article["title"])
-                continue
-            age = time.time() - pub_ts
-            if age > _ARTICLE_MAX_AGE_SECS:
-                logger.info("[news] SKIP apd_pr (stale %.1fh): %s", age / 3600, article["title"])
-                continue
+        if not pub_ts:
+            logger.info("[news] SKIP apd_pr (no pub_ts): %s", article["title"])
+            return
+        age = time.time() - pub_ts
+        if age > _ARTICLE_MAX_AGE_SECS:
+            logger.info("[news] SKIP apd_pr (stale %.1fh): %s", age / 3600, article["title"])
+            return
 
-            ts   = pub_ts
-            desc = f"[APD Press Release] {article['title']}. {summary[:200]}"
+        ts   = pub_ts
+        desc = f"[APD Press Release] {article['title']}. {summary[:200]}"
 
-            matched_id, match_score = _match_article_to_incident(
-                article["title"], itype, ts, db_path
+        matched_id, match_score = _match_article_to_incident(
+            article["title"], itype, ts, db_path
+        )
+
+        if matched_id:
+            # Article matches a radio incident — link and notify
+            _store_article_link(
+                matched_id, ts, article["title"], url,
+                "apd_pr", summary[:300], match_score, db_path,
             )
+            if itype == "HOMICIDE":
+                _append_homicide_json(
+                    inc_id=matched_id,
+                    date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                    address=address or "",
+                    victim="",
+                    summary=article["title"].rsplit(" - ", 1)[0],
+                    url=url,
+                    lat=lat,
+                    lon=lon,
+                )
+            logger.info(
+                "[apd-news] LINKED: '%s' → incident %s (score=%.1f)",
+                article["title"], matched_id, match_score,
+            )
+            loc_str = f" @ {address}" if address else ""
+            msg = (
+                f"\U0001f4f0 [PRESS COVERAGE] Radio incident #{matched_id} now in the news\n"
+                f"\U0001f4f0 {article['title']}\n"
+                f"\U0001f517 {url}\n"
+                f"\U0001f4cd{loc_str}"
+            )
+            _post_to_talk(
+                msg,
+                [talk_rooms["apd"], talk_rooms["incidents"]],
+                talk_base, talk_user, talk_pass,
+                log_tag="apd-news",
+            )
+        else:
+            # No radio match — create a new incident from the press release
+            conn = sqlite3.connect(db_path)
+            cur  = conn.execute(
+                "INSERT INTO incidents "
+                "(ts_start, ts_updated, itype, description, agencies, "
+                "tgids, location, lat, lon, article_url, status) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,'active')",
+                (ts, ts, itype, desc, '["APD"]', "[]", address, lat, lon, url),
+            )
+            inc_id = cur.lastrowid
+            conn.commit()
+            conn.close()
 
-            if matched_id:
-                # Article matches a radio incident — link and notify
-                _store_article_link(
-                    matched_id, ts, article["title"], url,
-                    "apd_pr", summary[:300], match_score, db_path,
-                )
-                if itype == "HOMICIDE":
-                    _append_homicide_json(
-                        inc_id=matched_id,
-                        date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
-                        address=address or "",
-                        victim="",
-                        summary=article["title"].rsplit(" - ", 1)[0],
-                        url=url,
-                        lat=lat,
-                        lon=lon,
-                    )
-                logger.info(
-                    "[apd-news] LINKED: '%s' → incident %s (score=%.1f)",
-                    article["title"], matched_id, match_score,
-                )
-                loc_str = f" @ {address}" if address else ""
-                msg = (
-                    f"\U0001f4f0 [PRESS COVERAGE] Radio incident #{matched_id} now in the news\n"
-                    f"\U0001f4f0 {article['title']}\n"
-                    f"\U0001f517 {url}\n"
-                    f"\U0001f4cd{loc_str}"
-                )
-                _post_to_talk(
-                    msg,
-                    [talk_rooms["apd"], talk_rooms["incidents"]],
-                    talk_base, talk_user, talk_pass,
-                    log_tag="apd-news",
-                )
-            else:
-                # No radio match — create a new incident from the press release
-                conn = sqlite3.connect(db_path)
-                cur  = conn.execute(
-                    "INSERT INTO incidents "
-                    "(ts_start, ts_updated, itype, description, agencies, "
-                    "tgids, location, lat, lon, article_url, status) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,'active')",
-                    (ts, ts, itype, desc, '["APD"]', "[]", address, lat, lon, url),
-                )
-                inc_id = cur.lastrowid
-                conn.commit()
-                conn.close()
+            _store_article_link(inc_id, ts, article["title"], url, "apd_pr",
+                                summary[:300], 0.0, db_path)
 
-                _store_article_link(inc_id, ts, article["title"], url, "apd_pr",
-                                    summary[:300], 0.0, db_path)
-
-                if itype == "HOMICIDE":
-                    _append_homicide_json(
-                        inc_id=inc_id,
-                        date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
-                        address=address or "",
-                        victim="",
-                        summary=article["title"].rsplit(" - ", 1)[0],
-                        url=url,
-                        lat=lat,
-                        lon=lon,
-                    )
-
-                loc_str = f" @ {address}" if address else ""
-                msg = (
-                    f"\U0001f6a8 [APD PRESS RELEASE] {article['title']}\n"
-                    f"\U0001f517 {url}\n"
-                    f"\U0001f4cd{loc_str}\n"
-                    f"{summary[:300]}"
+            if itype == "HOMICIDE":
+                _append_homicide_json(
+                    inc_id=inc_id,
+                    date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                    address=address or "",
+                    victim="",
+                    summary=article["title"].rsplit(" - ", 1)[0],
+                    url=url,
+                    lat=lat,
+                    lon=lon,
                 )
-                _post_to_talk(
-                    msg,
-                    [talk_rooms["apd"], talk_rooms["incidents"]],
-                    talk_base, talk_user, talk_pass,
-                    log_tag="apd-news",
-                )
+
+            loc_str = f" @ {address}" if address else ""
+            msg = (
+                f"\U0001f6a8 [APD PRESS RELEASE] {article['title']}\n"
+                f"\U0001f517 {url}\n"
+                f"\U0001f4cd{loc_str}\n"
+                f"{summary[:300]}"
+            )
+            _post_to_talk(
+                msg,
+                [talk_rooms["apd"], talk_rooms["incidents"]],
+                talk_base, talk_user, talk_pass,
+                log_tag="apd-news",
+            )
+            threading.Thread(
+                target=send_dm_alert,
+                args=(itype, desc, address, "APD", "APD"),
+                daemon=True,
+            ).start()
+
+            if lat is not None and lon is not None:
                 threading.Thread(
-                    target=send_dm_alert,
-                    args=(itype, desc, address, "APD", "APD"),
+                    target=atak_post_fn,
+                    args=(inc_id, lat, lon, itype, address, desc),
                     daemon=True,
                 ).start()
-
-                if lat is not None and lon is not None:
-                    threading.Thread(
-                        target=atak_post_fn,
-                        args=(inc_id, lat, lon, itype, address, desc),
-                        daemon=True,
-                    ).start()
 
     def _poll_traffic_news(
         self,
@@ -1005,8 +1133,11 @@ class APDNewsPoller(BasePoller):
     ) -> None:
         """Fetch Austin traffic fatality news and link to existing radio incidents.
 
-        Raises on fetch failure; run() aggregates it so the press-release
-        sub-poll still runs before the cycle is reported as failed.
+        Raises on fetch failure, and on :class:`APDNewsArticleError` when any
+        new article failed processing; run() aggregates either so the
+        press-release sub-poll still runs before the cycle is reported as
+        failed. Same seen-set contract as the press-release sub-poll: mark
+        seen only after the outcome is handled, so a failure is retried.
         """
         try:
             treq = urllib.request.Request(
@@ -1023,65 +1154,105 @@ class APDNewsPoller(BasePoller):
 
         tarticles = _apd_parse_rss(txml_text)
 
+        # Read-only dedup; _mark_seen() runs after each outcome is handled.
         with self._lock:
-            conn_t     = sqlite3.connect(db_path)
-            t_existing = {row[0] for row in conn_t.execute("SELECT url FROM apd_seen")}
-            t_new      = [a for a in tarticles if a["link"] not in t_existing]
-            if t_new:
-                conn_t.executemany(
-                    "INSERT OR IGNORE INTO apd_seen (url, ts) VALUES (?,?)",
-                    [(a["link"], time.time()) for a in t_new],
-                )
-                conn_t.commit()
-            conn_t.close()
+            t_new = _select_unseen(db_path, tarticles)
 
+        t_handled: list[str] = []
+        t_failures: list[tuple[str, BaseException]] = []
         for ta in t_new:
-            ttitle = ta["title"].lower()
-            if not any(kw in ttitle for kw in ("fatal", "killed", "pedestrian", "hit-and-run", "deadly")):
+            link = ta["link"]
+            try:
+                self._process_traffic_article(
+                    ta,
+                    db_path=db_path,
+                    google_cse_api_key=google_cse_api_key,
+                    google_cse_id=google_cse_id,
+                    pi_fetch_url=pi_fetch_url,
+                    pi_fetch_token=pi_fetch_token,
+                    geocode_fn=geocode_fn,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[traffic-news] FAILED (stays unseen, retried next cycle): %s — %s",
+                    link, exc,
+                )
+                t_failures.append((link, exc))
                 continue
+            t_handled.append(link)
 
-            turl      = _resolve_article_url(
-                ta.get("source_url", ""), ta["title"], ta["link"],
-                google_cse_api_key, google_cse_id,
-            )
-            art_itype = (
-                "FATAL CRASH"
-                if any(w in ttitle for w in ("fatal", "killed", "dead", "deadly"))
-                else "CRASH/COLLISION"
-            )
-            tts = ta.get("pub_ts")
-            if not tts:
-                logger.info("[news] SKIP traffic-news (no pub_ts): %s", ta["title"])
-                continue
-            age = time.time() - tts
-            if age > _ARTICLE_MAX_AGE_SECS:
-                logger.info("[news] SKIP traffic-news (stale %.1fh): %s", age / 3600, ta["title"])
-                continue
+        with self._lock:
+            _mark_seen(db_path, t_handled)
 
-            t_inc_id, t_score = _match_article_to_incident(ta["title"], art_itype, tts, db_path)
-            if not t_inc_id:
-                continue
+        if t_failures:
+            raise APDNewsArticleError(t_failures)
 
-            t_detail  = _apd_fetch_article(turl, pi_fetch_url, pi_fetch_token)
-            t_snippet = t_detail.get("summary", "")
-            t_address = t_detail.get("address")
+    def _process_traffic_article(
+        self,
+        ta: dict,
+        *,
+        db_path: str,
+        google_cse_api_key: str,
+        google_cse_id: str,
+        pi_fetch_url: str,
+        pi_fetch_token: str,
+        geocode_fn,
+    ) -> None:
+        """Link one unseen traffic-fatality article to a radio incident.
 
-            if t_address:
-                t_coords = geocode_fn(t_address)
-                if t_coords:
-                    conn_ta = sqlite3.connect(db_path)
-                    conn_ta.execute(
-                        "UPDATE incidents SET location=?, lat=?, lon=? "
-                        "WHERE id=? AND (location IS NULL OR location='')",
-                        (t_address, t_coords[0], t_coords[1], t_inc_id),
-                    )
-                    conn_ta.commit()
-                    conn_ta.close()
+        Returns normally when the outcome is decided — linked to a matching
+        incident, or deliberately skipped (no fatality keyword, missing or
+        stale pubDate, no matching radio incident). Any exception means the
+        outcome is unknown, so the caller leaves the article unseen.
+        """
+        ttitle = ta["title"].lower()
+        if not any(kw in ttitle for kw in ("fatal", "killed", "pedestrian", "hit-and-run", "deadly")):
+            logger.info("[news] SKIP traffic-news (headline): %s", ta["title"])
+            return
 
-            _store_article_link(t_inc_id, tts, ta["title"], turl,
-                                "traffic-news", t_snippet, t_score, db_path)
-            logger.info(
-                "[traffic-news] LINKED: '%s' → incident %s (score=%.1f)%s",
-                ta["title"], t_inc_id, t_score,
-                f" addr={t_address}" if t_address else "",
-            )
+        turl      = _resolve_article_url(
+            ta.get("source_url", ""), ta["title"], ta["link"],
+            google_cse_api_key, google_cse_id,
+        )
+        art_itype = (
+            "FATAL CRASH"
+            if any(w in ttitle for w in ("fatal", "killed", "dead", "deadly"))
+            else "CRASH/COLLISION"
+        )
+        tts = ta.get("pub_ts")
+        if not tts:
+            logger.info("[news] SKIP traffic-news (no pub_ts): %s", ta["title"])
+            return
+        age = time.time() - tts
+        if age > _ARTICLE_MAX_AGE_SECS:
+            logger.info("[news] SKIP traffic-news (stale %.1fh): %s", age / 3600, ta["title"])
+            return
+
+        t_inc_id, t_score = _match_article_to_incident(ta["title"], art_itype, tts, db_path)
+        if not t_inc_id:
+            logger.info("[news] SKIP traffic-news (no radio match): %s", ta["title"])
+            return
+
+        t_detail  = _apd_fetch_article(turl, pi_fetch_url, pi_fetch_token)
+        t_snippet = t_detail.get("summary", "")
+        t_address = t_detail.get("address")
+
+        if t_address:
+            t_coords = geocode_fn(t_address)
+            if t_coords:
+                conn_ta = sqlite3.connect(db_path)
+                conn_ta.execute(
+                    "UPDATE incidents SET location=?, lat=?, lon=? "
+                    "WHERE id=? AND (location IS NULL OR location='')",
+                    (t_address, t_coords[0], t_coords[1], t_inc_id),
+                )
+                conn_ta.commit()
+                conn_ta.close()
+
+        _store_article_link(t_inc_id, tts, ta["title"], turl,
+                            "traffic-news", t_snippet, t_score, db_path)
+        logger.info(
+            "[traffic-news] LINKED: '%s' → incident %s (score=%.1f)%s",
+            ta["title"], t_inc_id, t_score,
+            f" addr={t_address}" if t_address else "",
+        )
