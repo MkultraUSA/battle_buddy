@@ -28,6 +28,13 @@ For each new article the poller:
   - If matched: stores the article link and posts a "press coverage" message to Talk.
   - If unmatched: creates a new incident record, posts to Talk, sends DM alerts,
     and places an ATAK marker when coordinates are available.
+  - Is idempotent by article URL. A failure *after* the incident/article-link
+    insert (seed write, DB error) leaves the article unseen so the next cycle
+    retries it, but the recorded link/incident is found first: the retry never
+    inserts a second incident or article link and never re-sends the alert. It
+    only completes the side effects that are themselves idempotent (the seed
+    append, which dedupes on the article URL). Failures *before* the insert are
+    unaffected — nothing is recorded, so the article is retried from scratch.
 
 A secondary sub-poll fetches Austin traffic fatality news and links articles
 to existing radio incidents (no new incident creation on no-match).
@@ -132,8 +139,6 @@ _HOMICIDE_JSON_LOCK = threading.Lock()
 # this module, and so a sandbox/review clone can never touch the production
 # seed at /opt/battlebuddy/homicides_2026.json.
 _HOMICIDE_SEED_ENV = "HOMICIDE_SEED_PATH"
-_HOMICIDE_SEED_BASENAME = "homicides_2026.json"
-_BATTLE_BUDDY_HOME_DEFAULT = "/opt/battlebuddy"
 
 
 class HomicideSeedError(RuntimeError):
@@ -148,24 +153,24 @@ class HomicideSeedError(RuntimeError):
 
 
 def _homicide_seed_path() -> str:
-    """Resolve the homicide seed path from the environment (call-time).
+    """Resolve the homicide seed path (call-time) via the shared contract.
 
-    Precedence mirrors ``modules.config.HOMICIDE_SEED_PATH``:
-    1. ``HOMICIDE_SEED_PATH`` — explicit per-file override.
-    2. ``BATTLE_BUDDY_DATA_DIR`` — data directory.
-    3. ``BATTLE_BUDDY_HOME`` — deployment root.
-    4. ``/opt/battlebuddy`` — production default.
+    Delegates to ``modules.config.resolve_homicide_seed_path`` — the single
+    source of truth for the HOMICIDE_SEED_PATH / BATTLE_BUDDY_DATA_DIR /
+    BATTLE_BUDDY_HOME precedence — so the writer can never resolve a different
+    file than the readers (modules.homicide_count, the public API, the audio
+    receiver's metrics). Whitespace-only env values are treated as unset at
+    every level because the shared resolver strips them. The import is deferred
+    for the same circular-import reason as the rest of this module's config
+    access, and the resolver is called per call rather than snapshotted at
+    import time, so a redirected sandbox picks the change up on the next write.
 
-    Read from the environment on every call rather than at import time so a
-    redirected sandbox picks the change up without a module reload, and so
-    the production default is preserved when nothing is set.
+    With no env override the production default is unchanged:
+    ``/opt/battlebuddy/homicides_2026.json``.
     """
-    override = os.environ.get(_HOMICIDE_SEED_ENV)
-    if override:
-        return override
-    home = os.environ.get("BATTLE_BUDDY_HOME") or _BATTLE_BUDDY_HOME_DEFAULT
-    data_dir = os.environ.get("BATTLE_BUDDY_DATA_DIR") or home
-    return os.path.join(data_dir, _HOMICIDE_SEED_BASENAME)
+    from modules.config import resolve_homicide_seed_path  # noqa: PLC0415
+
+    return resolve_homicide_seed_path()
 
 
 def _load_homicide_seed(path: str) -> list[dict]:
@@ -606,6 +611,41 @@ def _match_article_to_incident(
     return (best_id, best_score) if best_score >= 1.0 else (None, 0)
 
 
+def _prior_article_work(db_path: str, url: str) -> tuple[bool, int]:
+    """Return ``(already_recorded, incident_id)`` for an article in the DB.
+
+    ``already_recorded`` is True when a previous cycle got far enough to
+    commit this article's work; ``incident_id`` is the incident it is recorded
+    against (0 when the record carries no incident, e.g. an orphaned link row).
+
+    Both durable markers an interrupted article can leave behind are checked:
+    the ``incident_articles`` row, and ``incidents.article_url`` (written by the
+    same helper, so it exists even if the link row never landed). The caller
+    uses this to stay idempotent across a retry: an article whose processing
+    failed *after* the insert must not create a second incident or a second
+    link, and must not re-send the alert.
+    """
+    if not url:
+        return False, 0
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE url=? ORDER BY id LIMIT 1",
+            (url,),
+        ).fetchone()
+        if row is not None:
+            return True, int(row[0] or 0)
+        row = conn.execute(
+            "SELECT id FROM incidents WHERE article_url=? ORDER BY id LIMIT 1",
+            (url,),
+        ).fetchone()
+        if row is not None and row[0]:
+            return True, int(row[0])
+    finally:
+        conn.close()
+    return False, 0
+
+
 def _store_article_link(
     incident_id: int | None,
     ts: float,
@@ -959,6 +999,11 @@ class APDNewsPoller(BasePoller):
         keyword filter, missing or stale pubDate). Both outcomes are "handled"
         and the caller records the article in apd_seen. Any exception means the
         outcome is *not* known, so the caller leaves the article unseen.
+
+        Processing is idempotent by article URL: an article whose work is
+        already recorded (link row and/or ``incidents.article_url``) from an
+        earlier cycle that failed after the insert is not re-inserted and does
+        not re-alert — only the URL-deduped seed append is re-attempted.
         """
         # Lazy import — avoids circular dependency
         from modules.pollers import send_dm_alert  # noqa: PLC0415
@@ -1027,6 +1072,35 @@ class APDNewsPoller(BasePoller):
 
         ts   = pub_ts
         desc = f"[APD Press Release] {article['title']}. {summary[:200]}"
+
+        # Idempotency: a previous cycle may have recorded this article's work
+        # and *then* failed (seed write, DB error). The article therefore stays
+        # unseen and reaches this point again, so re-running the insert branch
+        # would duplicate the incident, the article link and the DM alert.
+        # Reuse the recorded incident instead: no second insert, no second
+        # link, no re-alert. Only the seed append is re-attempted, and it
+        # dedupes on the article URL, so the interrupted write still completes.
+        # A failure *before* any insert leaves nothing recorded and is retried
+        # from scratch by this same path.
+        already_recorded, prior_inc_id = _prior_article_work(db_path, url)
+        if already_recorded:
+            logger.info(
+                "[apd-news] IDEMPOTENT: '%s' already recorded (incident %s) — "
+                "skipping re-insert and re-alert",
+                article["title"], prior_inc_id or "?",
+            )
+            if itype == "HOMICIDE":
+                _append_homicide_json(
+                    inc_id=prior_inc_id,
+                    date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+                    address=address or "",
+                    victim="",
+                    summary=article["title"].rsplit(" - ", 1)[0],
+                    url=url,
+                    lat=lat,
+                    lon=lon,
+                )
+            return
 
         matched_id, match_score = _match_article_to_incident(
             article["title"], itype, ts, db_path

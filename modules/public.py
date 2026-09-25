@@ -1210,6 +1210,10 @@ def api_homicides():
     A missing or corrupt seed is answered with 503 and an explicit error: the
     curated dataset is authoritative, and reporting ``total_area_homicides: 0``
     because of a deployment fault would publish a false zero.
+
+    This route is unauthenticated, so the 503 body is a fixed, generic message.
+    The exception text carries the resolved absolute seed path and the
+    deployment variables that relocate it, so it is logged server-side only.
     """
     from modules.homicide_count import (
         HomicideSeedUnavailable,
@@ -1222,10 +1226,11 @@ def api_homicides():
     try:
         seed = load_seed_strict()
     except HomicideSeedUnavailable as exc:
+        # Server-side only: str(exc) names the absolute seed path and the env
+        # vars that relocate it, which must not reach an anonymous client.
         logger.error("[api/homicides] seed unavailable: %s", exc)
         return jsonify({
             "error": "homicide seed unavailable",
-            "detail": str(exc),
         }), 503
 
     live = fetch_live_homicides(DB_PATH)

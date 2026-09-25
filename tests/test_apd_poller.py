@@ -13,9 +13,12 @@ Coverage:
   - _apd_fetch_article()        — article fetch + address extraction (mocked)
   - _match_article_to_incident()— DB scoring logic (in-memory SQLite)
   - _store_article_link()       — DB write helpers (in-memory SQLite)
+  - _prior_article_work()       — idempotency lookup for a retried article
   - _post_to_talk()             — Talk posting (mocked urllib)
   - APDNewsPoller._poll_apd_press_releases() — full press-release sub-poll
   - APDNewsPoller._poll_traffic_news()       — traffic fatality sub-poll
+  - APDNewsPoller._process_apd_article()      — idempotency across a
+    post-insert failure (no duplicate incident, article link or DM alert)
   - Package __init__ re-exports
 
 All network calls are monkey-patched / mocked — no real HTTP happens.
@@ -59,6 +62,13 @@ def _stub_leaf(name: str, **attrs):
     that we don't need the full application environment at test-collection
     time.
     """
+    if name == "modules.config" and "resolve_homicide_seed_path" not in attrs:
+        # apd_news._homicide_seed_path() defers to modules.config, so every
+        # config stub in this suite carries the *real* resolver: the delegation
+        # is then exercised against the shared precedence instead of a fake,
+        # and a stub that omitted it would turn any seed write into an
+        # ImportError rather than a seed result.
+        attrs["resolve_homicide_seed_path"] = _real_homicide_seed_resolver()
     mod = type(sys)(name)
     mod.__name__    = name
     mod.__package__ = name.rsplit(".", 1)[0] if "." in name else name
@@ -67,6 +77,72 @@ def _stub_leaf(name: str, **attrs):
     sys.modules[name] = mod
     _attach_to_parent(name, mod)
     return mod
+
+
+_REAL_CONFIG_MODULE = None
+_CONFIG_MODULE_INSTALL: dict = {}
+
+
+def _real_config_module():
+    """Load the real ``modules.config`` from disk, once.
+
+    Loaded under a private module name so installing the ``modules.config``
+    stub below can never displace it.
+    """
+    global _REAL_CONFIG_MODULE
+    if _REAL_CONFIG_MODULE is None:
+        import importlib.util as _ilu
+
+        spec = _ilu.spec_from_file_location(
+            "bb_apd_real_config", str(_ROOT / "modules" / "config.py")
+        )
+        mod = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _REAL_CONFIG_MODULE = mod
+    return _REAL_CONFIG_MODULE
+
+
+def _real_homicide_seed_resolver():
+    """The real ``modules.config.resolve_homicide_seed_path``."""
+    return _real_config_module().resolve_homicide_seed_path
+
+
+def setUpModule():
+    """Point ``modules.config`` at the real module for this file's tests.
+
+    Other suites register minimal ``modules.config`` stubs at import time and
+    never remove them (tests/test_apd_cad_poller.py), so which stub is in
+    sys.modules when this file's tests run depends on collection order. The
+    poller defers its seed lookup to
+    ``modules.config.resolve_homicide_seed_path``, so this module installs the
+    real one for the duration of its own run; individual test classes may still
+    pin their own stub (those stubs carry the resolver too, see _stub_leaf).
+    """
+    pkg = sys.modules.get("modules")
+    _CONFIG_MODULE_INSTALL.update(
+        previous=sys.modules.get("modules.config"),
+        pkg=pkg,
+        pkg_attr=getattr(pkg, "config", None) if pkg is not None else None,
+    )
+    real = _real_config_module()
+    sys.modules["modules.config"] = real
+    if pkg is not None:
+        pkg.config = real
+
+
+def tearDownModule():
+    prev = _CONFIG_MODULE_INSTALL.pop("previous", None)
+    pkg = _CONFIG_MODULE_INSTALL.pop("pkg", None)
+    pkg_attr = _CONFIG_MODULE_INSTALL.pop("pkg_attr", None)
+    if prev is not None:
+        sys.modules["modules.config"] = prev
+    else:
+        sys.modules.pop("modules.config", None)
+    if pkg is not None:
+        if pkg_attr is not None:
+            pkg.config = pkg_attr
+        elif hasattr(pkg, "config"):
+            delattr(pkg, "config")
 
 
 def _attach_to_parent(dotted_name: str, mod):
@@ -189,6 +265,7 @@ from modules.pollers.impl.apd_news import (  # noqa: E402
     _match_article_to_incident,
     _pi_fetch,
     _post_to_talk,
+    _prior_article_work,
     _resolve_article_url,
     _store_article_link,
 )
@@ -2154,6 +2231,322 @@ class TestSeenMarkedOnlyAfterOutcome(unittest.TestCase):
         conn.close()
         self.assertEqual(len(rows), 1)
         self.assertEqual(self._seen(), [link])
+
+
+# ===========================================================================
+# 16. Idempotency across a post-insert failure
+# ===========================================================================
+# apd_seen write-after-outcome keeps a failed article unseen so the next cycle
+# retries it. The root cause of the duplication this covers: a press-release
+# incident carries the "[APD Press Release]" tag, which
+# _match_article_to_incident() excludes from matching — so a retry could never
+# recognise the incident the interrupted cycle had already created, and inserted
+# a second one (plus a second incident_articles row and a second DM alert).
+#
+# Processing is now idempotent by article URL: the recorded link/incident is
+# found before anything is inserted or alerted, and only the URL-deduped seed
+# append is re-attempted. A failure *before* the insert still records nothing,
+# so write-after-outcome (nothing lost) is unchanged.
+
+_IDEM_TITLE  = "APD Press Release: Homicide Investigation on 6th St"
+_IDEM_LINK   = "https://kxan.com/idem_post_insert_1"
+_IDEM_MATCH  = "APD Press Release: Shooting on Congress Avenue"
+_IDEM_MATCH_LINK = "https://kxan.com/idem_matched_1"
+
+
+class _SyncThread:
+    """Inline stand-in for threading.Thread inside the poller.
+
+    _process_apd_article fires the DM alert and the ATAK marker on daemon
+    threads, so "was the alert sent?" would otherwise be a race. Patching
+    threading.Thread inside the poller's namespace runs them inline and makes
+    those assertions exact.
+    """
+
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs or {}
+
+    def start(self):
+        if self._target is not None:
+            self._target(*self._args, **self._kwargs)
+
+    def join(self, timeout=None):
+        return None
+
+
+class TestPostInsertFailureIsIdempotent(_SeedSandboxTest):
+    """A retry after a post-insert failure must not duplicate the work."""
+
+    def setUp(self):
+        super().setUp()
+        self.db_path = _tmp_db()
+        self.poller = APDNewsPoller()
+        self._write_seed([])
+        self.alerts: list[tuple] = []
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.unlink(self.db_path)
+
+    def _rss(self, title=_IDEM_TITLE, link=_IDEM_LINK) -> str:
+        return _make_rss([{"title": title, "link": link, "pubDate": _PUB_DATE}])
+
+    def _cycle(self, rss: str, *, match=None):
+        """Run one press-release cycle with network, alert and atak stubbed.
+
+        *match* optionally pins ``_match_article_to_incident`` to
+        ``(incident_id, score)`` — used to prove the idempotency guard, not the
+        matcher, is what prevents a duplicate.
+        """
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = rss.encode()
+            return resp
+
+        def _send_dm(*args, **kwargs):
+            self.alerts.append(args)
+
+        patches = [
+            mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen),
+            mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
+                       return_value={"address": "600 6th St", "summary": "APD homicide"}),
+            mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                       side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link),
+            mock.patch("modules.pollers.impl.apd_news.threading.Thread", _SyncThread),
+            mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert", new=_send_dm),
+        ]
+        if match is not None:
+            patches.append(
+                mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                           return_value=match)
+            )
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return self.poller._poll_apd_press_releases(
+            db_path=self.db_path,
+            talk_base="",
+            talk_user="u",
+            talk_pass="p",
+            talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+            google_cse_api_key="",
+            google_cse_id="",
+            pi_fetch_url="",
+            pi_fetch_token="",
+            geocode_fn=lambda addr: None,
+            atak_post_fn=mock.MagicMock(),
+        )
+
+    def _db_state(self) -> tuple[int, int, list[str]]:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            incidents = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
+            links = conn.execute("SELECT COUNT(*) FROM incident_articles").fetchone()[0]
+            seen = [r[0] for r in conn.execute("SELECT url FROM apd_seen")]
+        finally:
+            conn.close()
+        return incidents, links, seen
+
+    def _insert_radio_incident(self) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO incidents (ts_start, ts_updated, itype, description, agencies, "
+            "tgids, location, status) VALUES (?,?,?,?,?,?,?, 'active')",
+            (time.time() - 1800, time.time() - 1800, "SHOOTING",
+             "Shots fired on Congress Ave", '["AFD"]', "[]", "Congress Ave"),
+        )
+        conn.commit()
+        inc_id = cur.lastrowid
+        conn.close()
+        return inc_id
+
+    @staticmethod
+    def _failing_mark_seen():
+        """A _mark_seen that fails on its first call, then behaves normally.
+
+        The seen-marker write is the last thing a cycle does, so a failure there
+        is the realistic post-insert fault: the incident, the article link, the
+        seed entry and the alert are all already committed, yet the article
+        stays unseen and the next cycle retries it.
+        """
+        real = sys.modules["modules.pollers.impl.apd_news"]._mark_seen
+        state = {"calls": 0}
+
+        def _mark_seen(db_path, urls):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise RuntimeError("sqlite3.OperationalError: database is locked")
+            return real(db_path, urls)
+
+        return _mark_seen
+
+    # -- regression: outcome committed, seen-marker write failed ----------
+
+    def test_retry_after_seen_write_failure_does_not_duplicate_or_realert(self):
+        rss = self._rss()
+        mark_seen = self._failing_mark_seen()
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", mark_seen):
+            with self.assertRaises(RuntimeError):
+                self._cycle(rss)
+
+        # Everything was committed; only the seen marker was lost.
+        self.assertEqual(self._db_state(), (1, 1, []))
+        self.assertEqual([e["url"] for e in self._read_seed()], [_IDEM_LINK])
+        self.assertEqual(len(self.alerts), 1)
+
+        # The retry must recognise the recorded work and do nothing again.
+        self._cycle(rss)
+
+        self.assertEqual(self._db_state(), (1, 1, [_IDEM_LINK]),
+                         "retry must not add an incident, a link or a second seen row")
+        self.assertEqual([e["url"] for e in self._read_seed()], [_IDEM_LINK],
+                         "the seed append must stay idempotent by article URL")
+        self.assertEqual(len(self.alerts), 1, "retry must not re-send the DM alert")
+
+    def test_repeated_retries_after_seen_write_failure_stay_idempotent(self):
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", self._failing_mark_seen()):
+            with self.assertRaises(RuntimeError):
+                self._cycle(rss)
+        self._cycle(rss)
+        self._cycle(rss)
+
+        self.assertEqual(self._db_state(), (1, 1, [_IDEM_LINK]))
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(len(self._read_seed()), 1)
+
+    def test_matched_article_is_not_relinked_on_retry(self):
+        """The matched branch stores its link too — a retry must not re-store it."""
+        inc_id = self._insert_radio_incident()
+        rss = self._rss(_IDEM_MATCH, _IDEM_MATCH_LINK)
+        with mock.patch("modules.pollers.impl.apd_news._mark_seen", self._failing_mark_seen()):
+            with self.assertRaises(RuntimeError):
+                # The matcher is pinned, so it "matches" again on the retry:
+                # only the idempotency guard can prevent a second link row.
+                self._cycle(rss, match=(inc_id, 9.0))
+        self.assertEqual(self._db_state(), (1, 1, []))
+
+        self._cycle(rss, match=(inc_id, 9.0))
+
+        conn = sqlite3.connect(self.db_path)
+        links = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE url=?",
+            (_IDEM_MATCH_LINK,),
+        ).fetchall()
+        conn.close()
+        self.assertEqual(links, [(inc_id,)], "retry must not re-link the article")
+        self.assertEqual(self._db_state()[0], 1)
+
+    # -- regression: seed write failed after the insert --------------------
+
+    def test_seed_failure_after_insert_leaves_no_duplicates_on_retry(self):
+        rss = self._rss()
+        os.unlink(self.seed_path)
+        with self.assertRaises(HomicideSeedError):
+            self._cycle(rss)
+
+        # The incident and the link are committed; the seed append is not.
+        self.assertEqual(self._db_state(), (1, 1, []))
+        self.assertFalse(os.path.exists(self.seed_path),
+                         "a failed append must not recreate the curated seed")
+
+        # Operator restores the seed; the retry finishes the append only.
+        self._write_seed([])
+        self._cycle(rss)
+
+        self.assertEqual(self._db_state(), (1, 1, [_IDEM_LINK]))
+        self.assertEqual([e["url"] for e in self._read_seed()], [_IDEM_LINK],
+                         "the interrupted seed append must complete exactly once")
+        # Deliberate trade-off: the alert is never re-sent. The interrupted
+        # cycle had not reached it, so responders see the incident (already
+        # committed and visible on the public map) exactly once rather than
+        # risking a duplicate alert for the same press release.
+        self.assertEqual(self.alerts, [])
+
+    # -- write-after-outcome is preserved for pre-insert failures ----------
+
+    def test_pre_insert_failure_still_retries_from_scratch(self):
+        rss = self._rss()
+        with mock.patch("modules.pollers.impl.apd_news._match_article_to_incident",
+                        side_effect=RuntimeError("sqlite3.OperationalError: database is locked")):
+            with self.assertRaises(APDNewsArticleError):
+                self._cycle(rss)
+
+        self.assertEqual(self._db_state(), (0, 0, []),
+                         "nothing may be recorded before the insert")
+        self.assertEqual(self.alerts, [])
+        self.assertEqual(self._read_seed(), [])
+
+        # The retry starts from scratch and completes the whole outcome once.
+        self._cycle(rss)
+        self.assertEqual(self._db_state(), (1, 1, [_IDEM_LINK]))
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual([e["url"] for e in self._read_seed()], [_IDEM_LINK])
+
+
+# ===========================================================================
+# 17. _prior_article_work — the idempotency lookup
+# ===========================================================================
+
+class TestPriorArticleWork(unittest.TestCase):
+    """Both durable markers an interrupted article leaves must be found."""
+
+    def setUp(self):
+        self.db_path = _tmp_db()
+        self.addCleanup(lambda: os.path.exists(self.db_path) and os.unlink(self.db_path))
+
+    def _incident(self, article_url=None) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO incidents (ts_start, itype, description, agencies, tgids, "
+            "status, article_url) VALUES (?,?,?,?,?, 'active', ?)",
+            (time.time(), "HOMICIDE", "[APD Press Release] x", '["APD"]', "[]", article_url),
+        )
+        conn.commit()
+        inc_id = cur.lastrowid
+        conn.close()
+        return inc_id
+
+    def _link(self, incident_id, url) -> None:
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO incident_articles (incident_id, ts, headline, url, source) "
+            "VALUES (?,?,?,?, 'apd_pr')",
+            (incident_id, time.time(), "headline", url),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_unknown_article_reports_no_prior_work(self):
+        self.assertEqual(
+            _prior_article_work(self.db_path, "https://kxan.com/unknown"), (False, 0)
+        )
+
+    def test_empty_url_reports_no_prior_work(self):
+        self.assertEqual(_prior_article_work(self.db_path, ""), (False, 0))
+
+    def test_recorded_link_is_found(self):
+        inc_id = self._incident()
+        self._link(inc_id, "https://kxan.com/linked")
+        self.assertEqual(
+            _prior_article_work(self.db_path, "https://kxan.com/linked"), (True, inc_id)
+        )
+
+    def test_incident_article_url_is_found_without_a_link_row(self):
+        """An insert that committed but never stored the link is still found."""
+        inc_id = self._incident(article_url="https://kxan.com/half_done")
+        self.assertEqual(
+            _prior_article_work(self.db_path, "https://kxan.com/half_done"), (True, inc_id)
+        )
+
+    def test_orphaned_link_row_still_counts_as_recorded(self):
+        """A link row with no incident id must not be processed a second time."""
+        self._link(None, "https://kxan.com/orphan")
+        self.assertEqual(
+            _prior_article_work(self.db_path, "https://kxan.com/orphan"), (True, 0)
+        )
 
 
 # ===========================================================================

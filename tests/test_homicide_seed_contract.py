@@ -7,10 +7,15 @@ path that fails visibly instead of reporting zero.
 Coverage:
   - resolve_seed_path() / modules.config.resolve_homicide_seed_path() agree
     with the apd_news resolver, and the production default is preserved.
+  - apd_news delegates its seed lookup to the shared resolver instead of
+    re-implementing the precedence, and empty/whitespace values for every seed
+    env var resolve identically in all three modules.
   - empty-string HOMICIDE_SEED_PATH falls back to the data dir.
   - load_seed_strict() raises HomicideSeedUnavailable on missing/corrupt seed.
   - GET /api/homicides answers 503 with an explicit error (never a total of
     zero) and 200 with counts when the seed is healthy.
+  - the anonymous 503 body is generic: no absolute seed path, no deployment
+    variable, no filename, no parse error — the detail goes to the server log.
   - premium_homicide_summary() reads the same resolved seed and raises rather
     than under-reporting; the /api/premium/homicides/summary route is wired to
     it and no longer hardcodes the production path.
@@ -216,8 +221,12 @@ def _apd_news_module():
 
     ``tests/test_apd_cad_poller.py`` registers ``modules.pollers.impl`` as a
     plain module (not a package), which blocks a normal import of
-    ``modules.pollers.impl.apd_news``. Fall back to loading the file directly —
-    the helper under test (``_homicide_seed_path``) is pure env logic.
+    ``modules.pollers.impl.apd_news``. Fall back to loading the file directly.
+
+    The poller defers its seed lookup to
+    ``modules.config.resolve_homicide_seed_path``, so the real
+    ``modules.config`` must be importable here. The autouse
+    ``_real_config_always`` fixture guarantees that for every test in this file.
     """
     import importlib
     import importlib.util
@@ -241,6 +250,64 @@ def test_apd_news_resolver_agrees_with_config(seed_env, real_config):
     with _apd_news_module() as apd_news:
         assert apd_news._homicide_seed_path() == str(seed_env[0])
         assert apd_news._homicide_seed_path() == real_config.resolve_homicide_seed_path()
+
+
+def test_apd_news_resolver_delegates_to_the_shared_contract(seed_env, real_config):
+    """apd_news must not carry a second resolver of its own.
+
+    A duplicate resolver is how the two paths drifted before: the poller read
+    env with raw truthiness, so an empty or whitespace-only HOMICIDE_SEED_PATH
+    meant "unset" to ``modules.config`` but "use the literal whitespace path"
+    to the writer.
+    """
+    with _apd_news_module() as apd_news:
+        source = Path(apd_news.__file__).read_text(encoding="utf-8")
+        fn = next(
+            node for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.FunctionDef) and node.name == "_homicide_seed_path"
+        )
+        # Drop the docstring: it documents the production default in prose, and
+        # the contract under test is what the executable body does.
+        body_nodes = fn.body[1:] if ast.get_docstring(fn) else fn.body
+        code = ast.unparse(ast.Module(body=body_nodes, type_ignores=[]))
+    assert "resolve_homicide_seed_path" in code
+    assert "os.environ" not in code, "apd_news must not re-implement the precedence"
+    assert _SEED_BASENAME not in code, "apd_news must not hardcode the seed filename"
+    assert _PROD_TREE not in code, "apd_news must not hardcode the production tree"
+
+
+@pytest.mark.parametrize("blank", ["", " ", "\t", "\n", "   \t "])
+def test_blank_seed_env_resolves_identically_everywhere(blank, seed_env, real_config,
+                                                          monkeypatch):
+    """Empty/whitespace env values must mean "unset" for every reader."""
+    seed_path, _data_dir = seed_env
+    monkeypatch.setenv("HOMICIDE_SEED_PATH", blank)
+    monkeypatch.setenv("BATTLE_BUDDY_HOME", str(seed_path.parent))
+
+    assert real_config.resolve_homicide_seed_path() == str(seed_path)
+    assert homicide_count.resolve_seed_path() == str(seed_path)
+    with _apd_news_module() as apd_news:
+        assert apd_news._homicide_seed_path() == str(seed_path)
+
+
+@pytest.mark.parametrize("blank", ["", " ", "\t", "\n"])
+def test_blank_home_and_data_dir_resolve_identically_everywhere(blank, seed_env,
+                                                                 real_config, monkeypatch):
+    """A blank BATTLE_BUDDY_HOME/DATA_DIR must not resolve to a relative path."""
+    seed_path, data_dir = seed_env
+    monkeypatch.setenv("HOMICIDE_SEED_PATH", blank)
+    monkeypatch.setenv("BATTLE_BUDDY_DATA_DIR", blank)
+    monkeypatch.setenv("BATTLE_BUDDY_HOME", blank)
+
+    expected = f"{_PROD_TREE}/{_SEED_BASENAME}"
+    assert real_config.resolve_homicide_seed_path() == expected
+    assert homicide_count.resolve_seed_path() == expected
+    with _apd_news_module() as apd_news:
+        assert apd_news._homicide_seed_path() == expected
+    # Sanity: the same fixture with a real home still redirects, so the
+    # assertions above are about blank handling and not a dead fixture.
+    monkeypatch.setenv("BATTLE_BUDDY_HOME", str(data_dir))
+    assert real_config.resolve_homicide_seed_path() == str(seed_path)
 
 
 def test_production_default_unchanged_without_env(monkeypatch, real_config):
@@ -358,6 +425,62 @@ def test_api_homicides_logs_the_fault(homicide_client, seed_env, monkeypatch, ca
     with caplog.at_level("ERROR", logger="bb.public"):
         homicide_client.get("/api/homicides")
     assert any("seed unavailable" in rec.getMessage() for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# 3b. The unauthenticated 503 body discloses nothing about the deployment
+# ---------------------------------------------------------------------------
+
+def test_api_homicides_503_body_discloses_no_seed_path(homicide_client, seed_env, monkeypatch):
+    """/api/homicides is anonymous: no path, no deployment variable, no detail."""
+    seed_path, data_dir = seed_env
+    absent = data_dir / "absent.json"
+    monkeypatch.setenv("HOMICIDE_SEED_PATH", str(absent))
+
+    r = homicide_client.get("/api/homicides")
+    assert r.status_code == 503
+    raw = r.get_data(as_text=True)
+    body = r.get_json()
+
+    assert body == {"error": "homicide seed unavailable"}
+    assert "detail" not in body
+    for leak in (
+        str(absent),            # resolved absolute seed path
+        str(data_dir),          # deployment data dir
+        _PROD_TREE,             # production tree
+        "HOMICIDE_SEED_PATH",   # deployment variable
+        "BATTLE_BUDDY_HOME",
+        "BATTLE_BUDDY_DATA_DIR",
+        _SEED_BASENAME,         # the curated filename
+    ):
+        assert leak not in raw, f"503 body leaked {leak!r}"
+
+
+def test_api_homicides_503_body_is_generic_for_a_corrupt_seed(homicide_client, seed_env):
+    """A corrupt seed must not echo the parse error or the path either."""
+    seed_path, _data_dir = seed_env
+    seed_path.write_text("[[[ truncated", encoding="utf-8")
+
+    r = homicide_client.get("/api/homicides")
+    assert r.status_code == 503
+    raw = r.get_data(as_text=True)
+    assert r.get_json() == {"error": "homicide seed unavailable"}
+    assert str(seed_path) not in raw
+    assert _SEED_BASENAME not in raw
+    assert "Expecting" not in raw and "JSONDecodeError" not in raw
+
+
+def test_api_homicides_503_detail_is_logged_server_side(homicide_client, seed_env,
+                                                         monkeypatch, caplog):
+    """The diagnostic detail moves to the log, so operators keep it."""
+    seed_path, data_dir = seed_env
+    absent = data_dir / "absent.json"
+    monkeypatch.setenv("HOMICIDE_SEED_PATH", str(absent))
+    with caplog.at_level("ERROR", logger="bb.public"):
+        homicide_client.get("/api/homicides")
+    logged = "\n".join(rec.getMessage() for rec in caplog.records)
+    assert "seed unavailable" in logged
+    assert str(absent) in logged, "the log must keep the resolved path for operators"
 
 
 # ---------------------------------------------------------------------------

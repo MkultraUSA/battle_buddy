@@ -196,6 +196,103 @@ def _poller_health_metric_specs() -> tuple[tuple[str, str, float], ...]:
     return tuple(specs)
 
 
+def _homicide_seed_metrics() -> tuple[int, int, float]:
+    """Return ``(victims, incidents, newest_ts)`` from the curated seed.
+
+    Reads through ``modules.homicide_count.load_seed_strict``, i.e. the single
+    seed-path contract in ``modules.config`` (HOMICIDE_SEED_PATH /
+    BATTLE_BUDDY_DATA_DIR / BATTLE_BUDDY_HOME). These metrics therefore observe
+    the seed the rest of the deployment reads and writes — previously they read
+    ``homicides_2026.json`` next to this file, which in a relocated deployment
+    is either a different file or missing, silently publishing a zero.
+
+    Raises :class:`modules.homicide_count.HomicideSeedUnavailable` when the seed
+    is missing or corrupt, so callers can report the fault instead of a false
+    zero. The path is resolved per call, so a redirected deployment picks the
+    change up without a restart.
+    """
+    # Deferred import: keeps this module importable before config bootstrap and
+    # matches how the other optional callers in this file reach the helper.
+    from modules.homicide_count import load_seed_strict
+
+    seed = load_seed_strict()
+    victims = 0
+    newest_ts = 0.0
+    for entry in seed:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            victims += int(entry.get("count", 1))
+        except (TypeError, ValueError):
+            print(f"[homicide-seed] entry n={entry.get('n')!r} has an unusable "
+                  f"count {entry.get('count')!r}; counting 1 victim", flush=True)
+            victims += 1
+        try:
+            entry_ts = datetime.strptime(
+                entry.get("date", "2026-01-01"), "%Y-%m-%d").timestamp()
+        except (TypeError, ValueError):
+            continue
+        newest_ts = max(newest_ts, entry_ts)
+    return victims, len(seed), newest_ts
+
+
+def _homicide_seed_metric_specs() -> tuple[tuple[str, str, float], ...]:
+    """Gauge specs for the curated homicide seed.
+
+    A missing or corrupt seed is a deployment fault, not a zero homicide year,
+    so the fault is logged and exported as
+    ``battlebuddy_homicides_seed_error`` = 1 while the count gauges read 0. An
+    ops check can then tell "no homicides recorded" from "no data", which the
+    old silent-zero path could not. ``battlebuddy_homicides_seed_newest_ts``
+    also falls to 0, failing the ops freshness gate.
+    """
+    try:
+        victims, incidents, newest_ts = _homicide_seed_metrics()
+    except Exception as exc:
+        print(f"[metrics] homicide seed unavailable: {exc}", flush=True)
+        victims, incidents, newest_ts = 0, 0, 0.0
+        seed_error = 1.0
+    else:
+        seed_error = 0.0
+    return (
+        (
+            "battlebuddy_homicides_ytd_victims",
+            "Austin homicide victims tracked by Battle Buddy, year-to-date 2026",
+            float(victims),
+        ),
+        (
+            "battlebuddy_homicides_ytd",
+            "Austin homicide incidents tracked by Battle Buddy, year-to-date 2026",
+            float(incidents),
+        ),
+        (
+            "battlebuddy_homicides_seed_newest_ts",
+            "Newest incident date in curated homicides file (unixtime)",
+            float(newest_ts),
+        ),
+        (
+            "battlebuddy_homicides_seed_error",
+            "Curated homicide seed read status (1 = missing/corrupt, 0 = read); "
+            "while 1 the homicide gauges above are not a real zero",
+            seed_error,
+        ),
+    )
+
+
+def _homicide_seed_summary() -> str:
+    """One-line homicide YTD summary for the !query bot context.
+
+    Same configured seed as the gauges; an unreadable seed reports itself as
+    unavailable (and is logged) rather than as a zero homicide year.
+    """
+    try:
+        victims, incidents, _newest_ts = _homicide_seed_metrics()
+    except Exception as exc:
+        print(f"[bot] homicide seed unavailable: {exc}", flush=True)
+        return "homicide data unavailable"
+    return f"{incidents} homicide incidents, {victims} victims YTD 2026"
+
+
 # Network-wide ADSB.lol snapshot pushed by the authorized feeder Pi.  The
 # feeder-only re-api is source-IP restricted, so browsers and this VPS cannot
 # query it directly.
@@ -592,47 +689,18 @@ try:
                     m3.add_metric([str(agency)], float(count))
                 yield m3
 
-                # --- homicide YTD gauge — sourced from curated homicides_2026.json ---
-                try:
-                    import json as _json
-                    import os as _os
-                    _hf = _os.path.join(_os.path.dirname(__file__), "homicides_2026.json")
-                    _hdata = _json.load(open(_hf))
-                    _homicide_victims = sum(h.get("count", 1) for h in _hdata)
-                    _homicide_incidents = len(_hdata)
-                except Exception:
-                    _homicide_victims = 0
-                    _homicide_incidents = 0
-                g_hom_v = GaugeMetricFamily(
-                    "battlebuddy_homicides_ytd_victims",
-                    "Austin homicide victims tracked by Battle Buddy, year-to-date 2026",
-                )
-                g_hom_v.add_metric([], float(_homicide_victims))
-                yield g_hom_v
-                g_hom_i = GaugeMetricFamily(
-                    "battlebuddy_homicides_ytd",
-                    "Austin homicide incidents tracked by Battle Buddy, year-to-date 2026",
-                )
-                g_hom_i.add_metric([], float(_homicide_incidents))
-                yield g_hom_i
+                # --- homicide YTD gauges — sourced from the configured seed ---
+                # _homicide_seed_metric_specs() resolves the seed through
+                # modules.config, so these gauges (and the ops freshness gate
+                # that reads them) observe the same seed as the API, and an
+                # unreadable seed is reported as a seed error, not a zero.
+                for _name, _help, _val in _homicide_seed_metric_specs():
+                    _g = GaugeMetricFamily(_name, _help)
+                    _g.add_metric([], float(_val))
+                    yield _g
 
                 # --- map/investigation health gauges (added 2026-09-23) ---
                 import time as _mtime
-                try:
-                    from datetime import datetime as _dt
-                    _newest = max(
-                        _dt.strptime(h.get("date", "2026-01-01"), "%Y-%m-%d").timestamp()
-                        for h in _hdata
-                    )
-                except Exception:
-                    _newest = 0
-                g_hom_fresh = GaugeMetricFamily(
-                    "battlebuddy_homicides_seed_newest_ts",
-                    "Newest incident date in curated homicides file (unixtime)",
-                )
-                g_hom_fresh.add_metric([], float(_newest))
-                yield g_hom_fresh
-
                 _1h = _mtime.time() - 3600
                 cur.execute(
                     "SELECT COUNT(*) FROM incidents WHERE ts_start >= ? "
@@ -1608,7 +1676,6 @@ def bot_talk():
             def _do_query(q, tok, name):
                 try:
                     import json as _j
-                    import os as _os
                     import time as _t
                     import urllib.request as _ur
                     _now = _t.time()
@@ -1632,12 +1699,8 @@ def bot_talk():
 
                     conn.close()
 
-                    try:
-                        _hf = _os.path.join(_os.path.dirname(__file__), "homicides_2026.json")
-                        _hdata = _j.load(open(_hf))
-                        hom_summary = f"{len(_hdata)} homicide incidents, {sum(h.get('count',1) for h in _hdata)} victims YTD 2026"
-                    except Exception:
-                        hom_summary = "homicide data unavailable"
+                    # Same configured seed as /api/homicides and the gauges.
+                    hom_summary = _homicide_seed_summary()
 
                     inc_text = "\n".join(
                         f"[{r[4]}] {r[0]} @ {r[1] or 'unknown location'} | {r[2] or 'no desc'} | agencies: {r[3]} | {r[5]}"
