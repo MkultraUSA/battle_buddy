@@ -26,13 +26,61 @@ AUSTIN_EVENTS_POLL: float = 6 * 3600.0
 AUSTIN_EVENTS_WINDOW = 7
 
 
+class AustinEventsLoadError(RuntimeError):
+    """Raised when the events file cannot be read, parsed, or understood.
+
+    A missing, unreadable, or corrupt events file used to be swallowed here
+    and reported as an empty event list, so BasePoller recorded a clean cycle:
+    no backoff, no degraded poller health, and a silently missing weekly
+    digest. Raising lets the failure reach BasePoller through run().
+
+    A readable file that simply contains no events is *not* an error and stays
+    a successful no-op cycle.
+    """
+
+
 def _load_events(path: str = AUSTIN_EVENTS_JSON) -> dict:
+    """Load the events document from ``path``.
+
+    Parameters
+    ----------
+    path : str
+        Path to the events JSON document.
+
+    Returns
+    -------
+    dict
+        The parsed document, unchanged.
+
+    Raises
+    ------
+    AustinEventsLoadError
+        The file is missing, unreadable, not valid JSON, or not a JSON object
+        whose ``events`` entry is a list. Propagating the failure is what
+        makes BasePoller count the cycle as failed and back off, instead of
+        resetting its failure counter on an empty-but-healthy-looking cycle.
+        A document with an absent or empty ``events`` list is valid and does
+        not raise.
+    """
     try:
         with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
+            doc = json.load(fh)
     except Exception as exc:
         logger.warning("[events] load failed: %s", exc)
-        return {"events": []}
+        raise AustinEventsLoadError(f"{path}: {exc}") from exc
+
+    if not isinstance(doc, dict):
+        reason = f"expected a JSON object, got {type(doc).__name__}"
+        logger.warning("[events] load failed: %s: %s", path, reason)
+        raise AustinEventsLoadError(f"{path}: {reason}")
+
+    events = doc.get("events", [])
+    if not isinstance(events, list):
+        reason = f"expected 'events' to be a list, got {type(events).__name__}"
+        logger.warning("[events] load failed: %s: %s", path, reason)
+        raise AustinEventsLoadError(f"{path}: {reason}")
+
+    return doc
 
 
 def _upcoming_events(doc: dict, today: date) -> list[dict]:
@@ -105,6 +153,22 @@ class AustinEventsPoller(BasePoller):
         self.state_path = state_path
 
     def run(self) -> None:
+        """Post the digest for the current window, if one is due.
+
+        A load failure from _load_events() deliberately propagates: an
+        unreadable events file means the digest could not be evaluated, and
+        BasePoller must record the cycle as failed so it backs off and reports
+        the outage through poller health instead of reporting a clean cycle.
+
+        _load_state() is the opposite case and still defaults on failure: the
+        state file is a cache, absent on first run, so treating it as an error
+        would make a healthy first cycle fail.
+
+        Raises
+        ------
+        AustinEventsLoadError
+            The events file could not be read, parsed, or understood.
+        """
         from modules.config import TALK_BASE, TALK_PASS, TALK_ROOMS, TALK_USER  # noqa: PLC0415
 
         today = self._today()
