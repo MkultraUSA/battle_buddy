@@ -292,7 +292,7 @@ footer {
   <a href="/public/homicides" style="color:#ef4444;text-decoration:none">Homicide Map</a> &nbsp;&middot;&nbsp;
   <a href="/public/feed" style="color:#3b82f6;text-decoration:none">Feed</a> &nbsp;·&nbsp;
   <a href="/public/about" style="color:#3b82f6;text-decoration:none">About</a> &nbsp;·&nbsp;
-  <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" style="color:#10b981;text-decoration:none">📊 Stats</a>
+  <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" rel="noopener" style="color:#10b981;text-decoration:none">📊 Stats</a>
 </footer>
 
 <script>
@@ -1459,7 +1459,7 @@ HOMICIDE_MAP_HTML = """<!DOCTYPE html>
     <div class="nerd-content">
       <h3>Data Sources</h3>
       <p><strong>Primary source:</strong> APD homicide press releases published at
-      <a href="https://www.austintexas.gov/news?field_news_type_tid=75" target="_blank">austintexas.gov/news</a>.
+      <a href="https://www.austintexas.gov/news?field_news_type_tid=75" target="_blank" rel="noopener">austintexas.gov/news</a>.
       Battle Buddy polls this page every 5 minutes. New articles matching homicide/shooting/death keywords trigger
       automatic article retrieval, address extraction, and geocoding.</p>
 
