@@ -186,11 +186,13 @@ class RedditIntelPoller(BasePoller):
             self.ensure_schema(DB_PATH)
             self._schema_ready = True
 
+        fetch_errors = []
         for feed_url in self.feeds:
             try:
                 root = self.fetch_feed(feed_url)
             except Exception as exc:
                 logger.warning("[reddit] fetch error %s: %s", feed_url, exc)
+                fetch_errors.append(exc)
                 continue
             self.process_feed(root, feed_url, DB_PATH, send_dm_alert)
 
@@ -198,6 +200,9 @@ class RedditIntelPoller(BasePoller):
             self.tip_recheck(DB_PATH, _haversine_km)
         except Exception as exc:
             logger.warning("[reddit] tip_recheck loop error: %s", exc)
+
+        if fetch_errors:
+            raise RuntimeError(f"Reddit fetch failed for {len(fetch_errors)} feed(s)") from fetch_errors[-1]
 
     @staticmethod
     def ensure_schema(db_path: str) -> None:

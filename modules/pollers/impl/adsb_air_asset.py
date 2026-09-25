@@ -90,7 +90,7 @@ class ADSBAirAssetPoller(BasePoller):
             data = self.fetch_aircraft()
         except Exception as exc:
             logger.warning("[adsb] fetch error: %s", exc)
-            return
+            raise
 
         now = time.time()
         self.prune_positions(DB_PATH, now)

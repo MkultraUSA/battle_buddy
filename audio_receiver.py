@@ -44,7 +44,7 @@ urllib.request.install_opener(
     urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ssl_ctx))
 )
 
-from flask import Flask, jsonify, render_template_string, request  # noqa: E402
+from flask import Flask, jsonify, render_template_string, request  # noqa: E402, I001
 
 from modules import atak as _atak_mod  # noqa: E402
 from modules import maintenance as __maintenance_mod  # noqa: E402
@@ -81,6 +81,7 @@ from modules.pi_watchdog import (  # noqa: E402
     _pi_watchdog_alert,
 )
 from modules.pollers import *  # noqa: E402
+from modules.raw_audio_queue import get_raw_audio_queue_counts  # noqa: E402
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
@@ -110,6 +111,49 @@ _BACKLOG_MAX_ITEMS = 300
 _BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
+
+
+def _get_backlog_metric_state() -> dict:
+    with _backlog_lock:
+        memory_pending = len(_backlog_queue)
+    try:
+        file_counts = get_raw_audio_queue_counts()
+    except Exception:
+        file_counts = {"pending": 0, "failed": 0, "scan_error": 1}
+    return {
+        "memory_pending": memory_pending,
+        "file_pending": file_counts["pending"],
+        "file_failed": file_counts["failed"],
+        "file_scan_error": file_counts["scan_error"],
+        "total_pending": memory_pending + file_counts["pending"],
+    }
+
+
+def _backlog_file_metric_specs(state: dict) -> tuple[tuple[str, str, int], ...]:
+    return (
+        (
+            "battlebuddy_backlog_files_pending",
+            "Audio clips waiting in the file-backed backlog pending directory; failed items are excluded",
+            state["file_pending"],
+        ),
+        (
+            "battlebuddy_backlog_files_failed",
+            "Audio clips in the file-backed backlog failed directory; excluded from pending and total depth",
+            state["file_failed"],
+        ),
+        (
+            "battlebuddy_backlog_total_depth",
+            "Audio clips waiting in the in-memory remote-worker queue and file-backed pending directory; "
+            "failed items are excluded and file counts may be incomplete when scan-error is 1",
+            state["total_pending"],
+        ),
+        (
+            "battlebuddy_backlog_files_scan_error",
+            "File-backed backlog scan status (1 = scan error, 0 = successful scan)",
+            state["file_scan_error"],
+        ),
+    )
+
 
 # Network-wide ADSB.lol snapshot pushed by the authorized feeder Pi.  The
 # feeder-only re-api is source-IP restricted, so browsers and this VPS cannot
@@ -656,13 +700,12 @@ try:
                 yield g_calls
 
                 # --- backlog overflow metrics ---
-                with _backlog_lock:
-                    _backlog_depth = len(_backlog_queue)
+                _backlog = _get_backlog_metric_state()
                 g_backlog = GaugeMetricFamily(
                     "battlebuddy_backlog_queue_depth",
-                    "Number of audio clips waiting in the backlog queue for remote workers (pie3)",
+                    "Number of audio clips waiting in the in-memory backlog queue for remote workers (pie3)",
                 )
-                g_backlog.add_metric([], float(_backlog_depth))
+                g_backlog.add_metric([], float(_backlog["memory_pending"]))
                 yield g_backlog
 
                 g_backlog_done = CounterMetricFamily(
@@ -672,28 +715,7 @@ try:
                 g_backlog_done.add_metric([], float(_backlog_completed))
                 yield g_backlog_done
 
-                # --- file-backed backlog depths (raw_audio_queue dirs) ---
-                # The in-memory gauge above only tracks the live remote-worker
-                # deque. Overflow persists to disk; count those dirs too so the
-                # board shows the true backlog (204 stale May clips found
-                # 2026-09-23 while the gauge read ~0).
-                try:
-                    from pathlib import Path as _Path
-                    _qroot = _Path("/opt/battlebuddy/raw_audio_queue")
-                    _pending_n = sum(
-                        1 for _f in (_qroot / "pending").glob("*.json"))
-                    _failed_n = sum(
-                        1 for _f in (_qroot / "failed").glob("*.json"))
-                except Exception:
-                    _pending_n, _failed_n = 0, 0
-                for _name, _help, _val in [
-                    ("battlebuddy_backlog_files_pending",
-                     "Audio clips waiting in file-backed backlog (pending dir)",
-                     _pending_n),
-                    ("battlebuddy_backlog_files_failed",
-                     "Audio clips in file-backed backlog (failed dir)",
-                     _failed_n),
-                ]:
+                for _name, _help, _val in _backlog_file_metric_specs(_backlog):
                     _g = GaugeMetricFamily(_name, _help)
                     _g.add_metric([], float(_val))
                     yield _g

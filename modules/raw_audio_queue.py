@@ -304,6 +304,19 @@ def release_queued_audio_claim(
     os.replace(meta_tmp, meta_path)
 
 
+def get_raw_audio_queue_counts() -> dict:
+    counts = {"pending": 0, "failed": 0, "scan_error": 0}
+    for queue_name in ("pending", "failed"):
+        queue_path = RAW_AUDIO_QUEUE_DIR / queue_name
+        try:
+            if not queue_path.is_dir():
+                raise OSError(f"raw audio queue directory unavailable: {queue_path}")
+            counts[queue_name] = sum(1 for _ in queue_path.glob("*.json"))
+        except OSError:
+            counts["scan_error"] = 1
+    return counts
+
+
 def get_raw_audio_queue_stats(now: Optional[float] = None) -> dict:
     now = now or time.time()
     pending = _pending_dir()

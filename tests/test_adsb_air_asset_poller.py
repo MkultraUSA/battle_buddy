@@ -35,9 +35,12 @@ _stub_leaf(
     TALK_PASS="pass",
     TALK_ROOMS={"apd": "room_apd", "incidents": "room_incidents"},
 )
+_CONFIG = sys.modules["modules.config"]
 _stub_leaf("modules.incident_engine", _atak_post_marker=lambda *a, **kw: None)
+_INCIDENT = sys.modules["modules.incident_engine"]
 _stub_leaf("modules.pollers", _pi_command_queue=[], send_dm_alert=lambda *a, **kw: None)
 _stub_leaf("modules.pollers_legacy", send_dm_alert=lambda *a, **kw: None)
+_LEGACY = sys.modules["modules.pollers_legacy"]
 
 import importlib.util as _ilu  # noqa: E402
 
@@ -124,6 +127,27 @@ class ADSBAirAssetPollerTests(unittest.TestCase):
         poller = ADSBAirAssetPoller()
         self.assertIsInstance(poller, BasePoller)
         self.assertEqual(poller.interval, ADSB_INTERVAL)
+
+    def test_run_propagates_fetch_error_after_logging(self):
+        poller = ADSBAirAssetPoller()
+        runtime_modules = {
+            "modules.config": _CONFIG,
+            "modules.incident_engine": _INCIDENT,
+            "modules.pollers_legacy": _LEGACY,
+        }
+
+        with mock.patch.dict(sys.modules, runtime_modules), \
+             mock.patch.dict(_CONFIG.__dict__, {"DB_PATH": self.db_path}), \
+             mock.patch.object(
+                 poller,
+                 "fetch_aircraft",
+                 side_effect=RuntimeError("network down"),
+             ), \
+             self.assertLogs("ADSBAirAssetPoller", level="WARNING") as logs:
+            with self.assertRaisesRegex(RuntimeError, "network down"):
+                poller.run()
+
+        self.assertIn("[adsb] fetch error: network down", logs.output[0])
 
     def test_normalize_filters_ground_high_and_non_helo_unknowns(self):
         self.assertIsNone(ADSBAirAssetPoller.normalize_aircraft({"hex": "abc", "lat": 1, "lon": 2, "alt_baro": "ground"}))

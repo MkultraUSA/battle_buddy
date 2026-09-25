@@ -181,14 +181,26 @@ class RedditIntelPollerTests(unittest.TestCase):
         self.assertEqual(post["url"], "https://www.reddit.com/r/Austin/comments/xyz789/")
         self.assertEqual(post["body"], "Police everywhere")
 
-    def test_run_continues_on_fetch_error(self):
-        poller = RedditIntelPoller(feeds=["https://www.reddit.com/r/Austin/new.rss"])
+    def test_run_finishes_cycle_before_propagating_fetch_error(self):
+        failed_url = "https://www.reddit.com/r/Austin/new.rss"
+        successful_url = "https://www.reddit.com/r/ATX/new.rss"
+        poller = RedditIntelPoller(feeds=[failed_url, successful_url])
         sys.modules["modules.config"].DB_PATH = self.db_path
+        root = reddit_intel.ET.fromstring("<feed />")
 
-        with mock.patch.object(poller, "fetch_feed", side_effect=RuntimeError("network down")), \
+        def fetch(feed_url):
+            if feed_url == failed_url:
+                raise RuntimeError("network down")
+            return root
+
+        with mock.patch.object(poller, "fetch_feed", side_effect=fetch), \
+             mock.patch.object(poller, "process_feed") as process, \
              mock.patch.object(poller, "tip_recheck") as recheck:
-            poller.run()
+            with self.assertRaisesRegex(RuntimeError, "1 feed"):
+                poller.run()
 
+        process.assert_called_once()
+        self.assertEqual(process.call_args.args[1], successful_url)
         recheck.assert_called_once()
 
     def test_known_neighborhood_location_is_extracted_without_geocoding(self):
