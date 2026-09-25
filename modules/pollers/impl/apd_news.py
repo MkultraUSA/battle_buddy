@@ -120,8 +120,69 @@ _APD_NEWS_LOCK = threading.Lock()
 # Pure helper functions — no module-level config imports
 # ---------------------------------------------------------------------------
 
-_HOMICIDE_JSON_PATH = "/opt/battlebuddy/homicides_2026.json"
 _HOMICIDE_JSON_LOCK = threading.Lock()
+
+# Seed filename and the env var that relocates it. The path itself is resolved
+# per call by _homicide_seed_path() so tests can redirect it without reloading
+# this module, and so a sandbox/review clone can never touch the production
+# seed at /opt/battlebuddy/homicides_2026.json.
+_HOMICIDE_SEED_ENV = "HOMICIDE_SEED_PATH"
+_HOMICIDE_SEED_BASENAME = "homicides_2026.json"
+_BATTLE_BUDDY_HOME_DEFAULT = "/opt/battlebuddy"
+
+
+class HomicideSeedError(RuntimeError):
+    """Raised when the curated homicide seed cannot be read or written.
+
+    The seed is the authoritative area-wide homicide dataset, so an
+    unreadable, corrupt, or unwritable seed is a deployment fault that must
+    surface as a failed poll cycle. It is never treated as an empty seed:
+    silently recreating the file would overwrite the curated history and
+    silently reset the canonical count to 1.
+    """
+
+
+def _homicide_seed_path() -> str:
+    """Resolve the homicide seed path from the environment (call-time).
+
+    Precedence mirrors ``modules.config.HOMICIDE_SEED_PATH``:
+    1. ``HOMICIDE_SEED_PATH`` — explicit per-file override.
+    2. ``BATTLE_BUDDY_DATA_DIR`` — data directory.
+    3. ``BATTLE_BUDDY_HOME`` — deployment root.
+    4. ``/opt/battlebuddy`` — production default.
+
+    Read from the environment on every call rather than at import time so a
+    redirected sandbox picks the change up without a module reload, and so
+    the production default is preserved when nothing is set.
+    """
+    override = os.environ.get(_HOMICIDE_SEED_ENV)
+    if override:
+        return override
+    home = os.environ.get("BATTLE_BUDDY_HOME") or _BATTLE_BUDDY_HOME_DEFAULT
+    data_dir = os.environ.get("BATTLE_BUDDY_DATA_DIR") or home
+    return os.path.join(data_dir, _HOMICIDE_SEED_BASENAME)
+
+
+def _load_homicide_seed(path: str) -> list[dict]:
+    """Load and validate the homicide seed, raising HomicideSeedError on fault.
+
+    A missing or malformed seed is an explicit failure, never an empty list.
+    """
+    if not os.path.exists(path):
+        raise HomicideSeedError(
+            f"homicide seed not found at {path!r}; set {_HOMICIDE_SEED_ENV} or "
+            f"BATTLE_BUDDY_HOME to the deployment data directory"
+        )
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise HomicideSeedError(f"homicide seed at {path!r} is unreadable: {exc}") from exc
+    if not isinstance(data, list):
+        raise HomicideSeedError(
+            f"homicide seed at {path!r} must be a JSON list, got {type(data).__name__}"
+        )
+    return data
 
 
 def _append_homicide_json(
@@ -135,21 +196,24 @@ def _append_homicide_json(
     lat: float | None,
     lon: float | None,
 ) -> None:
-    """Append a new confirmed homicide to homicides_2026.json (thread-safe).
+    """Append a new confirmed homicide to the seed file (thread-safe).
 
     Enforces the canonical area-wide homicide counting policy:
     - ``url`` must be a non-empty string (the source press-release link).
       Entries without a URL are silently dropped — they cannot be verified.
     - Deduplication is by exact URL match; the first entry for a given URL wins.
+
+    The target is resolved by :func:`_homicide_seed_path` on every call, so the
+    write follows BATTLE_BUDDY_HOME / HOMICIDE_SEED_PATH and a clean clone can
+    never write to /opt/battlebuddy. A missing, corrupt, or unwritable seed
+    raises :class:`HomicideSeedError` so the cycle is reported as failed rather
+    than silently overwriting the curated history with a single new entry.
     """
     if not url:
         return
+    path = _homicide_seed_path()
     with _HOMICIDE_JSON_LOCK:
-        try:
-            with open(_HOMICIDE_JSON_PATH) as f:
-                data = json.load(f)
-        except Exception:
-            data = []
+        data = _load_homicide_seed(path)
         # Deduplicate by URL
         if any(h.get("url") == url for h in data):
             return
@@ -161,10 +225,13 @@ def _append_homicide_json(
         if lon is not None:
             entry["lon"] = lon
         data.append(entry)
-        tmp = _HOMICIDE_JSON_PATH + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(data, f, indent=4)
-        os.replace(tmp, _HOMICIDE_JSON_PATH)
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(data, f, indent=4)
+            os.replace(tmp, path)
+        except OSError as exc:
+            raise HomicideSeedError(f"homicide seed at {path!r} is unwritable: {exc}") from exc
         logger.info("[apd-news] homicide #%d appended to JSON: %s", n, summary[:80])
 
 

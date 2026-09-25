@@ -24,8 +24,10 @@ All DB operations use a fresh in-memory (or tmp-file) SQLite database.
 
 from __future__ import annotations
 
+import builtins
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -177,9 +179,12 @@ from modules.pollers.impl.apd_news import (  # noqa: E402
     TRAFFIC_NEWS_URL,
     APDNewsFetchError,
     APDNewsPoller,
+    HomicideSeedError,
     _apd_fetch_article,
     _apd_parse_rss,
+    _append_homicide_json,
     _article_itype_from_title,
+    _homicide_seed_path,
     _match_article_to_incident,
     _pi_fetch,
     _post_to_talk,
@@ -1067,7 +1072,7 @@ class TestPollTrafficNews(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article", return_value={}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
-                        side_effect=lambda su, t, l, k, cid: l):  # noqa: E741
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link):
             self.poller._poll_traffic_news(
                 db_path=self.db_path,
                 google_cse_api_key="",
@@ -1170,7 +1175,7 @@ class TestPollTrafficNews(unittest.TestCase):
              mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
                         return_value={"address": "183 Freeway at Airport Blvd", "summary": "Fatal crash"}), \
              mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
-                        side_effect=lambda su, t, l, k, cid: l):  # noqa: E741
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link):
             self.poller._poll_traffic_news(
                 db_path=self.db_path,
                 google_cse_api_key="", google_cse_id="",
@@ -1184,6 +1189,57 @@ class TestPollTrafficNews(unittest.TestCase):
         self.assertIsNotNone(row[0])
         self.assertIsNotNone(row[1])
         self.assertIn("183", row[2])
+
+
+# ---------------------------------------------------------------------------
+# Homicide seed sandbox
+# ---------------------------------------------------------------------------
+# The seed used to be a hardcoded "/opt/battlebuddy/homicides_2026.json".  On a
+# clean clone that path does not exist, so any test that reached
+# _append_homicide_json tried to create /opt/battlebuddy/homicides_2026.json.tmp
+# and failed -- and on the production host the same write would have clobbered
+# the curated seed with a single new entry.  _install_seed_sandbox() points the
+# seed at a temp file and restores every global it touches, so a test run can
+# never read or write the production tree.
+
+_PROD_TREE = "/opt/battlebuddy"
+_SEED_BASENAME = "homicides_2026.json"
+
+
+def _assert_seed_stays_in_sandbox(tmpdir):
+    """Cleanup guard: the resolved seed path must never leave *tmpdir*.
+
+    Registered via addCleanup so a test that redirects the seed to a different
+    location (e.g. a read-only fixture dir) is still checked for containment
+    rather than exact equality.
+    """
+    resolved = os.path.realpath(_homicide_seed_path())
+    if resolved.startswith(_PROD_TREE):
+        raise AssertionError(
+            f"seed path points into the production tree: {resolved}")
+    if not (resolved == os.path.realpath(tmpdir)
+            or resolved.startswith(os.path.realpath(tmpdir) + os.sep)):
+        raise AssertionError(
+            f"seed path escaped the sandbox {tmpdir!r}: {_homicide_seed_path()!r}")
+
+
+def _install_seed_sandbox(testcase):
+    """Redirect the homicide seed into a fresh temp dir for *testcase*.
+
+    Returns the temp dir. Registers cleanups that restore os.environ, remove
+    the temp dir, and assert the resolved seed path stayed inside the sandbox
+    and outside the production tree.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="apd-seed-")
+    env_patch = mock.patch.dict(
+        os.environ, {"HOMICIDE_SEED_PATH": os.path.join(tmpdir, _SEED_BASENAME)},
+        clear=False,
+    )
+    env_patch.start()
+    testcase.addCleanup(env_patch.stop)
+    testcase.addCleanup(shutil.rmtree, tmpdir, True)
+    testcase.addCleanup(_assert_seed_stays_in_sandbox, tmpdir)
+    return tmpdir
 
 
 # ===========================================================================
@@ -1217,6 +1273,12 @@ class TestRunFeedFailureAggregation(unittest.TestCase):
             PI_FETCH_URL="",
             PI_FETCH_TOKEN="",
         )
+
+        # The homicide press-release path appends to the seed. Give it a valid
+        # temp seed so these tests exercise feed aggregation, not seed faults.
+        self._seed_tmpdir = _install_seed_sandbox(self)
+        with open(os.path.join(self._seed_tmpdir, _SEED_BASENAME), "w") as f:
+            json.dump([], f)
 
     def tearDown(self):
         if self._prev_config is None:
@@ -1289,7 +1351,7 @@ class TestRunFeedFailureAggregation(unittest.TestCase):
             "modules.pollers.impl.apd_news._apd_fetch_article", return_value={},
         ), mock.patch(
             "modules.pollers.impl.apd_news._resolve_article_url",
-            side_effect=lambda su, t, l, k, cid: l,  # noqa: E741
+            side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link,
         ):
             with self.assertRaises(APDNewsFetchError) as ctx:
                 self.poller.run()
@@ -1447,6 +1509,374 @@ class TestConcurrentDedup(unittest.TestCase):
         self.assertEqual(len(rows), 1, "URL should be inserted exactly once")
         self.assertEqual(results.count("inserted"), 1)
         self.assertEqual(results.count("skipped"), 9)
+
+
+# ===========================================================================
+# 14. Homicide seed path isolation + valid/missing seed behaviour
+# ===========================================================================
+# Every test below redirects HOMICIDE_SEED_PATH into its own temp dir (see
+# _install_seed_sandbox) and audits that nothing under /opt/battlebuddy is
+# touched.
+
+
+class _WriteAuditor:
+    """Record every path opened for writing or renamed inside the block.
+
+    Used to prove that a test run cannot read or write the production seed,
+    which is the property the hardcoded path violated.
+    """
+
+    def __init__(self) -> None:
+        self.paths: list[str] = []
+
+    def _record(self, target) -> None:
+        try:
+            self.paths.append(os.fspath(target))
+        except TypeError:
+            self.paths.append(str(target))
+
+    def __enter__(self) -> "_WriteAuditor":
+        self._real_open = builtins.open
+        self._real_replace = os.replace
+
+        def _open_spy(file, mode="r", *args, **kwargs):
+            if any(flag in str(mode) for flag in ("w", "a", "x", "+")):
+                self._record(file)
+            return self._real_open(file, mode, *args, **kwargs)
+
+        def _replace_spy(src, dst, *args, **kwargs):
+            self._record(src)
+            self._record(dst)
+            return self._real_replace(src, dst, *args, **kwargs)
+
+        builtins.open = _open_spy
+        os.replace = _replace_spy
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        builtins.open = self._real_open
+        os.replace = self._real_replace
+
+    @property
+    def production_writes(self) -> list[str]:
+        return [p for p in self.paths if p.startswith(_PROD_TREE)]
+
+
+class _SeedSandboxTest(unittest.TestCase):
+    """Base: point the seed at a temp file, then restore every global touched."""
+
+    def setUp(self):
+        self._tmpdir = _install_seed_sandbox(self)
+        self.seed_path = os.path.join(self._tmpdir, _SEED_BASENAME)
+        self.assertEqual(_homicide_seed_path(), self.seed_path)
+
+    def _write_seed(self, entries) -> None:
+        with open(self.seed_path, "w") as f:
+            json.dump(entries, f, indent=4)
+
+    def _write_raw_seed(self, text: str) -> None:
+        with open(self.seed_path, "w") as f:
+            f.write(text)
+
+    def _read_seed(self) -> list:
+        with open(self.seed_path) as f:
+            return json.load(f)
+
+    def _append(self, url: str, **overrides):
+        kwargs = {
+            "inc_id": 1,
+            "date": "2026-03-01",
+            "address": "100 Main St",
+            "victim": "",
+            "summary": "APD Press Release: Homicide Investigation",
+            "url": url,
+            "lat": None,
+            "lon": None,
+        }
+        kwargs.update(overrides)
+        return _append_homicide_json(**kwargs)
+
+
+class TestHomicideSeedPathResolution(unittest.TestCase):
+    """The seed path must follow the configured data/home directory."""
+
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {}, clear=True)
+        patcher.start()
+        for key in ("HOMICIDE_SEED_PATH", "BATTLE_BUDDY_DATA_DIR", "BATTLE_BUDDY_HOME"):
+            os.environ.pop(key, None)
+        self.addCleanup(patcher.stop)
+
+    def test_production_default_is_preserved(self):
+        # No env at all must still resolve to the production seed path.
+        self.assertEqual(
+            _homicide_seed_path(), f"{_PROD_TREE}/homicides_2026.json"
+        )
+
+    def test_home_override_redirects_seed_into_sandbox(self):
+        os.environ["BATTLE_BUDDY_HOME"] = "/tmp/bb-sandbox"
+        self.assertEqual(
+            _homicide_seed_path(), "/tmp/bb-sandbox/homicides_2026.json"
+        )
+        self.assertFalse(_homicide_seed_path().startswith(_PROD_TREE))
+
+    def test_data_dir_override_wins_over_home(self):
+        os.environ["BATTLE_BUDDY_HOME"] = "/tmp/bb-sandbox"
+        os.environ["BATTLE_BUDDY_DATA_DIR"] = "/tmp/bb-sandbox/data"
+        self.assertEqual(
+            _homicide_seed_path(), "/tmp/bb-sandbox/data/homicides_2026.json"
+        )
+
+    def test_explicit_seed_env_override_wins(self):
+        os.environ["BATTLE_BUDDY_HOME"] = "/tmp/bb-sandbox"
+        os.environ["BATTLE_BUDDY_DATA_DIR"] = "/tmp/bb-sandbox/data"
+        os.environ["HOMICIDE_SEED_PATH"] = "/tmp/bb-sandbox/custom_seed.json"
+        self.assertEqual(_homicide_seed_path(), "/tmp/bb-sandbox/custom_seed.json")
+
+    def test_empty_seed_env_falls_back_to_home(self):
+        os.environ["BATTLE_BUDDY_HOME"] = "/tmp/bb-sandbox"
+        os.environ["HOMICIDE_SEED_PATH"] = ""
+        self.assertEqual(
+            _homicide_seed_path(), "/tmp/bb-sandbox/homicides_2026.json"
+        )
+
+    def test_module_source_has_no_hardcoded_production_seed_path(self):
+        """Regression guard: the literal seed path must not come back."""
+        source = Path(apd_news.__file__).read_text()
+        self.assertNotIn(f'"{_PROD_TREE}/homicides_2026.json"', source)
+        self.assertNotIn(f"'{_PROD_TREE}/homicides_2026.json'", source)
+
+
+class TestAppendHomicideJson(_SeedSandboxTest):
+    """Valid and missing seed behaviour, and sandbox-only writes."""
+
+    def setUp(self):
+        super().setUp()
+        self._write_seed([
+            {"n": 1, "date": "2026-01-01", "address": "A", "victim": "",
+             "summary": "first", "url": "https://kxan.com/first"},
+            {"n": 2, "date": "2026-01-02", "address": "B", "victim": "",
+             "summary": "second", "url": "https://kxan.com/second"},
+        ])
+
+    def test_appends_with_next_sequence_number(self):
+        self._append("https://kxan.com/third")
+        data = self._read_seed()
+        self.assertEqual(len(data), 3)
+        self.assertEqual(data[-1]["n"], 3)
+        self.assertEqual(data[-1]["url"], "https://kxan.com/third")
+        self.assertEqual(data[-1]["date"], "2026-03-01")
+
+    def test_append_preserves_existing_entries(self):
+        self._append("https://kxan.com/third")
+        data = self._read_seed()
+        self.assertEqual([e["url"] for e in data[:2]],
+                         ["https://kxan.com/first", "https://kxan.com/second"])
+
+    def test_coordinates_only_included_when_given(self):
+        self._append("https://kxan.com/with-geo", lat=30.27, lon=-97.74)
+        entry = self._read_seed()[-1]
+        self.assertEqual(entry["lat"], 30.27)
+        self.assertEqual(entry["lon"], -97.74)
+
+        self._append("https://kxan.com/no-geo")
+        entry = self._read_seed()[-1]
+        self.assertNotIn("lat", entry)
+        self.assertNotIn("lon", entry)
+
+    def test_duplicate_url_is_deduped(self):
+        self._append("https://kxan.com/first")
+        self.assertEqual(len(self._read_seed()), 2)
+
+    def test_empty_url_is_dropped_without_writing(self):
+        with _WriteAuditor() as auditor:
+            self._append("")
+        self.assertEqual(len(self._read_seed()), 2)
+        self.assertNotIn(self.seed_path, auditor.paths)
+
+    def test_write_stays_inside_sandbox(self):
+        with _WriteAuditor() as auditor:
+            self._append("https://kxan.com/third")
+        self.assertEqual(auditor.production_writes, [])
+        self.assertIn(self.seed_path, auditor.paths)
+
+    def test_no_tmp_file_left_behind(self):
+        self._append("https://kxan.com/third")
+        self.assertFalse(os.path.exists(self.seed_path + ".tmp"))
+
+    def test_missing_seed_raises_and_creates_nothing(self):
+        os.unlink(self.seed_path)
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("not found", str(ctx.exception))
+        # A missing seed must NOT be silently recreated from an empty list.
+        self.assertFalse(os.path.exists(self.seed_path))
+        self.assertFalse(os.path.exists(self.seed_path + ".tmp"))
+
+    def test_corrupt_seed_raises_and_is_not_overwritten(self):
+        self._write_raw_seed("{not json at all")
+        with self.assertRaises(HomicideSeedError):
+            self._append("https://kxan.com/third")
+        with open(self.seed_path) as f:
+            self.assertEqual(f.read(), "{not json at all")
+
+    def test_non_list_seed_raises(self):
+        self._write_raw_seed('{"n": 1}')
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("must be a JSON list", str(ctx.exception))
+
+    def test_seed_error_is_runtime_error_for_backoff_loop(self):
+        # BasePoller only backs off on RuntimeError-derived failures.
+        self.assertTrue(issubclass(HomicideSeedError, RuntimeError))
+
+    def test_seed_path_that_is_a_directory_raises_unreadable(self):
+        """Deterministic OSError branch (root cannot be blocked by chmod)."""
+        os.unlink(self.seed_path)
+        os.mkdir(self.seed_path)
+        os.environ["HOMICIDE_SEED_PATH"] = self.seed_path
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("unreadable", str(ctx.exception))
+        # A directory at the seed path must not be replaced by a fresh file.
+        self.assertTrue(os.path.isdir(self.seed_path))
+        self.assertFalse(os.path.exists(self.seed_path + ".tmp"))
+
+    def test_seed_under_a_non_directory_raises_not_found(self):
+        """The parent not being a directory is a fault, not an empty seed."""
+        blocker = os.path.join(self._tmpdir, "blocker")
+        with open(blocker, "w") as f:
+            f.write("i am a file, not a directory")
+        os.environ["HOMICIDE_SEED_PATH"] = os.path.join(blocker, _SEED_BASENAME)
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_unwritable_seed_raises_instead_of_succeeding(self):
+        ro_dir = os.path.join(self._tmpdir, "ro")
+        os.makedirs(ro_dir)
+        ro_seed = os.path.join(ro_dir, "homicides_2026.json")
+        self._write_seed([])
+        shutil.move(self.seed_path, ro_seed)
+        os.chmod(ro_dir, 0o500)
+        self.addCleanup(os.chmod, ro_dir, 0o700)
+        os.environ["HOMICIDE_SEED_PATH"] = ro_seed
+        if os.access(ro_dir, os.W_OK):
+            self.skipTest("running with write access to a read-only dir")
+        with self.assertRaises(HomicideSeedError) as ctx:
+            self._append("https://kxan.com/third")
+        self.assertIn("unwritable", str(ctx.exception))
+
+
+class TestHomicideSeedAggregationIsolation(_SeedSandboxTest):
+    """The press-release sub-poll must use the sandbox seed, never /opt."""
+
+    def setUp(self):
+        super().setUp()
+        self.db_path = _tmp_db()
+        self.poller = APDNewsPoller()
+        self._write_seed([])
+        self._rss = _make_rss([{
+            "title": "APD Press Release: Homicide Investigation on 6th St",
+            "link": "https://kxan.com/sandbox-hom1",
+            "pubDate": _PUB_DATE,
+        }])
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.unlink(self.db_path)
+
+    def _mocked_article_fetch(self):
+        return mock.patch(
+            "modules.pollers.impl.apd_news._apd_fetch_article",
+            return_value={"address": "600 6th St", "summary": "APD homicide"},
+        )
+
+    def _run_poll(self):
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = self._rss.encode()
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+             self._mocked_article_fetch(), \
+             mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                        side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link), \
+             mock.patch.object(sys.modules["modules.pollers"], "send_dm_alert",
+                               new=mock.MagicMock()):
+            self.poller._poll_apd_press_releases(
+                db_path=self.db_path,
+                talk_base="http://talk.test",
+                talk_user="u",
+                talk_pass="p",
+                talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+                google_cse_api_key="",
+                google_cse_id="",
+                pi_fetch_url="",
+                pi_fetch_token="",
+                geocode_fn=lambda addr: None,
+                atak_post_fn=mock.MagicMock(),
+            )
+
+    def test_homicide_press_release_appends_to_sandbox_seed(self):
+        with _WriteAuditor() as auditor:
+            self._run_poll()
+        self.assertEqual(auditor.production_writes, [])
+        data = self._read_seed()
+        self.assertEqual(len(data), 1, "homicide press release must reach the seed")
+        self.assertEqual(data[0]["n"], 1)
+
+    def test_missing_seed_fails_the_cycle_instead_of_succeeding(self):
+        os.unlink(self.seed_path)
+        with self.assertRaises(HomicideSeedError):
+            self._run_poll()
+        # The curated file must not be recreated behind the operator's back.
+        self.assertFalse(os.path.exists(self.seed_path))
+
+    def test_run_reports_missing_seed_as_a_failed_cycle(self):
+        """A missing seed must reach BasePoller as a failure, not a clean run."""
+        os.unlink(self.seed_path)
+        prev_config = sys.modules.get("modules.config")
+        pkg = sys.modules.get("modules")
+        prev_attr = getattr(pkg, "config", None)
+        _stub_leaf(
+            "modules.config",
+            DB_PATH=self.db_path,
+            TALK_BASE="http://talk.test",
+            TALK_USER="user",
+            TALK_PASS="pass",
+            TALK_ROOMS={"apd": "room_apd", "incidents": "room_inc"},
+            GOOGLE_CSE_API_KEY="",
+            GOOGLE_CSE_ID="",
+            PI_FETCH_URL="",
+            PI_FETCH_TOKEN="",
+        )
+
+        def _fake_urlopen(req, timeout=None):
+            resp = mock.MagicMock()
+            resp.read.return_value = self._rss.encode()
+            return resp
+
+        try:
+            with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen), \
+                 mock.patch("modules.pollers.impl.apd_news._apd_fetch_article",
+                            return_value={}), \
+                 mock.patch("modules.pollers.impl.apd_news._resolve_article_url",
+                            side_effect=lambda _su, _t, gnews_link, _k, _cid: gnews_link):
+                with self.assertRaises(APDNewsFetchError) as ctx:
+                    self.poller.run()
+        finally:
+            if prev_config is None:
+                sys.modules.pop("modules.config", None)
+            else:
+                sys.modules["modules.config"] = prev_config
+            if pkg is not None and hasattr(pkg, "config"):
+                pkg.config = prev_attr
+
+        names = [name for name, _ in ctx.exception.errors]
+        self.assertIn("apd-news", names)
+        self.assertIn("not found", str(ctx.exception))
+        self.assertFalse(os.path.exists(self.seed_path))
 
 
 # ===========================================================================

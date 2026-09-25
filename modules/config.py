@@ -24,6 +24,15 @@ TIPS_UPLOAD_DIR = os.environ.get("TIPS_UPLOAD_DIR", os.path.join(BATTLE_BUDDY_HO
 TGID_TSV = os.environ.get("TGID_TSV", os.path.join(BATTLE_BUDDY_HOME, "gatrrs-tags.tsv"))
 PI1_OP25_URL = os.environ.get("PI1_OP25_URL", "http://radio-node.example.local:8080/")
 
+# Curated area-wide homicide seed. Derived from the data dir (not hardcoded to
+# /opt/battlebuddy) so a sandbox/review clone with BATTLE_BUDDY_HOME redirected
+# never reads or writes the production seed. The production default is
+# unchanged: with no env override this is /opt/battlebuddy/homicides_2026.json.
+HOMICIDE_SEED_PATH = os.environ.get(
+    "HOMICIDE_SEED_PATH",
+    os.path.join(BATTLE_BUDDY_DATA_DIR, "homicides_2026.json"),
+)
+
 # ---------------------------------------------------------------------------
 # HTTP / TLS behavior
 # ---------------------------------------------------------------------------
