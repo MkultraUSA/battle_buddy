@@ -600,6 +600,29 @@ def _post_to_talk(
 # BasePoller subclass
 # ---------------------------------------------------------------------------
 
+class APDNewsFetchError(RuntimeError):
+    """Raised when one or more news feeds fail to fetch in a single cycle.
+
+    Both feeds are always attempted so a single upstream outage cannot starve
+    the other feed of a cycle. Whatever succeeded is processed and committed
+    first, then this aggregate is raised so BasePoller records the failure and
+    backs off instead of reporting a clean cycle.
+
+    Attributes
+    ----------
+    errors : tuple[tuple[str, BaseException], ...]
+        ``(feed_name, exception)`` pairs for every feed that failed, in the
+        order they were attempted.
+    """
+
+    def __init__(self, errors: list[tuple[str, BaseException]]) -> None:
+        self.errors: tuple[tuple[str, BaseException], ...] = tuple(errors)
+        detail = "; ".join(f"{name}: {exc}" for name, exc in self.errors)
+        super().__init__(
+            f"{len(self.errors)} news feed(s) failed this cycle: {detail}"
+        )
+
+
 class APDNewsPoller(BasePoller):
     """Poll Google News RSS for APD press releases every 5 minutes.
 
@@ -629,7 +652,14 @@ class APDNewsPoller(BasePoller):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        """Perform one full poll cycle: APD press releases + traffic fatalities."""
+        """Perform one full poll cycle: APD press releases + traffic fatalities.
+
+        Each feed is polled independently and both are always attempted, so a
+        failing feed cannot stop the other one from being processed. Failures
+        are collected and re-raised together as APDNewsFetchError after both
+        feeds have run, which lets BasePoller see the cycle as failed (and
+        back off) rather than silently reporting success.
+        """
         # Lazy imports — avoids circular dependency at module load time
         from modules.config import (  # noqa: PLC0415
             DB_PATH,
@@ -645,30 +675,43 @@ class APDNewsPoller(BasePoller):
         from modules.geocoding import _geocode_address  # noqa: PLC0415
         from modules.incident_engine import _atak_post_marker  # noqa: PLC0415
 
+        feed_errors: list[tuple[str, BaseException]] = []
+
         # ---- APD press release sub-poll ----------------------------------
-        self._poll_apd_press_releases(
-            db_path=DB_PATH,
-            talk_base=TALK_BASE,
-            talk_user=TALK_USER,
-            talk_pass=TALK_PASS,
-            talk_rooms=TALK_ROOMS,
-            google_cse_api_key=GOOGLE_CSE_API_KEY,
-            google_cse_id=GOOGLE_CSE_ID,
-            pi_fetch_url=PI_FETCH_URL,
-            pi_fetch_token=PI_FETCH_TOKEN,
-            geocode_fn=_geocode_address,
-            atak_post_fn=_atak_post_marker,
-        )
+        try:
+            self._poll_apd_press_releases(
+                db_path=DB_PATH,
+                talk_base=TALK_BASE,
+                talk_user=TALK_USER,
+                talk_pass=TALK_PASS,
+                talk_rooms=TALK_ROOMS,
+                google_cse_api_key=GOOGLE_CSE_API_KEY,
+                google_cse_id=GOOGLE_CSE_ID,
+                pi_fetch_url=PI_FETCH_URL,
+                pi_fetch_token=PI_FETCH_TOKEN,
+                geocode_fn=_geocode_address,
+                atak_post_fn=_atak_post_marker,
+            )
+        except Exception as exc:
+            logger.warning("[apd-news] sub-poll failed: %s", exc)
+            feed_errors.append(("apd-news", exc))
 
         # ---- Traffic fatality news sub-poll ------------------------------
-        self._poll_traffic_news(
-            db_path=DB_PATH,
-            google_cse_api_key=GOOGLE_CSE_API_KEY,
-            google_cse_id=GOOGLE_CSE_ID,
-            pi_fetch_url=PI_FETCH_URL,
-            pi_fetch_token=PI_FETCH_TOKEN,
-            geocode_fn=_geocode_address,
-        )
+        try:
+            self._poll_traffic_news(
+                db_path=DB_PATH,
+                google_cse_api_key=GOOGLE_CSE_API_KEY,
+                google_cse_id=GOOGLE_CSE_ID,
+                pi_fetch_url=PI_FETCH_URL,
+                pi_fetch_token=PI_FETCH_TOKEN,
+                geocode_fn=_geocode_address,
+            )
+        except Exception as exc:
+            logger.warning("[traffic-news] sub-poll failed: %s", exc)
+            feed_errors.append(("traffic-news", exc))
+
+        if feed_errors:
+            raise APDNewsFetchError(feed_errors)
 
     # ------------------------------------------------------------------
     # Private sub-pollers
@@ -689,7 +732,11 @@ class APDNewsPoller(BasePoller):
         geocode_fn,
         atak_post_fn,
     ) -> None:
-        """Fetch and process APD press release articles from Google News RSS."""
+        """Fetch and process APD press release articles from Google News RSS.
+
+        Raises on fetch failure; run() aggregates it so the traffic sub-poll
+        still runs before the cycle is reported as failed.
+        """
         # Lazy import — avoids circular dependency
         from modules.pollers import send_dm_alert  # noqa: PLC0415
 
@@ -704,7 +751,7 @@ class APDNewsPoller(BasePoller):
             xml_text = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", errors="replace")
         except Exception as exc:
             logger.warning("[apd-news] fetch error: %s", exc)
-            return
+            raise
 
         articles = _apd_parse_rss(xml_text)
 
@@ -889,7 +936,11 @@ class APDNewsPoller(BasePoller):
         pi_fetch_token: str,
         geocode_fn,
     ) -> None:
-        """Fetch Austin traffic fatality news and link to existing radio incidents."""
+        """Fetch Austin traffic fatality news and link to existing radio incidents.
+
+        Raises on fetch failure; run() aggregates it so the press-release
+        sub-poll still runs before the cycle is reported as failed.
+        """
         try:
             treq = urllib.request.Request(
                 TRAFFIC_NEWS_URL,
@@ -901,7 +952,7 @@ class APDNewsPoller(BasePoller):
             txml_text = urllib.request.urlopen(treq, timeout=15).read().decode("utf-8", errors="replace")
         except Exception as exc:
             logger.warning("[traffic-news] fetch error: %s", exc)
-            return
+            raise
 
         tarticles = _apd_parse_rss(txml_text)
 

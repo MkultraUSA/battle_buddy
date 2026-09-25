@@ -175,6 +175,7 @@ from modules.pollers.impl.apd_news import (  # noqa: E402
     APD_NEWS_INTERVAL,
     APD_NEWS_URL,
     TRAFFIC_NEWS_URL,
+    APDNewsFetchError,
     APDNewsPoller,
     _apd_fetch_article,
     _apd_parse_rss,
@@ -1005,10 +1006,10 @@ class TestPollAPDPressReleases(unittest.TestCase):
         time.sleep(0.2)
         atak_fn.assert_called()
 
-    def test_rss_fetch_error_does_not_raise(self):
-        """Network errors during RSS fetch should be caught silently."""
+    def test_rss_fetch_error_propagates(self):
+        """Network errors during RSS fetch must reach run() so BasePoller backs off."""
         with mock.patch("urllib.request.urlopen", side_effect=Exception("timeout")):
-            try:
+            with self.assertRaises(Exception) as ctx:
                 self.poller._poll_apd_press_releases(
                     db_path=self.db_path,
                     talk_base="http://talk.test",
@@ -1019,8 +1020,27 @@ class TestPollAPDPressReleases(unittest.TestCase):
                     geocode_fn=lambda a: None,
                     atak_post_fn=mock.MagicMock(),
                 )
-            except Exception as exc:
-                self.fail(f"_poll_apd_press_releases raised unexpectedly: {exc}")
+        self.assertIn("timeout", str(ctx.exception))
+
+    def test_rss_fetch_error_marks_nothing_seen(self):
+        """A failed fetch must not mark articles as seen and suppress them later."""
+        link = "https://kxan.com/never_seen"
+        with mock.patch("urllib.request.urlopen", side_effect=Exception("timeout")):
+            with self.assertRaises(Exception):
+                self.poller._poll_apd_press_releases(
+                    db_path=self.db_path,
+                    talk_base="http://talk.test",
+                    talk_user="u", talk_pass="p",
+                    talk_rooms={"apd": "room_apd", "incidents": "room_inc"},
+                    google_cse_api_key="", google_cse_id="",
+                    pi_fetch_url="", pi_fetch_token="",
+                    geocode_fn=lambda a: None,
+                    atak_post_fn=mock.MagicMock(),
+                )
+        conn = sqlite3.connect(self.db_path)
+        seen = conn.execute("SELECT url FROM apd_seen WHERE url=?", (link,)).fetchall()
+        conn.close()
+        self.assertEqual(seen, [])
 
 
 # ===========================================================================
@@ -1115,17 +1135,17 @@ class TestPollTrafficNews(unittest.TestCase):
         conn.close()
         self.assertTrue(len(linked) >= 1)
 
-    def test_traffic_rss_fetch_error_does_not_raise(self):
+    def test_traffic_rss_fetch_error_propagates(self):
+        """Network errors during traffic RSS fetch must reach run()."""
         with mock.patch("urllib.request.urlopen", side_effect=Exception("timeout")):
-            try:
+            with self.assertRaises(Exception) as ctx:
                 self.poller._poll_traffic_news(
                     db_path=self.db_path,
                     google_cse_api_key="", google_cse_id="",
                     pi_fetch_url="", pi_fetch_token="",
                     geocode_fn=lambda a: None,
                 )
-            except Exception as exc:
-                self.fail(f"_poll_traffic_news raised unexpectedly: {exc}")
+        self.assertIn("timeout", str(ctx.exception))
 
     def test_traffic_coordinates_update_incident_location(self):
         ts_event = time.time() - 900
@@ -1164,6 +1184,199 @@ class TestPollTrafficNews(unittest.TestCase):
         self.assertIsNotNone(row[0])
         self.assertIsNotNone(row[1])
         self.assertIn("183", row[2])
+
+
+# ===========================================================================
+# 12b. APDNewsPoller.run() — feed-failure aggregation
+# ===========================================================================
+
+class TestRunFeedFailureAggregation(unittest.TestCase):
+    """run() must attempt both feeds, then surface every failure to BasePoller."""
+
+    def setUp(self):
+        self.db_path = _tmp_db()
+        self.poller = APDNewsPoller()
+        # run() reads the full modules.config surface, unlike the sub-polls which
+        # take their config as arguments. Other test modules in this suite
+        # register their own minimal sys.modules["modules.config"] (e.g. the CAD
+        # suite installs DB_PATH only), so pin a complete stub for the duration
+        # of each test and restore whatever was there afterwards.
+        self._prev_config = sys.modules.get("modules.config")
+        _pkg = sys.modules.get("modules")
+        self._prev_pkg_attr = getattr(_pkg, "config", None) if _pkg is not None else None
+        self._has_pkg_attr = _pkg is not None and hasattr(_pkg, "config")
+        _stub_leaf(
+            "modules.config",
+            DB_PATH=self.db_path,
+            TALK_BASE="http://talk.test",
+            TALK_USER="user",
+            TALK_PASS="pass",
+            TALK_ROOMS={"apd": "room_apd", "incidents": "room_inc"},
+            GOOGLE_CSE_API_KEY="",
+            GOOGLE_CSE_ID="",
+            PI_FETCH_URL="",
+            PI_FETCH_TOKEN="",
+        )
+
+    def tearDown(self):
+        if self._prev_config is None:
+            sys.modules.pop("modules.config", None)
+        else:
+            sys.modules["modules.config"] = self._prev_config
+        _pkg = sys.modules.get("modules")
+        if _pkg is not None:
+            if self._has_pkg_attr:
+                _pkg.config = self._prev_pkg_attr
+            elif hasattr(_pkg, "config"):
+                del _pkg.config
+        os.unlink(self.db_path)
+
+    def _urlopen_for(self, *, apd_ok: bool, traffic_ok: bool, rss: str = ""):
+        """Build a urlopen stub that fails or serves *rss* per feed."""
+        def _fake_urlopen(req, timeout=None):
+            url = getattr(req, "full_url", req)
+            if url == TRAFFIC_NEWS_URL:
+                if not traffic_ok:
+                    raise Exception("traffic upstream down")
+                resp = mock.MagicMock()
+                resp.read.return_value = rss.encode()
+                return resp
+            if not apd_ok:
+                raise Exception("apd upstream down")
+            resp = mock.MagicMock()
+            resp.read.return_value = rss.encode()
+            return resp
+        return _fake_urlopen
+
+    def _insert_incident(self, itype: str, description: str) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO incidents (ts_start, ts_updated, itype, description, "
+            "agencies, tgids, location, lat, lon, status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,'active')",
+            (time.time() - 900, time.time() - 900, itype, description,
+             '["APD"]', "[]", None, None, None),
+        )
+        conn.commit()
+        inc_id = cur.lastrowid
+        conn.close()
+        return inc_id
+
+    def test_both_feeds_failing_raises_aggregate_naming_both(self):
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=self._urlopen_for(apd_ok=False, traffic_ok=False)):
+            with self.assertRaises(APDNewsFetchError) as ctx:
+                self.poller.run()
+
+        names = [name for name, _exc in ctx.exception.errors]
+        self.assertEqual(names, ["apd-news", "traffic-news"])
+        self.assertIn("2 news feed(s) failed", str(ctx.exception))
+        self.assertIn("apd upstream down", str(ctx.exception))
+        self.assertIn("traffic upstream down", str(ctx.exception))
+
+    def test_single_feed_failure_still_runs_the_other_feed(self):
+        """A failing press-release feed must not starve the traffic feed."""
+        inc_id = self._insert_incident("FATAL CRASH", "Fatal crash on IH-35")
+        rss = _make_rss([
+            {"title": "Person killed in fatal crash on IH-35",
+             "link": "https://kvue.com/fatal_run1", "pubDate": _PUB_DATE},
+        ])
+
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=self._urlopen_for(apd_ok=False, traffic_ok=True, rss=rss),
+        ), mock.patch(
+            "modules.pollers.impl.apd_news._apd_fetch_article", return_value={},
+        ), mock.patch(
+            "modules.pollers.impl.apd_news._resolve_article_url",
+            side_effect=lambda su, t, l, k, cid: l,  # noqa: E741
+        ):
+            with self.assertRaises(APDNewsFetchError) as ctx:
+                self.poller.run()
+
+        # Only the press-release feed is reported as failed...
+        names = [name for name, _exc in ctx.exception.errors]
+        self.assertEqual(names, ["apd-news"])
+
+        # ...but the healthy traffic feed was still fully processed and committed.
+        conn = sqlite3.connect(self.db_path)
+        linked = conn.execute(
+            "SELECT incident_id FROM incident_articles WHERE source='traffic-news'"
+        ).fetchall()
+        seen = conn.execute(
+            "SELECT url FROM apd_seen WHERE url=?", ("https://kvue.com/fatal_run1",)
+        ).fetchall()
+        conn.close()
+        self.assertEqual(linked, [(inc_id,)])
+        self.assertEqual(len(seen), 1)
+
+    def test_traffic_failure_still_runs_press_release_feed(self):
+        rss = _make_rss([
+            {"title": "APD Press Release: Homicide Investigation",
+             "link": "https://kxan.com/pr_run1", "pubDate": _PUB_DATE},
+        ])
+
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=self._urlopen_for(apd_ok=True, traffic_ok=False, rss=rss),
+        ):
+            with self.assertRaises(APDNewsFetchError) as ctx:
+                self.poller.run()
+
+        names = [name for name, _exc in ctx.exception.errors]
+        self.assertEqual(names, ["traffic-news"])
+
+        conn = sqlite3.connect(self.db_path)
+        seen = conn.execute(
+            "SELECT url FROM apd_seen WHERE url=?", ("https://kxan.com/pr_run1",)
+        ).fetchall()
+        conn.close()
+        self.assertEqual(len(seen), 1)
+
+    def test_all_feeds_healthy_does_not_raise(self):
+        rss = _make_rss([
+            {"title": "APD Press Release: Homicide Investigation",
+             "link": "https://kxan.com/pr_ok", "pubDate": _PUB_DATE},
+        ])
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=self._urlopen_for(apd_ok=True, traffic_ok=True, rss=rss),
+        ):
+            self.poller.run()  # must not raise
+
+    def test_fetch_error_class_is_runtime_error_for_backoff_loop(self):
+        """BasePoller._loop catches Exception; the aggregate must be one."""
+        self.assertTrue(issubclass(APDNewsFetchError, RuntimeError))
+        self.assertTrue(issubclass(APDNewsFetchError, Exception))
+
+    def test_run_failure_marks_cycle_failed_for_base_poller(self):
+        """End-to-end: a failing run() drives BasePoller's failure counter."""
+        poller = APDNewsPoller()
+
+        def _fail_once():
+            poller.stop_event.set()  # stop after this single cycle
+            raise APDNewsFetchError([("apd-news", Exception("apd upstream down"))])
+
+        poller.run = _fail_once
+        poller._loop()
+
+        self.assertEqual(poller.consecutive_failures, 1)
+        self.assertEqual(poller.last_success_ts, 0.0)
+
+    def test_successful_run_clears_failure_counter(self):
+        """A healthy cycle after failures must reset the counter and stamp success."""
+        poller = APDNewsPoller()
+        poller._record_failure()
+        self.assertEqual(poller.consecutive_failures, 1)
+
+        def _succeed_once():
+            poller.stop_event.set()  # stop after this single cycle
+
+        poller.run = _succeed_once
+        poller._loop()
+
+        self.assertEqual(poller.consecutive_failures, 0)
+        self.assertGreater(poller.last_success_ts, 0.0)
 
 
 # ===========================================================================
