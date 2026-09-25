@@ -233,25 +233,46 @@ def _fetch_recent_homicide_rows(db_path: str, since: str = "2026-01-01") -> list
     return rows
 
 
+def _seed_victim_count(entry: Any) -> int:
+    """Return how many victims one seed *entry* is worth.
+
+    A curated entry that is not a dict (a stray string, a number, a nested list
+    from a bad hand-edit) carries no count at all, so it is worth 0: it is
+    skipped rather than guessed at and rather than allowed to raise, because the
+    premium dashboard must not 500 over one corrupt line and counting an entry
+    nobody can read would publish a number that cannot be verified. A dict with
+    an unusable ``count`` still stands for the single incident it describes.
+    """
+    if not isinstance(entry, dict):
+        return 0
+    try:
+        return int(entry.get("count", 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def premium_homicide_summary(db_path: str, *, since: str = "2026-01-01") -> dict:
     """Build the premium homicide YTD summary from the same resolved seed.
 
     ``ytd`` is the curated seed count plus the live geocoded homicide count,
-    and ``last`` is the most recent homicide (live rows win, the newest seed
-    entry is the fallback).
+    and ``last`` is the most recent homicide (live rows win, the newest readable
+    seed entry is the fallback).
+
+    Non-dict seed entries are skipped, not fatal: they can be neither counted as
+    victims nor sorted by date, and one bad line must not take the dashboard down
+    (the public ``/api/homicides`` path already has its own answer for a wholly
+    unreadable seed — a 503).
 
     Raises :class:`HomicideSeedUnavailable` when the seed cannot be read: the
     premium dashboard must not be told the area total is zero because of a
     deployment fault. The route in ``audio_receiver.py`` turns that into an
-    explicit 503 instead of a fabricated number.
+    explicit 503 instead of a fabricated number, and keeps the exception text
+    (which names the absolute seed path) in the server log rather than the
+    response body.
     """
     seed = load_seed_strict()
-    seed_count = 0
-    for entry in seed:
-        try:
-            seed_count += int(entry.get("count", 1))
-        except (TypeError, ValueError):
-            seed_count += 1
+    entries = [e for e in seed if isinstance(e, dict)]
+    seed_count = sum(_seed_victim_count(e) for e in entries)
 
     rows = _fetch_recent_homicide_rows(db_path, since=since)
 
@@ -263,15 +284,15 @@ def premium_homicide_summary(db_path: str, *, since: str = "2026-01-01") -> dict
             "location": location or "",
         }
     elif seed_count:
-        newest = sorted(seed, key=lambda e: e.get("date", ""))[-1]
-        raw_date = str(newest.get("date", ""))
+        newest = sorted(entries, key=lambda e: str(e.get("date") or ""))[-1]
+        raw_date = str(newest.get("date") or "")
         try:
             pretty_date = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%b %d")
         except ValueError:
             pretty_date = raw_date
         last = {
             "date":     pretty_date,
-            "location": newest.get("address", ""),
+            "location": str(newest.get("address") or ""),
         }
 
     return {

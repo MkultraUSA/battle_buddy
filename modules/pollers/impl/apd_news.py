@@ -28,12 +28,16 @@ For each new article the poller:
   - If matched: stores the article link and posts a "press coverage" message to Talk.
   - If unmatched: creates a new incident record, posts to Talk, sends DM alerts,
     and places an ATAK marker when coordinates are available.
-  - Is idempotent by article URL. A failure *after* the incident/article-link
-    insert (seed write, DB error) leaves the article unseen so the next cycle
-    retries it, but the recorded link/incident is found first: the retry never
-    inserts a second incident or article link and never re-sends the alert. It
-    only completes the side effects that are themselves idempotent (the seed
-    append, which dedupes on the article URL). Failures *before* the insert are
+  - Records each article in a durable identity ledger (``apd_article_identity``)
+    keyed by the stable RSS ``article['link']``, *before* the first side effect.
+    The ledger maps that link to the resolved URL the work was recorded with and
+    to the incident it produced, so a failure *after* the incident/article-link
+    insert (seed write, DB error) leaves the article unseen, and the next cycle's
+    retry still finds the prior incident/link/seed even when the URL resolver now
+    returns a *different* URL: it never inserts a second incident or article
+    link, never re-sends the alert and never re-posts to Talk. It only completes
+    the side effects that are themselves idempotent (the seed append, which
+    dedupes on the article URL). Failures *before* the ledger is written are
     unaffected — nothing is recorded, so the article is retried from scratch.
 
 A secondary sub-poll fetches Austin traffic fatality news and links articles
@@ -620,10 +624,15 @@ def _prior_article_work(db_path: str, url: str) -> tuple[bool, int]:
 
     Both durable markers an interrupted article can leave behind are checked:
     the ``incident_articles`` row, and ``incidents.article_url`` (written by the
-    same helper, so it exists even if the link row never landed). The caller
-    uses this to stay idempotent across a retry: an article whose processing
-    failed *after* the insert must not create a second incident or a second
-    link, and must not re-send the alert.
+    same helper, so it exists even if the link row never landed).
+
+    This is the *recovery* lookup, not the primary idempotency guard: the guard
+    is ``apd_article_identity``, which is keyed by the stable RSS link and is
+    consulted first (see the ledger section below). It is still needed for the
+    two windows the ledger cannot answer by itself — an article processed before
+    the ledger existed, and a claim whose insert landed but whose ledger commit
+    did not. In both cases the caller adopts the found work instead of repeating
+    it, so a second incident, a second link and a second alert are never created.
     """
     if not url:
         return False, 0
@@ -644,6 +653,198 @@ def _prior_article_work(db_path: str, url: str) -> tuple[bool, int]:
     finally:
         conn.close()
     return False, 0
+
+
+# ---------------------------------------------------------------------------
+# Durable article identity ledger
+# ---------------------------------------------------------------------------
+# Keyed by the stable Google News RSS link (``article['link']``), which does not
+# change for the life of a press release. The *resolved* article URL is not
+# stable: the source-RSS tier, the Google CSE tier and the Google News
+# /articles/ fallback can each hand back a different URL on a later cycle (feed
+# rotation, CSE reshuffle, a tier that has since started failing), so a guard
+# keyed on the resolved URL silently misses and the retry inserts a second
+# incident, a second article link, a second alert, a second Talk post and a
+# second seed entry for the same press release.
+#
+# The ledger records the identity -> (resolved URL, incident, seed) association
+# before the first side effect, and is read by the RSS link the feed actually
+# gives us. ``apd_seen`` keeps its own, different contract: it is still written
+# only *after* an article's outcome is known, so a failure before the ledger is
+# written leaves nothing recorded and the article is retried from scratch.
+
+_IDENTITY_CLAIMED = "claimed"
+_IDENTITY_COMMITTED = "committed"
+
+_IDENTITY_DDL = """
+    CREATE TABLE IF NOT EXISTS apd_article_identity (
+        rss_link     TEXT PRIMARY KEY,
+        resolved_url TEXT NOT NULL DEFAULT '',
+        source       TEXT NOT NULL DEFAULT 'apd_pr',
+        itype        TEXT NOT NULL DEFAULT '',
+        address      TEXT NOT NULL DEFAULT '',
+        lat          REAL,
+        lon          REAL,
+        incident_id  INTEGER,
+        state        TEXT NOT NULL DEFAULT 'claimed',
+        first_ts     REAL,
+        updated_ts   REAL
+    );
+    CREATE INDEX IF NOT EXISTS idx_apd_article_identity_incident
+        ON apd_article_identity(incident_id)
+        WHERE incident_id IS NOT NULL;
+"""
+
+_IDENTITY_COLUMNS = (
+    "rss_link", "resolved_url", "source", "itype", "address",
+    "lat", "lon", "incident_id", "state", "first_ts", "updated_ts",
+)
+
+
+def _identity_is_recorded(identity: dict | None) -> bool:
+    """True when the ledger says this article's outcome is already durable.
+
+    A committed row is the authoritative answer even when it carries no incident
+    id: that is the recorded form of an article whose incident could not be
+    determined (an orphaned link row), and re-processing it would duplicate the
+    link.
+    """
+    if not identity:
+        return False
+    return identity.get("state") == _IDENTITY_COMMITTED or bool(identity.get("incident_id"))
+
+
+def _lookup_article_identity(db_path: str, rss_link: str) -> dict | None:
+    """Return the ledger row for *rss_link*, or None when it is not recorded.
+
+    Read-only, and the one lookup that decides whether an article has been
+    processed before: it needs no network, so a retry of a fully processed
+    article costs a single indexed query.
+    """
+    if not rss_link:
+        return None
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            f"SELECT {', '.join(_IDENTITY_COLUMNS)} FROM apd_article_identity "
+            f"WHERE rss_link=?",
+            (rss_link,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return dict(zip(_IDENTITY_COLUMNS, row))
+
+
+def _claim_article_identity(
+    db_path: str,
+    *,
+    rss_link: str,
+    resolved_url: str,
+    source: str,
+    itype: str,
+    address: str = "",
+    lat: float | None = None,
+    lon: float | None = None,
+    ts: float | None = None,
+) -> tuple[dict, bool]:
+    """Record the article's identity association; return ``(row, claimed_now)``.
+
+    ``INSERT OR IGNORE`` on the primary key makes the claim idempotent and safe
+    against a concurrent poller: the row that ends up in the table is returned
+    as-is. ``claimed_now`` is True only when this call created the row, so a
+    caller can tell "I am the first attempt" from "an earlier attempt already
+    claimed this article and may have got as far as its insert".
+
+    The recorded values (resolved URL, itype, address, coordinates) are the
+    association for this press release and are deliberately not overwritten by a
+    later attempt: the first URL the work was recorded with is the one the
+    incident, the link row and the seed entry all carry.
+    """
+    now = time.time() if ts is None else ts
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO apd_article_identity "
+            "(rss_link, resolved_url, source, itype, address, lat, lon, "
+            " state, first_ts, updated_ts) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (rss_link, resolved_url or "", source or "", itype or "",
+             address or "", lat, lon, _IDENTITY_CLAIMED, now, now),
+        )
+        claimed_now = cur.rowcount == 1
+        row = conn.execute(
+            f"SELECT {', '.join(_IDENTITY_COLUMNS)} FROM apd_article_identity "
+            f"WHERE rss_link=?",
+            (rss_link,),
+        ).fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+    return dict(zip(_IDENTITY_COLUMNS, row)), claimed_now
+
+
+def _commit_article_identity(
+    db_path: str,
+    rss_link: str,
+    incident_id: int | None,
+) -> dict:
+    """Mark the article's outcome durable and return the committed row.
+
+    Called once the incident and the article link are both stored, so from here
+    on a retry takes the recorded path. The commit is its own statement: if the
+    process dies between the link insert and this update, the still-claimed row
+    plus the link row is enough for the retry to adopt the work instead of
+    repeating it (see the recovery branch in ``_process_apd_article``).
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE apd_article_identity SET incident_id=?, state=?, updated_ts=? "
+            "WHERE rss_link=?",
+            (incident_id or None, _IDENTITY_COMMITTED, time.time(), rss_link),
+        )
+        conn.commit()
+        row = conn.execute(
+            f"SELECT {', '.join(_IDENTITY_COLUMNS)} FROM apd_article_identity "
+            f"WHERE rss_link=?",
+            (rss_link,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(zip(_IDENTITY_COLUMNS, row))
+
+
+def _resume_recorded_seed_append(identity: dict, article: dict) -> None:
+    """Complete the one side effect a recorded article can still be missing.
+
+    A recorded article never re-inserts an incident or link, never re-alerts and
+    never re-posts, so an interrupted seed append is the only outcome left to
+    finish. It is keyed by the resolved URL recorded in the ledger — not by the
+    URL this attempt happens to resolve — so a retry completes the original
+    entry instead of adding a second one for the same press release. The append
+    itself dedupes on that URL, so repeating it is free.
+
+    Everything it needs is in the ledger, so no resolver call, article fetch or
+    geocode is required to finish the interrupted write.
+    """
+    if (identity.get("itype") or "") != "HOMICIDE":
+        return
+    resolved_url = identity.get("resolved_url") or ""
+    if not resolved_url:
+        return
+    ts = article.get("pub_ts") or time.time()
+    _append_homicide_json(
+        inc_id=int(identity.get("incident_id") or 0),
+        date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
+        address=identity.get("address") or "",
+        victim="",
+        summary=article.get("title", "").rsplit(" - ", 1)[0],
+        url=resolved_url,
+        lat=identity.get("lat"),
+        lon=identity.get("lon"),
+    )
 
 
 def _store_article_link(
@@ -806,6 +1007,9 @@ class APDNewsPoller(BasePoller):
     _lock : threading.Lock
         Guards the ``apd_seen`` DB dedup set shared between the APD sub-poll
         and the traffic sub-poll within a single run() call.
+    _schema_db_path : str | None
+        DB path whose identity ledger has already been created by this
+        instance, so ``ensure_schema`` runs once per database, not per cycle.
     """
 
     NAME: str     = "apd_news"
@@ -814,6 +1018,24 @@ class APDNewsPoller(BasePoller):
     def __init__(self) -> None:
         super().__init__(interval=int(self.INTERVAL))
         self._lock = threading.Lock()
+        self._schema_db_path: str | None = None
+
+    @staticmethod
+    def ensure_schema(db_path: str) -> None:
+        """Create the durable identity ledger if it is not there yet.
+
+        Migration-safe by construction: one idempotent ``CREATE TABLE IF NOT
+        EXISTS`` (plus its index) on the poller's own path, so an existing
+        production database gains the ledger on its next cycle — no ALTER, no
+        schema rewrite, and not one existing row touched. The same DDL is in
+        schema.sql, so a fresh database built from the schema is identical.
+        """
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.executescript(_IDENTITY_DDL)
+            conn.commit()
+        finally:
+            conn.close()
 
     def diagnostics(self) -> str:
         """Return a human-readable status string for health checks and tests."""
@@ -927,6 +1149,14 @@ class APDNewsPoller(BasePoller):
 
         articles = _apd_parse_rss(xml_text)
 
+        # Migration-safe schema guard: the identity ledger is created here (once
+        # per database) instead of requiring a manual migration, so the retry
+        # contract below is available on an existing deployment from its very
+        # first cycle after the upgrade.
+        if self._schema_db_path != db_path:
+            self.ensure_schema(db_path)
+            self._schema_db_path = db_path
+
         # Dedup against DB — persistent across restarts. Read-only: an article
         # is written to apd_seen by _mark_seen() *after* its outcome is known,
         # so a failure below leaves it unseen and the next cycle retries it.
@@ -1000,10 +1230,12 @@ class APDNewsPoller(BasePoller):
         and the caller records the article in apd_seen. Any exception means the
         outcome is *not* known, so the caller leaves the article unseen.
 
-        Processing is idempotent by article URL: an article whose work is
-        already recorded (link row and/or ``incidents.article_url``) from an
-        earlier cycle that failed after the insert is not re-inserted and does
-        not re-alert — only the URL-deduped seed append is re-attempted.
+        Processing is idempotent by the *stable* RSS link: the identity ledger
+        (see :func:`_claim_article_identity`) is keyed by ``article['link']`` and
+        written before the first side effect, so a retry whose resolver returns a
+        different URL still finds the incident, the link and the seed entry of
+        the interrupted attempt. It then inserts nothing, alerts nobody, posts
+        nothing, and only re-attempts the URL-deduped seed append.
         """
         # Lazy import — avoids circular dependency
         from modules.pollers import send_dm_alert  # noqa: PLC0415
@@ -1011,6 +1243,21 @@ class APDNewsPoller(BasePoller):
         title_lower = article["title"].lower()
         if not any(kw in title_lower for kw in _APD_HEADLINE_KW):
             logger.info("[news] SKIP apd_pr (headline): %s", article["title"])
+            return
+
+        rss_link = article["link"]
+
+        # Fast path for an article this poller already recorded. The ledger is
+        # keyed by the RSS link, so this finds the work even when the resolver
+        # would now return a different URL — and it needs no network at all.
+        identity = _lookup_article_identity(db_path, rss_link)
+        if _identity_is_recorded(identity):
+            logger.info(
+                "[apd-news] IDEMPOTENT: '%s' already recorded (incident %s) — "
+                "skipping re-insert, re-alert and re-post",
+                article["title"], identity.get("incident_id") or "?",
+            )
+            _resume_recorded_seed_append(identity, article)
             return
 
         logger.info("[apd-news] NEW: %s", article["title"])
@@ -1073,34 +1320,73 @@ class APDNewsPoller(BasePoller):
         ts   = pub_ts
         desc = f"[APD Press Release] {article['title']}. {summary[:200]}"
 
-        # Idempotency: a previous cycle may have recorded this article's work
-        # and *then* failed (seed write, DB error). The article therefore stays
-        # unseen and reaches this point again, so re-running the insert branch
-        # would duplicate the incident, the article link and the DM alert.
-        # Reuse the recorded incident instead: no second insert, no second
-        # link, no re-alert. Only the seed append is re-attempted, and it
-        # dedupes on the article URL, so the interrupted write still completes.
-        # A failure *before* any insert leaves nothing recorded and is retried
-        # from scratch by this same path.
+        # Rollout fallback: an article processed *before* this ledger existed has
+        # no identity row, so its recorded work is found by the URL that attempt
+        # resolved. Adopt it into the ledger rather than inserting it a second
+        # time, which also gives those articles the stable identity from here on.
         already_recorded, prior_inc_id = _prior_article_work(db_path, url)
         if already_recorded:
+            _claim_article_identity(
+                db_path,
+                rss_link=rss_link,
+                resolved_url=url,
+                source="apd_pr",
+                itype=itype,
+                address=address or "",
+                lat=lat,
+                lon=lon,
+                ts=ts,
+            )
+            identity = _commit_article_identity(db_path, rss_link, prior_inc_id or None)
             logger.info(
                 "[apd-news] IDEMPOTENT: '%s' already recorded (incident %s) — "
-                "skipping re-insert and re-alert",
+                "adopted into the identity ledger, skipping re-insert and re-alert",
                 article["title"], prior_inc_id or "?",
             )
-            if itype == "HOMICIDE":
-                _append_homicide_json(
-                    inc_id=prior_inc_id,
-                    date=datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
-                    address=address or "",
-                    victim="",
-                    summary=article["title"].rsplit(" - ", 1)[0],
-                    url=url,
-                    lat=lat,
-                    lon=lon,
-                )
+            _resume_recorded_seed_append(identity, article)
             return
+
+        # Claim the identity *before* the first side effect. From here on the
+        # article is durably identified by its RSS link, so an interruption in
+        # the middle of the insert is recognisable on the retry.
+        identity, claimed_now = _claim_article_identity(
+            db_path,
+            rss_link=rss_link,
+            resolved_url=url,
+            source="apd_pr",
+            itype=itype,
+            address=address or "",
+            lat=lat,
+            lon=lon,
+            ts=ts,
+        )
+        if _identity_is_recorded(identity):
+            # Committed between the lookup above and this claim.
+            _resume_recorded_seed_append(identity, article)
+            return
+
+        # The ledger's URL is this article's identity: on a retry of a claim an
+        # earlier attempt left behind, the first URL the work was recorded with
+        # wins, so a resolver that now returns something different can never
+        # fork one press release into two incidents / two seed entries.
+        url = identity.get("resolved_url") or url
+
+        if not claimed_now:
+            # An earlier attempt claimed this article and died before its outcome
+            # was committed. Its insert may still have landed (the link row and
+            # the incident both carry the recorded URL), so adopt that work
+            # instead of inserting a second one — and commit the outcome, so the
+            # next cycle is a plain no-op.
+            found, inc_id = _prior_article_work(db_path, url)
+            if found:
+                identity = _commit_article_identity(db_path, rss_link, inc_id or None)
+                logger.info(
+                    "[apd-news] IDEMPOTENT: '%s' insert found for the claimed "
+                    "identity (incident %s) — adopted, skipping re-insert and re-alert",
+                    article["title"], inc_id or "?",
+                )
+                _resume_recorded_seed_append(identity, article)
+                return
 
         matched_id, match_score = _match_article_to_incident(
             article["title"], itype, ts, db_path
@@ -1112,6 +1398,7 @@ class APDNewsPoller(BasePoller):
                 matched_id, ts, article["title"], url,
                 "apd_pr", summary[:300], match_score, db_path,
             )
+            _commit_article_identity(db_path, rss_link, matched_id)
             if itype == "HOMICIDE":
                 _append_homicide_json(
                     inc_id=matched_id,
@@ -1156,6 +1443,11 @@ class APDNewsPoller(BasePoller):
 
             _store_article_link(inc_id, ts, article["title"], url, "apd_pr",
                                 summary[:300], 0.0, db_path)
+
+            # Outcome is durable from here: the identity now points at the
+            # incident, so a later retry (even one that resolves a different
+            # URL) re-runs nothing below and only finishes the seed append.
+            _commit_article_identity(db_path, rss_link, inc_id)
 
             if itype == "HOMICIDE":
                 _append_homicide_json(

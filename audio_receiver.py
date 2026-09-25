@@ -3195,10 +3195,12 @@ def api_premium_homicides_summary():
     except HomicideSeedUnavailable as exc:
         # A missing/corrupt curated seed is a deployment fault, not a zero
         # homicide year — answer explicitly instead of under-reporting.
+        # str(exc) names the absolute seed path and the variables that relocate
+        # it, so it stays in the server log; the body is the same fixed, generic
+        # message the anonymous /api/homicides 503 uses.
         print(f"[premium] homicide seed unavailable: {exc}", flush=True)
         return jsonify({
             "error":  "homicide seed unavailable",
-            "detail": str(exc),
             "ytd":    None,
             "year":   2026,
             "last":   None,

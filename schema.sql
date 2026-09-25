@@ -178,10 +178,37 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 -- Dedup set for APD press-release URLs already ingested by the news poller.
+-- Write-after-outcome: a row exists only once the article's outcome is known.
 CREATE TABLE IF NOT EXISTS apd_seen (
     url TEXT PRIMARY KEY,
     ts  REAL NOT NULL
 );
+
+-- Durable article identity for the APD news poller, keyed by the stable Google
+-- News RSS link. The resolved article URL is NOT stable (the source-RSS, CSE and
+-- /articles/ tiers can each return a different one on a later cycle), so the
+-- idempotency guard reads this table instead: it maps one RSS link to the
+-- resolved URL its work was recorded with, the incident it produced, and the
+-- seed entry keyed on that URL. Written before the first side effect, so an
+-- interrupted article is recognisable even when the resolver moved on.
+-- state: 'claimed' = an attempt is in progress, 'committed' = outcome durable.
+CREATE TABLE IF NOT EXISTS apd_article_identity (
+    rss_link     TEXT PRIMARY KEY,
+    resolved_url TEXT NOT NULL DEFAULT '',
+    source       TEXT NOT NULL DEFAULT 'apd_pr',
+    itype        TEXT NOT NULL DEFAULT '',
+    address      TEXT NOT NULL DEFAULT '',
+    lat          REAL,
+    lon          REAL,
+    incident_id  INTEGER,
+    state        TEXT NOT NULL DEFAULT 'claimed',
+    first_ts     REAL,
+    updated_ts   REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_apd_article_identity_incident
+    ON apd_article_identity(incident_id)
+    WHERE incident_id IS NOT NULL;
 
 -- Reddit posts pulled from local-interest subreddits; may be promoted to
 -- tips or matched to incidents.

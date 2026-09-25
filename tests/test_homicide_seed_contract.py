@@ -537,6 +537,111 @@ def test_premium_route_delegates_to_shared_seed_contract():
     assert "homicides_2026.json" not in body
 
 
+# ---------------------------------------------------------------------------
+# 4b. The premium summary is robust, and never leaks a deployment path
+# ---------------------------------------------------------------------------
+
+def test_premium_summary_skips_non_dict_seed_entries(seed_env, incidents_db):
+    """One corrupt line must not take the premium dashboard down."""
+    seed_path, _data_dir = seed_env
+    entries = [*_VALID_SEED, "2026-02-14 unparsed", 42, None, ["nested"]]
+    seed_path.write_text(json.dumps(entries), encoding="utf-8")
+
+    payload = premium_homicide_summary(str(incidents_db))
+
+    # Only the two readable entries count: 1 + 3 victims, plus the live row.
+    assert payload["ytd"] == 5
+    assert payload["year"] == 2026
+    assert payload["last"]["location"] == "500 Congress Ave"
+
+
+def test_premium_summary_falls_back_to_a_readable_entry(seed_env, incidents_db):
+    """The newest *readable* entry answers `last`, not a corrupt one."""
+    seed_path, _data_dir = seed_env
+    entries = [*_VALID_SEED, "2026-12-31 unparsed"]
+    seed_path.write_text(json.dumps(entries), encoding="utf-8")
+    conn = sqlite3.connect(incidents_db)
+    conn.execute("DELETE FROM incidents")
+    conn.commit()
+    conn.close()
+
+    payload = premium_homicide_summary(str(incidents_db))
+
+    assert payload["ytd"] == 4
+    assert payload["last"] == {"date": "Mar 01", "location": "700 W 6th St, Austin, TX"}
+
+
+def test_premium_summary_survives_a_seed_of_only_corrupt_entries(seed_env, incidents_db):
+    """A seed with nothing countable reports 0 and no `last` — it does not raise."""
+    seed_path, _data_dir = seed_env
+    seed_path.write_text(json.dumps(["a", None, 3]), encoding="utf-8")
+    conn = sqlite3.connect(incidents_db)
+    conn.execute("DELETE FROM incidents")
+    conn.commit()
+    conn.close()
+
+    payload = premium_homicide_summary(str(incidents_db))
+
+    assert payload["ytd"] == 0
+    assert payload["last"] is None
+
+
+def test_premium_summary_tolerates_unusable_fields(seed_env, incidents_db):
+    """A bad `count` or `date` is survivable; only unreadable entries are not."""
+    seed_path, _data_dir = seed_env
+    seed_path.write_text(json.dumps([
+        {"n": 1, "date": "2026-01-09", "count": "three", "url": "https://example.com/1"},
+        {"n": 2, "date": None, "address": ["a", "list"], "url": "https://example.com/2"},
+    ]), encoding="utf-8")
+    conn = sqlite3.connect(incidents_db)
+    conn.execute("DELETE FROM incidents")
+    conn.commit()
+    conn.close()
+
+    payload = premium_homicide_summary(str(incidents_db))
+
+    assert payload["ytd"] == 2, "an unusable count falls back to one victim"
+    assert isinstance(payload["last"]["date"], str)
+    assert isinstance(payload["last"]["location"], str)
+
+
+def test_the_seed_fault_detail_names_an_absolute_path(seed_env, monkeypatch):
+    """Why the 503 body must stay generic: the detail *is* path-bearing."""
+    seed_path, data_dir = seed_env
+    missing = data_dir / "absent.json"
+    monkeypatch.setenv("HOMICIDE_SEED_PATH", str(missing))
+    with pytest.raises(HomicideSeedUnavailable) as exc:
+        load_seed_strict()
+    detail = str(exc.value)
+    assert str(missing) in detail
+    assert "HOMICIDE_SEED_PATH" in detail
+
+
+def test_premium_route_never_returns_the_fault_detail(seed_env):
+    """No client-visible error detail, and no absolute path, from the 503.
+
+    audio_receiver.py cannot be imported in a test, so the route is asserted
+    statically: the exception text (which names the absolute seed path) must
+    reach the log, never the JSON body. Comments are stripped first — the
+    reasoning belongs in the source, not in the response.
+    """
+    import io
+    import tokenize
+
+    body = _premium_route_source()
+    code = "".join(
+        tok.string
+        for tok in tokenize.generate_tokens(io.StringIO(body).readline)
+        if tok.type not in (tokenize.COMMENT, tokenize.STRING)
+    )
+    assert "str(exc)" not in code, "the exception text must stay out of the response"
+    assert "exc" in code, "the exception must still be handled, not swallowed"
+    assert '"detail"' not in body, "no client-visible error detail key"
+    assert "homicide seed unavailable" in body
+    assert "print(" in code, "the detail must still be logged server-side"
+    assert "ytd" in body
+
+
 def test_public_module_has_no_hardcoded_production_seed():
     src = (_ROOT / "modules" / "public.py").read_text(encoding="utf-8")
     assert _PROD_TREE not in src
