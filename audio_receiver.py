@@ -100,7 +100,14 @@ from modules.transcription import (  # noqa: E402
 app = Flask(__name__, static_folder="/opt/battlebuddy/static", static_url_path="/static")
 
 app.register_blueprint(aircraft_bp)
-from modules.public import public_bp  # noqa: E402, I001
+from modules.public import (  # noqa: E402, I001
+    MAP_INCIDENT_TYPES,
+    MAP_LAT_MAX,
+    MAP_LAT_MIN,
+    MAP_LON_MAX,
+    MAP_LON_MIN,
+    public_bp,
+)
 app.register_blueprint(public_bp)
 from modules.tips import tips_bp  # noqa: E402, I001
 app.register_blueprint(tips_bp)
@@ -796,18 +803,43 @@ try:
                 # --- live gauges ---
                 _window = _now - 86400
 
+                # One scan answers both active-incident questions. The mappable
+                # test below is the SQL mirror of the public live map's
+                # isMappableIncident(): same type list, same Austin envelope,
+                # and a hard reject of the agency-HQ fallback coordinates that
+                # modules.database._fill_incident_coords() stamps onto rows with
+                # no real location. Adding the column here rather than issuing a
+                # second query keeps this on the existing active-incident query
+                # path — one pass, no per-incident label, no new scan.
+                _itype_ph = ",".join("?" * len(MAP_INCIDENT_TYPES))
                 cur.execute(
-                    "SELECT COUNT(*) FROM incidents "
+                    "SELECT COUNT(*), "
+                    "COALESCE(SUM(CASE WHEN location IS NOT NULL AND TRIM(location) <> '' "
+                    "AND lat IS NOT NULL AND lat <> 0 AND lon IS NOT NULL AND lon <> 0 "
+                    f"AND itype IN ({_itype_ph}) "
+                    "AND lat >= ? AND lat <= ? AND lon >= ? AND lon <= ? "
+                    "THEN 0 ELSE 1 END), 0) FROM incidents "
                     "WHERE status='active' AND (is_test IS NULL OR is_test=0) "
-                    "AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%')"
+                    "AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%')",
+                    (*MAP_INCIDENT_TYPES, MAP_LAT_MIN, MAP_LAT_MAX, MAP_LON_MIN, MAP_LON_MAX),
                 )
-                (active_count,) = cur.fetchone()
+                (active_count, unlocated_count) = cur.fetchone()
                 g_active = GaugeMetricFamily(
                     "battlebuddy_active_incidents",
                     "Currently active (non-cleared) Battle Buddy incidents",
                 )
                 g_active.add_metric([], float(active_count))
                 yield g_active
+
+                # No labels: one series, so a hostile incident type or id can
+                # never multiply cardinality.
+                g_unlocated = GaugeMetricFamily(
+                    "battlebuddy_active_incidents_unlocated",
+                    "Active incidents with no verified location, so they are counted "
+                    "but never plotted on the public map",
+                )
+                g_unlocated.add_metric([], float(unlocated_count))
+                yield g_unlocated
 
                 cur.execute(
                     "SELECT COALESCE(itype,'unknown'), COUNT(*) FROM incidents "
