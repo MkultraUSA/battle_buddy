@@ -292,7 +292,7 @@ footer {
   <a href="/public/homicides" style="color:#ef4444;text-decoration:none">Homicide Map</a> &nbsp;&middot;&nbsp;
   <a href="/public/feed" style="color:#3b82f6;text-decoration:none">Feed</a> &nbsp;·&nbsp;
   <a href="/public/about" style="color:#3b82f6;text-decoration:none">About</a> &nbsp;·&nbsp;
-  <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" style="color:#10b981;text-decoration:none">📊 Stats</a>
+  <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" rel="noopener" style="color:#10b981;text-decoration:none">📊 Stats</a>
 </footer>
 
 <script>
@@ -383,7 +383,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about">About</a>
-    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank">📊 Stats</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" rel="noopener">📊 Stats</a>
     <a href="/tip">Submit Tip</a>
   </nav>
   <button id="sitrep-btn" onclick="speakSitrep()" title="Read situation report aloud">&#128266; SITREP</button>
@@ -420,8 +420,8 @@ const map = L.map('map', {
   maxBounds: AUSTIN_BOUNDS,
   maxBoundsViscosity: 1.0
 }).setView([30.32, -97.77], 11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors',
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; Esri — Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
   maxZoom: 18
 }).addTo(map);
 
@@ -713,7 +713,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed" class="active">Live Feed</a>
     <a href="/public/about">About</a>
-    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank">📊 Stats</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" rel="noopener">📊 Stats</a>
     <a href="/tip">Submit Tip</a>
   </nav>
 </div>
@@ -900,7 +900,8 @@ footer a{color:#3b82f6;text-decoration:none}
     <a href="/public/homicides">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about" class="active">About</a>
-    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank">📊 Stats</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" rel="noopener">📊 Stats</a>
+    <a href="/tip">Submit Tip</a>
   </nav>
 </div>
 
@@ -1394,9 +1395,11 @@ HOMICIDE_MAP_HTML = """<!DOCTYPE html>
   <span class="tagline">Austin Metro — Real-Time Public Safety Intelligence</span>
   <nav class="nav">
     <a href="/public">Live Map</a>
+    <a href="/public/aircraft">Aircraft</a>
     <a href="/public/homicides" class="active">Homicide Map</a>
     <a href="/public/feed">Live Feed</a>
     <a href="/public/about">About</a>
+    <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" rel="noopener">📊 Stats</a>
     <a href="/tip">Submit Tip</a>
   </nav>
 </div>
@@ -1456,7 +1459,7 @@ HOMICIDE_MAP_HTML = """<!DOCTYPE html>
     <div class="nerd-content">
       <h3>Data Sources</h3>
       <p><strong>Primary source:</strong> APD homicide press releases published at
-      <a href="https://www.austintexas.gov/news?field_news_type_tid=75" target="_blank">austintexas.gov/news</a>.
+      <a href="https://www.austintexas.gov/news?field_news_type_tid=75" target="_blank" rel="noopener">austintexas.gov/news</a>.
       Battle Buddy polls this page every 5 minutes. New articles matching homicide/shooting/death keywords trigger
       automatic article retrieval, address extraction, and geocoding.</p>
 
