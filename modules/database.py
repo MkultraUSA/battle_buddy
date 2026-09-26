@@ -223,6 +223,44 @@ def _fill_incident_coords(inc: dict) -> dict:
     return inc
 
 
+# How long an incident may go without an update before the published "active"
+# population stops counting it. An incident nobody has touched for half an hour
+# is stale, not active, and a stale row is exactly what makes a live count lie.
+ACTIVE_INCIDENT_WINDOW_S = 30 * 60
+
+# The published active population, as one SQL fragment with one trailing
+# placeholder (the ts_updated cutoff). This is the single definition of "an
+# incident is active right now, publicly":
+#
+#   * public_active_incidents() appends it to the query behind
+#     /api/incidents/active, which is what the live map counts and pins;
+#   * the Prometheus collector in audio_receiver.py appends the same fragment to
+#     the single statement behind battlebuddy_active_incidents,
+#     battlebuddy_active_incidents_unlocated and
+#     battlebuddy_active_incidents_out_of_scope.
+#
+# Because both sides read the same fragment, the number a reader sees on the map
+# and the number an operator sees in /metrics are the same measurement of the
+# same rows, not two queries that happen to look alike.
+#
+#   - status='active'    the incident is open;
+#   - is_test            test rows are never published, so they are not counted;
+#   - press release      "[APD Press Release]" rows are aggregate press
+#                        summaries of many incidents, not incidents, and were
+#                        already excluded from the gauges;
+#   - ts_updated window  drop incidents that have gone stale.
+#
+# Do not add a second definition of this filter. If something needs the
+# operational view (every active row, test and press-release rows included) it
+# should call active_incidents() below instead.
+ACTIVE_INCIDENT_POPULATION_SQL = (
+    "status = 'active' "
+    "AND (is_test IS NULL OR is_test = 0) "
+    "AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%') "
+    "AND ts_updated > ?"
+)
+
+
 def active_incidents() -> list:
     conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
@@ -230,6 +268,25 @@ def active_incidents() -> list:
     rows = conn.execute(
         "SELECT * FROM incidents WHERE status='active' AND ts_updated > ? ORDER BY ts_updated DESC",
         (cutoff,)
+    ).fetchall()
+    conn.close()
+    return [_fill_incident_coords(dict(r)) for r in rows]
+
+
+def public_active_incidents() -> list:
+    """The active incidents the public live map is served, and counted from.
+
+    Same rows the exported active gauges measure: see
+    ACTIVE_INCIDENT_POPULATION_SQL. Rows come back with the agency-HQ fallback
+    coordinates applied, exactly as before, so the page keeps the
+    ``_coords_approx`` stamp that keeps a fallback centroid off the map.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        f"SELECT * FROM incidents WHERE {ACTIVE_INCIDENT_POPULATION_SQL} "
+        "ORDER BY ts_updated DESC",
+        (time.time() - ACTIVE_INCIDENT_WINDOW_S,),
     ).fetchall()
     conn.close()
     return [_fill_incident_coords(dict(r)) for r in rows]
