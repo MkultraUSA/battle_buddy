@@ -66,6 +66,15 @@ function setMode(m) {
   render();
 }
 
+// CSP: the page carries no inline onclick handlers, so the view buttons are
+// wired here. setMode stays global for compatibility.
+if (typeof document !== 'undefined') {
+  ['heat', 'markers', 'both'].forEach(function (id) {
+    var b = document.getElementById('btn-' + id);
+    if (b && b.addEventListener) b.addEventListener('click', function () { setMode(id); });
+  });
+}
+
 function render() {
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
   markerGroup.clearLayers();

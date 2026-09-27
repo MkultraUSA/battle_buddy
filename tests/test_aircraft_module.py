@@ -280,6 +280,12 @@ class MapSurfacePreservationTests(unittest.TestCase):
             with self.subTest(surface=name):
                 html = get_html()
                 if has_map:
+                    # The map script is external now (CSP forbids inline
+                    # script); the shipped surface is the HTML plus the
+                    # script browsers actually run.
+                    script_path = _ROOT / "static" / "js" / "public_map.js"
+                    if script_path.exists():
+                        html += script_path.read_text(encoding="utf-8")
                     _assert_esri_basemap(self, html, name)
                 else:
                     self.assertNotIn(

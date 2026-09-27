@@ -314,6 +314,33 @@ _adsb_live_snapshot = {
 }
 
 
+# Allowlist for the unauthenticated client-supplied talkgroup tag on
+# POST /receive. The Pi is untrusted input here: only a known-safe shape is
+# accepted, anything else is discarded so the server-side TGID_META label (or
+# the "TGID <n>" fallback) names the call instead. Bounded length keeps an
+# attacker string out of storage and outbound work (Talk posts, transcripts).
+_PI_TAG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 \-/.()]*")
+_PI_TAG_MAX_LEN = 64
+
+
+def _sanitize_pi_tag(raw) -> str:
+    """Return a safe talkgroup tag, or "" when the client value is unusable.
+
+    Discarding (rather than stripping characters) is deliberate: a tag that
+    needed surgery is not a label we trust, and the server-side table already
+    knows the right name for every TGID.
+    """
+    if not isinstance(raw, str):
+        return ""
+    s = raw.strip()
+    if not s or len(s) > _PI_TAG_MAX_LEN:
+        return ""
+    m = _PI_TAG_RE.fullmatch(s)
+    if not m:
+        return ""
+    return s
+
+
 def _should_backlog() -> bool:
     """Decide whether to queue a call or drop it, based on queue depth.
 
@@ -346,7 +373,7 @@ def receive():
     wav_bytes = base64.b64decode(data["audio_b64"])
 
     meta     = TGID_META.get(tgid, {})
-    pi_tag   = (data.get("tag") or "").strip()
+    pi_tag   = _sanitize_pi_tag((data.get("tag") or ""))
     # The Pi may send generic labels like "TGID 2454" when its local TSV is stale.
     # Treat those as unresolved so the server-side tag table can still label calls.
     if re.fullmatch(r"TGID\s+\d+", pi_tag, flags=re.I):
