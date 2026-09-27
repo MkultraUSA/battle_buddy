@@ -5,6 +5,7 @@ pipeline. Mounted as a Flask Blueprint named tips_bp and registered in
 audio_receiver.py.
 """
 
+import base64
 import os
 import sqlite3
 import threading
@@ -12,8 +13,9 @@ import time
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, make_response, request
 
+from modules import premium as premium_mod
 from modules.config import DB_PATH, TIPS_UPLOAD_DIR
 from modules.geocoding import _geocode_address
 from modules.talk import _bot_reply, _get_or_create_dm_room
@@ -66,6 +68,85 @@ def _notify_new_tip(tip_id: int, location_text: str, description: str,
 
     _bot_reply(token, chr(10).join(lines))
     print(f"[tip] DM sent to kevin for tip #{tip_id}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Reviewer auth gate — reuses the existing Nextcloud-admin check that backs
+# audio_receiver.auth_nc_admin (HTTP Basic -> _nc_validate_user -> _is_admin).
+# Enforced in the Flask routes themselves so the surface stays closed even if
+# nginx is bypassed or misconfigured. Access via premium_mod attributes (not
+# from-imported names) so credential validation stays stub-able in tests.
+# ---------------------------------------------------------------------------
+
+def _require_tip_admin():
+    """Return (username, None) if the caller is an authorized admin.
+
+    Otherwise return (None, error_response): 401 for missing/invalid
+    credentials, 403 for valid non-admin credentials. Anonymous callers learn
+    nothing about whether any tip exists.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("basic "):
+        resp = make_response(jsonify({"error": "authentication required"}), 401)
+        resp.headers["WWW-Authenticate"] = 'Basic realm="Tip Review"'
+        return None, resp
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8", errors="replace")
+        username, _, password = decoded.partition(":")
+    except Exception:
+        resp = make_response(jsonify({"error": "authentication required"}), 401)
+        resp.headers["WWW-Authenticate"] = 'Basic realm="Tip Review"'
+        return None, resp
+    if not username or not password:
+        resp = make_response(jsonify({"error": "authentication required"}), 401)
+        resp.headers["WWW-Authenticate"] = 'Basic realm="Tip Review"'
+        return None, resp
+    if not premium_mod._nc_validate_user(username, password):
+        resp = make_response(jsonify({"error": "invalid credentials"}), 401)
+        resp.headers["WWW-Authenticate"] = 'Basic realm="Tip Review"'
+        return None, resp
+    if not premium_mod._is_admin(username):
+        return None, make_response(jsonify({"error": "forbidden"}), 403)
+    return username, None
+
+
+# Audit trail for reviewer actions. Table is created idempotently here (same
+# CREATE TABLE IF NOT EXISTS convention as modules/database.init_db and
+# schema.sql, which also declare it) so approve/reject always have a trail,
+# even on databases created before the table existed.
+_TIP_AUDIT_DDL = (
+    "CREATE TABLE IF NOT EXISTS tip_audit ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "admin_username TEXT NOT NULL, "
+    "tip_id INTEGER NOT NULL, "
+    "action TEXT NOT NULL, "
+    "ts REAL NOT NULL)"
+)
+
+
+def _ensure_tip_audit(conn):
+    conn.execute(_TIP_AUDIT_DDL)
+
+
+# Reviewer-facing fields only. source / incident_id are never exposed here.
+_TIP_REVIEW_FIELDS = (
+    "id, ts, location_text, lat, lon, description, photo_path, status, reviewer_note"
+)
+
+
+# Restrictive CSP for the admin surface: no inline script may run, so a missed
+# interpolation cannot execute. Inline <style> is still allowed (presentation
+# only); scripts must load from same-origin files. There is no repo-wide CSP
+# convention to reuse — no other surface sets this header.
+_TIPS_ADMIN_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'self'"
+)
 
 
 TIP_FORM_HTML = r"""<!DOCTYPE html>
@@ -241,49 +322,7 @@ h1 { font-size: 1.3rem; font-weight: 700; color: #3b82f6; letter-spacing: 2px; m
 <div id="pending-list"></div>
 <div class="section-label">Reviewed</div>
 <div id="reviewed-list"></div>
-<script>
-async function loadTips() {
-  const r = await fetch('/api/tips');
-  const tips = await r.json();
-  const pending = tips.filter(t => t.status === 'pending');
-  const reviewed = tips.filter(t => t.status !== 'pending');
-  document.getElementById('counts').textContent =
-    pending.length + ' pending · ' + reviewed.length + ' reviewed · ' + tips.length + ' total';
-  document.getElementById('pending-list').innerHTML = pending.map(tipCard).join('') || '<p style="color:#475569;font-size:0.85rem">No pending tips.</p>';
-  document.getElementById('reviewed-list').innerHTML = reviewed.map(tipCard).join('') || '<p style="color:#475569;font-size:0.85rem">None yet.</p>';
-}
-function tipCard(t) {
-  const dt = new Date(t.ts * 1000).toLocaleString();
-  const badge = `<span class="badge badge-${t.status}">${t.status.toUpperCase()}</span>`;
-  const photo = t.photo_path ? `<div class="tip-photo"><img src="/static/tips/${t.photo_path}"></div>` : '';
-  const coords = (t.lat && t.lon) ? `<div class="tip-coords">&#128205; ${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}</div>` : '<div class="tip-coords">Location not geocoded</div>';
-  const actions = t.status === 'pending' ? `
-    <div class="actions">
-      <input class="note-input" id="note-${t.id}" placeholder="Reviewer note (optional)">
-      <button class="btn-approve" onclick="act(${t.id},'approve')">&#10003; Approve</button>
-      <button class="btn-reject" onclick="act(${t.id},'reject')">&#215; Reject</button>
-    </div>` : (t.reviewer_note ? `<div style="font-size:0.75rem;color:#475569">Note: ${t.reviewer_note}</div>` : '');
-  return `<div class="tip-card ${t.status}" id="card-${t.id}">
-    <div class="tip-meta">#${t.id} &nbsp;·&nbsp; ${dt} &nbsp;·&nbsp; ${badge}</div>
-    <div class="tip-location">${t.location_text || '(no location)'}</div>
-    ${coords}
-    <div class="tip-desc">${t.description || '<em style="color:#475569">No description provided.</em>'}</div>
-    ${photo}
-    ${actions}
-  </div>`;
-}
-async function act(id, action) {
-  const note = document.getElementById('note-' + id)?.value || '';
-  const r = await fetch('/api/tips/' + id + '/' + action, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({reviewer_note: note})
-  });
-  if (r.ok) loadTips();
-  else alert('Action failed');
-}
-loadTips();
-</script>
+<script src="/static/js/tips_review.js"></script>
 </body>
 </html>"""
 
@@ -364,37 +403,72 @@ def api_reddit_tips():
 
 @tips_bp.route("/admin/tips")
 def tips_admin():
-    return TIPS_ADMIN_HTML
+    admin, err = _require_tip_admin()
+    if err is not None:
+        return err
+    resp = make_response(TIPS_ADMIN_HTML)
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    resp.headers["Content-Security-Policy"] = _TIPS_ADMIN_CSP
+    return resp
 
 
 @tips_bp.route("/api/tips")
 def api_tips():
+    admin, err = _require_tip_admin()
+    if err is not None:
+        return err
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM tips ORDER BY ts DESC").fetchall()
+    rows = conn.execute(
+        f"SELECT {_TIP_REVIEW_FIELDS} FROM tips ORDER BY ts DESC"  # noqa: S608
+    ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
 
 @tips_bp.route("/api/tips/<int:tip_id>/approve", methods=["POST"])
 def api_tip_approve(tip_id):
+    admin, err = _require_tip_admin()
+    if err is not None:
+        return err
     data = request.get_json(silent=True) or {}
     note = (data.get("reviewer_note") or "").strip()
     conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT id FROM tips WHERE id=?", (tip_id,)).fetchone()
+    if row is None:
+        conn.close()
+        return jsonify({"error": "tip not found"}), 404
+    _ensure_tip_audit(conn)
     conn.execute("UPDATE tips SET status='approved', reviewer_note=? WHERE id=?", (note, tip_id))
+    conn.execute(
+        "INSERT INTO tip_audit (admin_username, tip_id, action, ts) VALUES (?,?,?,?)",
+        (admin, tip_id, "approve", time.time()),
+    )
     conn.commit()
     conn.close()
-    print(f"[tip] approved #{tip_id}", flush=True)
+    print(f"[tip] approved #{tip_id} by {admin}", flush=True)
     return jsonify({"status": "approved", "id": tip_id})
 
 
 @tips_bp.route("/api/tips/<int:tip_id>/reject", methods=["POST"])
 def api_tip_reject(tip_id):
+    admin, err = _require_tip_admin()
+    if err is not None:
+        return err
     data = request.get_json(silent=True) or {}
     note = (data.get("reviewer_note") or "").strip()
     conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT id FROM tips WHERE id=?", (tip_id,)).fetchone()
+    if row is None:
+        conn.close()
+        return jsonify({"error": "tip not found"}), 404
+    _ensure_tip_audit(conn)
     conn.execute("UPDATE tips SET status='rejected', reviewer_note=? WHERE id=?", (note, tip_id))
+    conn.execute(
+        "INSERT INTO tip_audit (admin_username, tip_id, action, ts) VALUES (?,?,?,?)",
+        (admin, tip_id, "reject", time.time()),
+    )
     conn.commit()
     conn.close()
-    print(f"[tip] rejected #{tip_id}", flush=True)
+    print(f"[tip] rejected #{tip_id} by {admin}", flush=True)
     return jsonify({"status": "rejected", "id": tip_id})
