@@ -2,7 +2,7 @@ import json
 import sqlite3
 import time
 
-from modules.config import DB_PATH, INCIDENT_TIMEOUT_MINUTES, _INCIDENT_TIMEOUT_DEFAULT
+from modules.config import _INCIDENT_TIMEOUT_DEFAULT, DB_PATH, INCIDENT_TIMEOUT_MINUTES
 from modules.talkgroups import CAT_COORDS
 
 
