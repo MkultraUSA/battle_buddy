@@ -852,15 +852,16 @@ try:
                         MAP_LAT_MAX,
                         MAP_LON_MIN,
                         MAP_LON_MAX,
-                        _now - ACTIVE_INCIDENT_WINDOW_S,
+                        _now,
                     ),
                 )
                 (active_count, unlocated_count, out_of_scope_count) = cur.fetchone()
                 g_active = GaugeMetricFamily(
                     "battlebuddy_active_incidents",
                     "Currently active (non-cleared, non-test, non-press-release) Battle "
-                    f"Buddy incidents updated in the last {ACTIVE_INCIDENT_WINDOW_S // 60} "
-                    "minutes; equals _mappable + _unlocated + _out_of_scope",
+                    "Buddy incidents within their per-type timeout "
+                    "(INCIDENT_TIMEOUT_MINUTES, default _INCIDENT_TIMEOUT_DEFAULT); "
+                    "equals _mappable + _unlocated + _out_of_scope",
                 )
                 g_active.add_metric([], float(active_count))
                 yield g_active

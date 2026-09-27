@@ -2,7 +2,7 @@ import json
 import sqlite3
 import time
 
-from modules.config import DB_PATH
+from modules.config import DB_PATH, INCIDENT_TIMEOUT_MINUTES, _INCIDENT_TIMEOUT_DEFAULT
 from modules.talkgroups import CAT_COORDS
 
 
@@ -223,14 +223,36 @@ def _fill_incident_coords(inc: dict) -> dict:
     return inc
 
 
-# How long an incident may go without an update before the published "active"
-# population stops counting it. An incident nobody has touched for half an hour
-# is stale, not active, and a stale row is exactly what makes a live count lie.
+# Legacy flat window, retained for compatibility only. The published
+# population no longer uses it; see ACTIVE_INCIDENT_POPULATION_SQL below,
+# which evaluates the staleness window per row from the row itype.
 ACTIVE_INCIDENT_WINDOW_S = 30 * 60
 
+
+def _active_incident_timeout_seconds_sql() -> str:
+    """SQL CASE mapping each itype to its engine timeout in seconds.
+
+    Mirrors modules.config.INCIDENT_TIMEOUT_MINUTES with fallback to
+    modules.config._INCIDENT_TIMEOUT_DEFAULT, so the published population
+    never excludes a row the incident engine still considers active.
+    """
+    whens = " ".join(
+        f"WHEN '{itype.replace(chr(39), chr(39) * 2)}' "
+        f"THEN {int(INCIDENT_TIMEOUT_MINUTES[itype] * 60)}"
+        for itype in sorted(INCIDENT_TIMEOUT_MINUTES)
+    )
+    return f"(CASE itype {whens} ELSE {int(_INCIDENT_TIMEOUT_DEFAULT * 60)} END)"
+
+
+# Per-row staleness budget in seconds, derived from the same map the incident
+# engine's cleanup thread reads. Single definition so the two mechanisms
+# cannot drift apart again.
+ACTIVE_INCIDENT_TIMEOUT_S_SQL = _active_incident_timeout_seconds_sql()
+
 # The published active population, as one SQL fragment with one trailing
-# placeholder (the ts_updated cutoff). This is the single definition of "an
-# incident is active right now, publicly":
+# placeholder (the current time, in the same epoch-seconds domain as
+# ts_updated). This is the single definition of "an incident is active right
+# now, publicly":
 #
 #   * public_active_incidents() appends it to the query behind
 #     /api/incidents/active, which is what the live map counts and pins;
@@ -248,7 +270,12 @@ ACTIVE_INCIDENT_WINDOW_S = 30 * 60
 #   - press release      "[APD Press Release]" rows are aggregate press
 #                        summaries of many incidents, not incidents, and were
 #                        already excluded from the gauges;
-#   - ts_updated window  drop incidents that have gone stale.
+#   - ts_updated window  per-row staleness: a row is kept while its age
+#                        (? - ts_updated) is within its own per-type timeout
+#                        from INCIDENT_TIMEOUT_MINUTES (default
+#                        _INCIDENT_TIMEOUT_DEFAULT). This is >= the timeout the
+#                        engine's cleanup thread uses, so the public product
+#                        never drops a row the engine still considers active.
 #
 # Do not add a second definition of this filter. If something needs the
 # operational view (every active row, test and press-release rows included) it
@@ -257,7 +284,7 @@ ACTIVE_INCIDENT_POPULATION_SQL = (
     "status = 'active' "
     "AND (is_test IS NULL OR is_test = 0) "
     "AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%') "
-    "AND ts_updated > ?"
+    f"AND ts_updated >= (? - {ACTIVE_INCIDENT_TIMEOUT_S_SQL})"
 )
 
 
@@ -277,16 +304,18 @@ def public_active_incidents() -> list:
     """The active incidents the public live map is served, and counted from.
 
     Same rows the exported active gauges measure: see
-    ACTIVE_INCIDENT_POPULATION_SQL. Rows come back with the agency-HQ fallback
-    coordinates applied, exactly as before, so the page keeps the
-    ``_coords_approx`` stamp that keeps a fallback centroid off the map.
+    ACTIVE_INCIDENT_POPULATION_SQL. The single placeholder in that fragment is
+    the current time; the per-row timeout is derived inside SQL from the row
+    itype. Rows come back with the agency-HQ fallback coordinates applied,
+    exactly as before, so the page keeps the ``_coords_approx`` stamp that
+    keeps a fallback centroid off the map.
     """
     conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         f"SELECT * FROM incidents WHERE {ACTIVE_INCIDENT_POPULATION_SQL} "
         "ORDER BY ts_updated DESC",
-        (time.time() - ACTIVE_INCIDENT_WINDOW_S,),
+        (time.time(),),
     ).fetchall()
     conn.close()
     return [_fill_incident_coords(dict(r)) for r in rows]

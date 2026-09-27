@@ -1765,9 +1765,45 @@ class SharedActivePopulationTests(unittest.TestCase):
             "status = 'active'",
             "is_test IS NULL OR is_test = 0",
             "%[APD Press Release]%",
-            "ts_updated > ?",
+            "ts_updated >=",
+            "ACTIVE_INCIDENT_TIMEOUT_S_SQL",
         ):
             self.assertIn(needle, clause, f"{needle!r} left the shared population filter")
+        # The staleness window is per-row from the engine's own timeout map,
+        # not a flat cutoff: the CASE must derive from INCIDENT_TIMEOUT_MINUTES
+        # with the default fallback, so the two mechanisms cannot drift apart.
+        for needle in (
+            "CASE itype",
+            "INCIDENT_TIMEOUT_MINUTES",
+            "_INCIDENT_TIMEOUT_DEFAULT",
+        ):
+            self.assertIn(needle, source, f"{needle!r} left the shared population filter")
+        # The evaluated CASE must actually carry the engine's timeouts: the
+        # 45-minute HOSTAGE/BARRICADE exception and the 10-minute default.
+        # Child process: other suites stub modules.database in-process (see
+        # the note at _database_source), so an in-process import here can
+        # hand back a fake without the new attribute.
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import modules.database as d;"
+                "print(d.ACTIVE_INCIDENT_TIMEOUT_S_SQL)",
+            ],
+            cwd=_ROOT,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"database import child failed ({result.returncode}): {result.stderr[-2000:]}"
+            )
+        case_sql = result.stdout.splitlines()[-1]
+        self.assertIn("HOSTAGE/BARRICADE", case_sql)
+        self.assertIn("2700", case_sql)
+        self.assertIn("ELSE 600", case_sql)
         self.assertEqual(
             source.count("ACTIVE_INCIDENT_POPULATION_SQL ="),
             1,
@@ -1775,7 +1811,8 @@ class SharedActivePopulationTests(unittest.TestCase):
         )
 
         # Exactly one definition: the metrics collector must reference the shared
-        # constant, not spell the filter out again.
+        # constant, not spell the filter out again, and must not use the legacy
+        # flat window.
         source = (_ROOT / "audio_receiver.py").read_text(encoding="utf-8")
         anchor = source.index("_itype_ph =")
         block = source[anchor : source.index("g_out_of_scope = GaugeMetricFamily", anchor)]
@@ -1786,7 +1823,11 @@ class SharedActivePopulationTests(unittest.TestCase):
                 block,
                 "the metrics collector re-spelled the shared population filter",
             )
-        self.assertIn("ACTIVE_INCIDENT_WINDOW_S", block)
+        self.assertNotIn(
+            "ACTIVE_INCIDENT_WINDOW_S",
+            block,
+            "the metrics collector went back to the flat staleness window",
+        )
 
     def test_the_two_readers_are_separate_functions(self):
         """active_incidents() backs the sitreps and is a different question."""
@@ -1932,6 +1973,159 @@ class UnlocatedMetricQueryCostTests(unittest.TestCase):
                 f"'{itype}'", scan, f"{itype} was hardcoded instead of using the contract"
             )
         self.assertTrue(public.MAP_INCIDENT_TYPES)
+
+
+class PerTypeStalenessTests(unittest.TestCase):
+    """The public staleness window is per-row, not a flat 30 minutes.
+
+    The incident engine clears a row when ``now - ts_updated`` exceeds that
+    row's own timeout from ``modules.config.INCIDENT_TIMEOUT_MINUTES``
+    (default ``_INCIDENT_TIMEOUT_DEFAULT``). The published population must
+    never exclude a row the engine still considers active, so the read-time
+    window has to be evaluated per row from the row itype. The flat 30-minute
+    cutoff dropped HOSTAGE/BARRICADE rows (timeout 45) for 15 minutes while
+    the engine still carried them as active.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+
+    def _seed_and_read(self, rows: list[dict]):
+        """Seed `rows`, then return (API payload, exported gauges)."""
+        now = time.time()
+        env = os.environ.copy()
+        env.update(
+            {
+                "DB_PATH": str(self.base / "calls.db"),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "SMOKE_TEST_BASE_URL": "",
+                "TEST_NOW": str(now),
+                "TEST_ROWS": json.dumps(rows),
+            }
+        )
+        for key in ("BATTLE_BUDDY_HOME", "BATTLE_BUDDY_DATA_DIR", "HOMICIDE_SEED_PATH"):
+            env.pop(key, None)
+        result = subprocess.run(
+            [sys.executable, "-c", _METRICS_CHILD],
+            cwd=_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if result.returncode != 0:
+            raise AssertionError(
+                f"metrics child failed ({result.returncode}): {result.stderr[-2000:]}"
+            )
+        gauge = json.loads(result.stdout.splitlines()[-1])
+
+        read_env = os.environ.copy()
+        read_env.update({"DB_PATH": str(self.base / "calls.db"), "PYTHONDONTWRITEBYTECODE": "1"})
+        for key in ("BATTLE_BUDDY_HOME", "BATTLE_BUDDY_DATA_DIR"):
+            read_env.pop(key, None)
+        payload = subprocess.run(
+            [sys.executable, "-c", _READ_ACTIVE_CHILD],
+            cwd=_ROOT,
+            env=read_env,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if payload.returncode != 0:
+            raise AssertionError(
+                f"public_active_incidents child failed ({payload.returncode}): "
+                f"{payload.stderr[-2000:]}"
+            )
+        return json.loads(payload.stdout.splitlines()[-1]), gauge
+
+    def test_hostage_barricade_inside_own_timeout_stays_published(self):
+        """40 minutes is past the old flat 30 but inside the 45-minute timeout."""
+        now = time.time()
+        fresh = dict(_mappable_row(itype="SHOOTING"), ts_start=now, ts_updated=now)
+        # HOSTAGE/BARRICADE is not in MAP_INCIDENT_TYPES, so a located row is
+        # out-of-scope while a location-less row is unlocated: one of each.
+        unlocated = dict(
+            _mappable_row(itype="HOSTAGE/BARRICADE", location=None, lat=None, lon=None),
+            ts_start=now - 40 * 60,
+            ts_updated=now - 40 * 60,
+        )
+        out_of_scope = dict(
+            _mappable_row(itype="HOSTAGE/BARRICADE"),
+            ts_start=now - 40 * 60,
+            ts_updated=now - 40 * 60,
+        )
+        payload, gauge = self._seed_and_read([fresh, unlocated, out_of_scope])
+
+        itypes = sorted(i["itype"] for i in payload)
+        self.assertEqual(len(payload), 3, f"40-minute HOSTAGE rows dropped: {itypes}")
+        self.assertEqual(itypes.count("HOSTAGE/BARRICADE"), 2)
+        self.assertEqual(gauge["active"], 3.0)
+        self.assertEqual(gauge["unlocated"], 1.0)
+        self.assertEqual(gauge["out_of_scope"], 1.0)
+        # Partition invariant still holds on this population.
+        self.assertEqual(
+            gauge["active"],
+            gauge["unlocated"] + gauge["out_of_scope"] + 1.0,
+            "active = unlocated + out_of_scope + mappable does not hold",
+        )
+
+    def test_rows_stale_beyond_own_timeout_stay_excluded(self):
+        """A row older than its own per-type timeout is genuinely stale."""
+        now = time.time()
+        rows = [
+            dict(_mappable_row(itype="SHOOTING"), ts_start=now, ts_updated=now),
+            # SHOOTING times out after 20 minutes, so 25 minutes is stale even
+            # though the old flat 30-minute window kept it.
+            dict(
+                _mappable_row(itype="SHOOTING"),
+                ts_start=now - 25 * 60,
+                ts_updated=now - 25 * 60,
+            ),
+            # HOSTAGE/BARRICADE times out after 45 minutes, so 50 is stale.
+            dict(
+                _mappable_row(
+                    itype="HOSTAGE/BARRICADE", location=None, lat=None, lon=None
+                ),
+                ts_start=now - 50 * 60,
+                ts_updated=now - 50 * 60,
+            ),
+        ]
+        payload, gauge = self._seed_and_read(rows)
+
+        self.assertEqual(len(payload), 1, f"stale rows leaked: {[i['itype'] for i in payload]}")
+        self.assertEqual(payload[0]["itype"], "SHOOTING")
+        self.assertEqual(gauge["active"], 1.0)
+        self.assertEqual(gauge["unlocated"], 0.0)
+        self.assertEqual(gauge["out_of_scope"], 0.0)
+
+    def test_unlisted_itype_uses_default_timeout(self):
+        """An itype outside INCIDENT_TIMEOUT_MINUTES falls back to 10 minutes."""
+        now = time.time()
+        rows = [
+            dict(_mappable_row(itype="SHOOTING"), ts_start=now, ts_updated=now),
+            # CURFEW is not a key in INCIDENT_TIMEOUT_MINUTES, so the default
+            # (10 minutes) applies: 5 minutes is fresh, 15 is stale.
+            dict(
+                _mappable_row(itype="CURFEW"),
+                ts_start=now - 5 * 60,
+                ts_updated=now - 5 * 60,
+            ),
+            dict(
+                _mappable_row(itype="CURFEW"),
+                ts_start=now - 15 * 60,
+                ts_updated=now - 15 * 60,
+            ),
+        ]
+        payload, gauge = self._seed_and_read(rows)
+
+        self.assertEqual(len(payload), 2, f"unexpected population: {[i['itype'] for i in payload]}")
+        self.assertEqual(gauge["active"], 2.0)
+        # Both CURFEW rows are located but unlisted types, so both fresh ones
+        # would be out-of-scope; only the 5-minute one survives.
+        self.assertEqual(gauge["out_of_scope"], 1.0)
+        self.assertEqual(gauge["unlocated"], 0.0)
 
 
 if __name__ == "__main__":
