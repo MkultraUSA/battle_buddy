@@ -177,8 +177,46 @@ TALK_ROOMS = {
 }
 
 
+def _ensure_intent_tables(conn):
+    """Create the C1 billing tables if they are missing (idempotent).
+
+    Production databases created before this packet lack the tables, so every
+    entry point (checkout, webhook, provisioning) ensures them before reading.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS premium_checkout_intents (
+            intent_id         TEXT PRIMARY KEY,
+            username          TEXT NOT NULL,
+            display_name      TEXT,
+            nc_password       TEXT NOT NULL,
+            tier              TEXT,
+            plan              TEXT,
+            created_ts        REAL NOT NULL,
+            expires_ts        REAL NOT NULL,
+            consumed_ts       REAL,
+            stripe_session_id TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_checkout_intents_username
+            ON premium_checkout_intents(username)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stripe_processed_events (
+            event_id TEXT PRIMARY KEY,
+            ts       REAL NOT NULL,
+            type     TEXT
+        )
+    """)
+
+
 def _nc_create_user(username, password, email, display_name, tier="premium"):
-    """Create Nextcloud user and add to the appropriate membership group."""
+    """Create Nextcloud user and add to the appropriate membership group.
+
+    Fail closed (slate C1): any Nextcloud refusal — including the user
+    already existing — or any network/auth error raises. Callers must not
+    continue past a failed creation.
+    """
     nc_group = "Premium Members" if tier == "premium" else "Basic Members"
     nc_base = os.environ.get("NEXTCLOUD_OCS_BASE", "https://nextcloud.example.com/ocs/v2.php/cloud")
     auth_b64 = base64.b64encode(f"{NC_USER}:{NC_PASS}".encode()).decode()
@@ -194,18 +232,40 @@ def _nc_create_user(username, password, email, display_name, tier="premium"):
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(req, context=_ssl_ctx, timeout=10) as r:
-                return json.loads(r.read())
+                raw = r.read()
         except Exception as e:
             print(f"[stripe] NC POST {url} error: {e}", flush=True)
-            return {}
+            raise RuntimeError(f"Nextcloud request failed for '{username}': {e}") from e
+        try:
+            return json.loads(raw)
+        except Exception as e:
+            print(f"[stripe] NC POST {url} bad response: {e}", flush=True)
+            raise RuntimeError(f"Nextcloud bad response for '{username}': {e}") from e
 
-    # Create user
-    _post(f"{nc_base}/users", {
+    # Create user — an already-existing user is a hard stop, not a success.
+    created = _post(f"{nc_base}/users", {
         "userid": username, "password": password,
         "email": email, "displayName": display_name,
     })
-    # Add to group
-    _post(f"{nc_base}/users/{username}/groups", {"groupid": nc_group})
+    created_meta = ((created or {}).get("ocs") or {}).get("meta") or {}
+    if created_meta.get("status") != "ok":
+        print(f"[stripe] Nextcloud user creation refused for '{username}': "
+              f"{created_meta.get('message') or created_meta}", flush=True)
+        raise RuntimeError(
+            f"Nextcloud user creation failed for '{username}': "
+            f"{created_meta.get('message') or created_meta}"
+        )
+    # Add to group — also fail closed so a half-provisioned user is retried
+    # through Stripe rather than silently dropped.
+    grouped = _post(f"{nc_base}/users/{username}/groups", {"groupid": nc_group})
+    grouped_meta = ((grouped or {}).get("ocs") or {}).get("meta") or {}
+    if grouped_meta.get("status") != "ok":
+        print(f"[stripe] Nextcloud group add refused for '{username}': "
+              f"{grouped_meta.get('message') or grouped_meta}", flush=True)
+        raise RuntimeError(
+            f"Nextcloud group add failed for '{username}': "
+            f"{grouped_meta.get('message') or grouped_meta}"
+        )
     print(f"[stripe] Nextcloud user '{username}' created and added to {nc_group}", flush=True)
     _subscribe_news_feed(username)
 
@@ -505,23 +565,77 @@ def _send_welcome_email(email, username, setup_token, tier="premium"):
         print(f"[stripe] Welcome email error: {e}", flush=True)
 
 
-def _provision_premium_user(session_obj):
-    """Full provisioning flow after successful Stripe checkout."""
+def _provision_premium_user(session_obj, event_id=None):
+    """Full provisioning flow after successful Stripe checkout.
+
+    Slate C1: the server-side ``premium_checkout_intents`` row keyed by the
+    opaque ``intent_id`` in Stripe metadata is the ONLY authority for the
+    username — any username arriving in Stripe metadata is ignored. Never
+    replaces an existing account, never issues a token for one, and consumes
+    the intent in the SAME transaction as the ``premium_users`` insert (which
+    also records the Stripe event id) so a crash or replay cannot double
+    provision. Raises on any failure so the webhook fails the request and
+    Stripe retries instead of silently dropping a paying customer. This is the
+    code the live webhook in modules/stripe_billing.py actually calls.
+    """
     customer_email = (session_obj.get("customer_details") or {}).get("email") or                      session_obj.get("customer_email") or ""
     customer_id    = session_obj.get("customer", "")
     sub_id         = session_obj.get("subscription", "")
     metadata       = session_obj.get("metadata") or {}
 
-    username     = metadata.get("username", "").strip().lower()
-    nc_password  = metadata.get("nc_password", "").strip()
-    display_name = metadata.get("display_name", "") or username
-    tier         = metadata.get("tier", "premium")
+    intent_id = (metadata.get("intent_id") or "").strip()
+    if not intent_id:
+        print("[stripe] provision stopped — missing checkout intent", flush=True)
+        raise ValueError("missing checkout intent")
 
-    if not username or not customer_email:
-        print("[stripe] provision skipped — missing username or email in session", flush=True)
-        return
+    # 0. Resolve the intent; fail closed on missing/expired/consumed, and on
+    #    replays of an already-processed Stripe event. Never fall back to a
+    #    username from Stripe metadata.
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        _ensure_intent_tables(conn)
+        if event_id:
+            already = conn.execute(
+                "SELECT 1 FROM stripe_processed_events WHERE event_id=?",
+                (event_id,),
+            ).fetchone()
+            if already:
+                print(f"[stripe] replay ignored for event {event_id}", flush=True)
+                return
+        row = conn.execute(
+            "SELECT username, display_name, nc_password, tier, plan, "
+            "created_ts, expires_ts, consumed_ts "
+            "FROM premium_checkout_intents WHERE intent_id=?",
+            (intent_id,),
+        ).fetchone()
+        if row is None:
+            print("[stripe] provision stopped — unknown checkout intent", flush=True)
+            raise ValueError("unknown checkout intent")
+        intent_username, display_name, nc_password, tier, _plan, _cts, expires_ts, consumed_ts = row
+        now = time.time()
+        if consumed_ts is not None:
+            print("[stripe] provision stopped — checkout intent already consumed", flush=True)
+            raise ValueError("checkout intent already consumed")
+        if not expires_ts or expires_ts < now:
+            print("[stripe] provision stopped — checkout intent expired", flush=True)
+            raise ValueError("checkout intent expired")
+        username = (intent_username or "").strip().lower()
+        display_name = display_name or username
+        tier = tier or "premium"
+        if not username or not customer_email:
+            print("[stripe] provision stopped — missing username or email in session", flush=True)
+            raise ValueError("missing username or email")
+        existing = conn.execute(
+            "SELECT 1 FROM premium_users WHERE lower(username)=lower(?)",
+            (username,),
+        ).fetchone()
+        if existing:
+            print(f"[stripe] provision stopped — account '{username}' already exists", flush=True)
+            raise ValueError("account already exists")
+    finally:
+        conn.close()
 
-    # 1. Nextcloud user
+    # 1. Nextcloud user — raises on any failure; nothing below runs then.
     _nc_create_user(username, nc_password, customer_email, display_name, tier)
 
     # 2. Talk rooms
@@ -533,21 +647,77 @@ def _provision_premium_user(session_obj):
     # 3b. Plant user guide in NC files
     _plant_user_guide(username)
 
-    # 4. premium_users table
+    # 4. premium_users table + intent consumption + idempotency record, in ONE
+    #    transaction. Plain INSERT (never OR REPLACE) so an existing row can
+    #    never be overwritten; a uniqueness violation aborts with no token.
     setup_token   = _secrets.token_urlsafe(32)
     setup_expires = int(time.time()) + 72 * 3600  # 72-hour window
+    session_key   = session_obj.get("id", "")
     conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT OR REPLACE INTO premium_users "
-        "(username, email, stripe_customer_id, stripe_subscription_id, status, created_ts, setup_token, setup_token_expires) "
-        "VALUES (?,?,?,?,'active',?,?,?)",
-        (username, customer_email, customer_id, sub_id, time.time(), setup_token, setup_expires)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        _ensure_intent_tables(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        if event_id:
+            already = conn.execute(
+                "SELECT 1 FROM stripe_processed_events WHERE event_id=?",
+                (event_id,),
+            ).fetchone()
+            if already:
+                conn.rollback()
+                print(f"[stripe] replay ignored for event {event_id}", flush=True)
+                return
+        live = conn.execute(
+            "SELECT consumed_ts, expires_ts FROM premium_checkout_intents WHERE intent_id=?",
+            (intent_id,),
+        ).fetchone()
+        if live is None or live[0] is not None or not live[1] or live[1] < time.time():
+            conn.rollback()
+            print("[stripe] provision stopped — checkout intent no longer live", flush=True)
+            raise ValueError("checkout intent no longer live")
+        if conn.execute(
+            "SELECT 1 FROM premium_users WHERE lower(username)=lower(?)",
+            (username,),
+        ).fetchone():
+            conn.rollback()
+            print(f"[stripe] provision stopped — account '{username}' already exists", flush=True)
+            raise ValueError("account already exists")
+        try:
+            conn.execute(
+                "INSERT INTO premium_users "
+                "(username, email, stripe_customer_id, stripe_subscription_id, status, created_ts, setup_token, setup_token_expires) "
+                "VALUES (?,?,?,?,'active',?,?,?)",
+                (username, customer_email, customer_id, sub_id, time.time(), setup_token, setup_expires)
+            )
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            print(f"[stripe] provision stopped — account '{username}' already exists", flush=True)
+            raise ValueError("account already exists") from e
+        cur = conn.execute(
+            "UPDATE premium_checkout_intents SET consumed_ts=?, stripe_session_id=? "
+            "WHERE intent_id=? AND consumed_ts IS NULL",
+            (time.time(), session_key, intent_id),
+        )
+        if cur.rowcount != 1:
+            conn.rollback()
+            print("[stripe] provision stopped — checkout intent no longer live", flush=True)
+            raise ValueError("checkout intent no longer live")
+        if event_id:
+            conn.execute(
+                "INSERT INTO stripe_processed_events (event_id, ts, type) VALUES (?,?,?)",
+                (event_id, time.time(), "checkout.session.completed"),
+            )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
     print(f"[stripe] premium_users record created for '{username}'", flush=True)
 
-    # 5. Welcome email
+    # 5. Welcome email — only after the account row is durably committed.
     _send_welcome_email(customer_email, username, setup_token, tier)
 
 

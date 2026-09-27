@@ -7,7 +7,7 @@ import json
 import os
 import secrets as _secrets
 import sqlite3
-import threading
+import time
 
 import stripe as _stripe
 from flask import Blueprint, jsonify, request
@@ -42,9 +42,53 @@ NEXTCLOUD_WEB_BASE = os.environ.get("NEXTCLOUD_WEB_BASE", "https://nextcloud.exa
 # Checkout endpoint
 # ---------------------------------------------------------------------------
 
+# One-time checkout intents live 24h; the intent row is the only authority
+# for the username a checkout may provision (slate C1).
+CHECKOUT_INTENT_TTL_S = 24 * 3600
+
+
+def _ensure_billing_tables(conn):
+    """Create the C1 billing tables if missing (idempotent, same DDL as
+    schema.sql / modules/database.py init_db())."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS premium_checkout_intents (
+            intent_id         TEXT PRIMARY KEY,
+            username          TEXT NOT NULL,
+            display_name      TEXT,
+            nc_password       TEXT NOT NULL,
+            tier              TEXT,
+            plan              TEXT,
+            created_ts        REAL NOT NULL,
+            expires_ts        REAL NOT NULL,
+            consumed_ts       REAL,
+            stripe_session_id TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_checkout_intents_username
+            ON premium_checkout_intents(username)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stripe_processed_events (
+            event_id TEXT PRIMARY KEY,
+            ts       REAL NOT NULL,
+            type     TEXT
+        )
+    """)
+
+
+# ---------------------------------------------------------------------------
+# Checkout endpoint
+# ---------------------------------------------------------------------------
+
 @stripe_bp.route("/api/stripe/create_checkout", methods=["POST"])
 def api_stripe_create_checkout():
-    """Create a Stripe Checkout Session. Client sends username, display_name, plan."""
+    """Create a Stripe Checkout Session. Client sends username, display_name, plan.
+
+    Slate C1: the username is bound server-side in a one-time
+    premium_checkout_intents row. Stripe metadata carries ONLY the opaque
+    intent_id — never the raw username nor the generated Nextcloud password.
+    """
     if not STRIPE_SECRET_KEY:
         return jsonify({"error": "payments not configured"}), 503
     data = request.get_json(silent=True) or {}
@@ -57,7 +101,38 @@ def api_stripe_create_checkout():
         return jsonify({"error": "invalid plan"}), 400
 
     plan_info   = STRIPE_PLANS[plan]
-    nc_password = _secrets.token_urlsafe(12)
+    now = time.time()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        _ensure_billing_tables(conn)
+        existing = conn.execute(
+            "SELECT 1 FROM premium_users WHERE lower(username)=lower(?)",
+            (username,),
+        ).fetchone()
+        if existing:
+            print(f"[stripe] checkout refused — account '{username}' already exists", flush=True)
+            return jsonify({"error": "username taken"}), 409
+        live = conn.execute(
+            "SELECT 1 FROM premium_checkout_intents "
+            "WHERE lower(username)=lower(?) AND consumed_ts IS NULL AND expires_ts > ?",
+            (username, now),
+        ).fetchone()
+        if live:
+            print(f"[stripe] checkout refused — pending intent for '{username}'", flush=True)
+            return jsonify({"error": "checkout already pending for this username"}), 409
+        intent_id   = _secrets.token_urlsafe(32)
+        nc_password = _secrets.token_urlsafe(12)
+        conn.execute(
+            "INSERT INTO premium_checkout_intents "
+            "(intent_id, username, display_name, nc_password, tier, plan, "
+            "created_ts, expires_ts, consumed_ts, stripe_session_id) "
+            "VALUES (?,?,?,?,?,?,?, ?,NULL,NULL)",
+            (intent_id, username, display_name, nc_password,
+             plan_info["tier"], plan, now, now + CHECKOUT_INTENT_TTL_S),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
     try:
         session = _stripe.checkout.Session.create(
@@ -67,16 +142,35 @@ def api_stripe_create_checkout():
             success_url="https://battlebuddy.news/premium/welcome?session_id={CHECKOUT_SESSION_ID}",
             cancel_url="https://battlebuddy.news/premium/",
             metadata={
-                "username": username,
-                "display_name": display_name,
-                "nc_password": nc_password,
-                "tier": plan_info["tier"],
+                "intent_id": intent_id,
             },
         )
-        return jsonify({"checkout_url": session.url})
     except Exception as e:
         print(f"[stripe] create_checkout error: {e}", flush=True)
+        # Best-effort cleanup so the customer can retry without tripping the
+        # duplicate-intent guard on a checkout that never reached Stripe.
+        try:
+            cleanup = sqlite3.connect(DB_PATH)
+            cleanup.execute(
+                "DELETE FROM premium_checkout_intents WHERE intent_id=? AND consumed_ts IS NULL",
+                (intent_id,),
+            )
+            cleanup.commit()
+            cleanup.close()
+        except Exception:
+            pass
         return jsonify({"error": str(e)}), 500
+    try:
+        link = sqlite3.connect(DB_PATH)
+        link.execute(
+            "UPDATE premium_checkout_intents SET stripe_session_id=? WHERE intent_id=?",
+            (getattr(session, "id", "") or "", intent_id),
+        )
+        link.commit()
+        link.close()
+    except Exception:
+        pass
+    return jsonify({"checkout_url": session.url})
 
 
 # ---------------------------------------------------------------------------
@@ -103,16 +197,39 @@ def stripe_webhook():
         return jsonify({"error": "bad payload"}), 400
 
     event_type = event["type"]
+    event_id = event.get("id", "")
     print(f"[stripe] webhook received: {event_type}", flush=True)
 
     if event_type == "checkout.session.completed":
         # Parse session from raw payload — avoids SDK v15 StripeObject attribute issues
         session_data = json.loads(payload)["data"]["object"]
-        threading.Thread(
-            target=_provision_premium_user,
-            args=(session_data,),
-            daemon=True
-        ).start()
+        # Durable idempotency pre-check: a replay of an already-processed
+        # event is a complete no-op (the authoritative guard is the committed
+        # stripe_processed_events write inside provisioning).
+        if event_id:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                _ensure_billing_tables(conn)
+                if conn.execute(
+                    "SELECT 1 FROM stripe_processed_events WHERE event_id=?",
+                    (event_id,),
+                ).fetchone():
+                    conn.close()
+                    print(f"[stripe] replay ignored for event {event_id}", flush=True)
+                    return jsonify({"status": "ok"})
+            finally:
+                conn.close()
+        # Process synchronously and report the real outcome: success only
+        # after provisioning is durably committed; failure (non-2xx) so
+        # Stripe retries rather than silently dropping a paying customer.
+        try:
+            _provision_premium_user(session_data, event_id or None)
+        except ValueError as e:
+            print(f"[stripe] provision rejected: {e}", flush=True)
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            print(f"[stripe] provision failed: {e}", flush=True)
+            return jsonify({"error": "provisioning failed"}), 500
 
     elif event_type == "customer.subscription.deleted":
         sub = event["data"]["object"]

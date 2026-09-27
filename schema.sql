@@ -177,6 +177,34 @@ CREATE TABLE IF NOT EXISTS premium_users (
     setup_token_expires    INTEGER
 );
 
+-- One-time premium checkout intents (slate C1): the server-side authority for
+-- which username a Stripe checkout may provision. Stripe carries only the
+-- opaque intent_id in session metadata; the raw username and the generated
+-- Nextcloud password never transit Stripe. One row per checkout attempt.
+CREATE TABLE IF NOT EXISTS premium_checkout_intents (
+    intent_id         TEXT PRIMARY KEY,
+    username          TEXT NOT NULL,
+    display_name      TEXT,
+    nc_password       TEXT NOT NULL,
+    tier              TEXT,
+    plan              TEXT,
+    created_ts        REAL NOT NULL,
+    expires_ts        REAL NOT NULL,
+    consumed_ts       REAL,
+    stripe_session_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_checkout_intents_username
+    ON premium_checkout_intents(username);
+
+-- Durable Stripe webhook idempotency guard (slate C1): one row per
+-- processed event id, committed in the same transaction as the
+-- premium_users insert, so a replay after a restart is a complete no-op.
+CREATE TABLE IF NOT EXISTS stripe_processed_events (
+    event_id TEXT PRIMARY KEY,
+    ts       REAL NOT NULL,
+    type     TEXT
+);
+
 -- Web session tokens for authenticated UI access.
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
