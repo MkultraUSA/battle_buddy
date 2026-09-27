@@ -114,6 +114,15 @@ def init_db():
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS tip_audit (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_username  TEXT NOT NULL,
+            tip_id          INTEGER NOT NULL,
+            action          TEXT NOT NULL,
+            ts              REAL NOT NULL
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS incident_articles (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             incident_id INTEGER,

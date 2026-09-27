@@ -133,6 +133,16 @@ CREATE TABLE IF NOT EXISTS tips (
     reviewer_note TEXT
 );
 
+-- Reviewer audit trail: one row per approve/reject action naming the acting
+-- admin, the tip id, the action, and a timestamp.
+CREATE TABLE IF NOT EXISTS tip_audit (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_username TEXT NOT NULL,
+    tip_id         INTEGER NOT NULL,
+    action         TEXT NOT NULL,
+    ts             REAL NOT NULL
+);
+
 -- Premium intel-search query log for quota enforcement and audit.
 CREATE TABLE IF NOT EXISTS intel_queries (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
