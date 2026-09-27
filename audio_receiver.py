@@ -100,7 +100,14 @@ from modules.transcription import (  # noqa: E402
 app = Flask(__name__, static_folder="/opt/battlebuddy/static", static_url_path="/static")
 
 app.register_blueprint(aircraft_bp)
-from modules.public import public_bp  # noqa: E402, I001
+from modules.public import (  # noqa: E402, I001
+    MAP_INCIDENT_TYPES,
+    MAP_LAT_MAX,
+    MAP_LAT_MIN,
+    MAP_LON_MAX,
+    MAP_LON_MIN,
+    public_bp,
+)
 app.register_blueprint(public_bp)
 from modules.tips import tips_bp  # noqa: E402, I001
 app.register_blueprint(tips_bp)
@@ -796,18 +803,91 @@ try:
                 # --- live gauges ---
                 _window = _now - 86400
 
-                cur.execute(
-                    "SELECT COUNT(*) FROM incidents "
-                    "WHERE status='active' AND (is_test IS NULL OR is_test=0) "
-                    "AND (description IS NULL OR description NOT LIKE '%[APD Press Release]%')"
+                # One scan answers all three active-incident questions, and the
+                # population is the *same* fragment that serves
+                # /api/incidents/active (modules.database
+                # .ACTIVE_INCIDENT_POPULATION_SQL) — so these gauges and the live
+                # map count the same rows instead of two populations that merely
+                # look similar.
+                #
+                # The two predicates below are the SQL mirrors of the public live
+                # map's isLocatedIncident() and isMappableIncident(): same
+                # location test, same type list, same Austin envelope. They are
+                # written as fragments and referenced, never retyped, because the
+                # three buckets have to be a partition:
+                #
+                #   unlocated     NOT located  -- no real place, so these and only
+                #                                these are ever described as
+                #                                "verified location unavailable"
+                #   out_of_scope  located, but an unlisted type or outside the
+                #                                envelope -- a separate generic
+                #                                "not shown on map" category, and
+                #                                never called unlocated
+                #   mappable      the remainder, which is what the map pins
+                #
+                # active = mappable + unlocated + out_of_scope, so the exported
+                # numbers reconcile exactly like the four stats on the page. A
+                # row whose coordinates came from the agency-HQ fallback is NULL
+                # in the table, which is what NOT located keys on, so it lands in
+                # unlocated on both sides of the wire.
+                _itype_ph = ",".join("?" * len(MAP_INCIDENT_TYPES))
+                _located_sql = (
+                    "(location IS NOT NULL AND TRIM(location) <> '' "
+                    "AND lat IS NOT NULL AND lat <> 0 "
+                    "AND lon IS NOT NULL AND lon <> 0)"
                 )
-                (active_count,) = cur.fetchone()
+                _mappable_sql = (
+                    f"({_located_sql} AND itype IN ({_itype_ph}) "
+                    "AND lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?)"
+                )
+                cur.execute(
+                    "SELECT COUNT(*), "
+                    f"COALESCE(SUM(CASE WHEN NOT {_located_sql} THEN 1 ELSE 0 END), 0), "
+                    f"COALESCE(SUM(CASE WHEN {_located_sql} "
+                    f"AND NOT {_mappable_sql} THEN 1 ELSE 0 END), 0) "
+                    f"FROM incidents WHERE {ACTIVE_INCIDENT_POPULATION_SQL}",
+                    (
+                        *MAP_INCIDENT_TYPES,
+                        MAP_LAT_MIN,
+                        MAP_LAT_MAX,
+                        MAP_LON_MIN,
+                        MAP_LON_MAX,
+                        _now,
+                    ),
+                )
+                (active_count, unlocated_count, out_of_scope_count) = cur.fetchone()
                 g_active = GaugeMetricFamily(
                     "battlebuddy_active_incidents",
-                    "Currently active (non-cleared) Battle Buddy incidents",
+                    "Currently active (non-cleared, non-test, non-press-release) Battle "
+                    "Buddy incidents within their per-type timeout "
+                    "(INCIDENT_TIMEOUT_MINUTES, default _INCIDENT_TIMEOUT_DEFAULT); "
+                    "equals _mappable + _unlocated + _out_of_scope",
                 )
                 g_active.add_metric([], float(active_count))
                 yield g_active
+
+                # No labels: one series, so a hostile incident type or id can
+                # never multiply cardinality.
+                g_unlocated = GaugeMetricFamily(
+                    "battlebuddy_active_incidents_unlocated",
+                    "Active incidents with no verified location, so they are counted "
+                    "but never plotted on the public map; this is the only category "
+                    "the public copy calls \"verified location unavailable\"",
+                )
+                g_unlocated.add_metric([], float(unlocated_count))
+                yield g_unlocated
+
+                # Located, but deliberately not plotted: an incident type that is
+                # not on the published list, or a point outside the Austin
+                # envelope. Reported separately so it is never mistaken for a
+                # location we failed to find.
+                g_out_of_scope = GaugeMetricFamily(
+                    "battlebuddy_active_incidents_out_of_scope",
+                    "Active incidents that are located but not shown on the public map "
+                    "(unlisted incident type or outside the Austin envelope)",
+                )
+                g_out_of_scope.add_metric([], float(out_of_scope_count))
+                yield g_out_of_scope
 
                 cur.execute(
                     "SELECT COALESCE(itype,'unknown'), COUNT(*) FROM incidents "
@@ -1186,7 +1266,12 @@ def api_incidents():
 
 @app.route("/api/incidents/active")
 def api_incidents_active():
-    return jsonify(active_incidents())
+    # public_active_incidents(), not active_incidents(): the browser must be
+    # served the published population — active, non-test, non-press-release, and
+    # not stale — because that is the same one /metrics counts. See
+    # modules.database.ACTIVE_INCIDENT_POPULATION_SQL. Serving a wider set here
+    # is what previously let the map and the gauges disagree.
+    return jsonify(public_active_incidents())
 
 
 @app.route("/api/stats")

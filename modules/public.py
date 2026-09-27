@@ -5,6 +5,7 @@ pipeline. Mounted as a Flask Blueprint named public_bp and registered in
 audio_receiver.py.
 """
 
+import json
 import logging
 import re
 import sqlite3
@@ -18,6 +19,75 @@ from modules.config import DB_PATH
 logger = logging.getLogger("bb.public")
 
 public_bp = Blueprint("public", __name__)
+
+# ---------------------------------------------------------------------------
+# The map-placement contract (single source of truth)
+# ---------------------------------------------------------------------------
+# Placement is three questions, not one, and the public copy depends on the
+# answer to the right one:
+#
+#   located     a real, non-approximate location or coordinate exists;
+#   mappable    located AND a listed type AND inside the Austin envelope;
+#   unlocated   NOT located -- and only these may be called "verified location
+#               unavailable";
+#   out-of-scope located, but the type is not on the published list or the point
+#               is outside the envelope. These are located. Calling them
+#               unlocated would be a lie about the data, so the map says
+#               "not shown on map" and never implies we failed to find a place.
+#
+# An incident earns a map pin only when it is mappable. The public live map
+# injects MAP_INCIDENT_TYPES and the bounds into its own `isLocatedIncident()` /
+# `isMappableIncident()`, and the Prometheus collector in audio_receiver.py
+# builds the same two SQL predicates from the same constants, so the page's
+# counts, the page's pins and the exported metrics answer one question.
+#
+# The point of the contract is honesty: an active incident that we cannot place
+# is still an active incident, but it must never borrow the agency-headquarters
+# fallback coordinates that modules.database._fill_incident_coords() stamps onto
+# location-less rows. A fake pin at APD HQ reads as a verified shooting. Those
+# rows are not located, so they are unlocated -- but their coordinates are never
+# printed, plotted, or offered as a location.
+MAP_INCIDENT_TYPES = (
+    "SHOOTING",
+    "STABBING",
+    "OFFICER DOWN",
+    "PURSUIT",
+    "WEAPONS",
+    "STRUCTURE FIRE",
+    "FIRE DISPATCH",
+    "FIRE ALARM",
+    "FIRE/EMS DISPATCH",
+    "GRASS FIRE",
+    "CRASH/COLLISION",
+    "FATAL CRASH",
+    "MULTI-AGENCY RESPONSE",
+    "MASS CASUALTY",
+    "EMS DISPATCH",
+    "HAZMAT",
+    "AIR ASSET ACTIVE",
+    "DPS CAPITOL ACTIVATION",
+    "FLOODING",
+    "ROAD HAZARD",
+    "PEDESTRIAN INCIDENT",
+    "VEHICLE FIRE",
+)
+
+# The Austin-area envelope the public map pans within (leaflet latLngBounds
+# order: south-west corner first, north-east second).
+MAP_LAT_MIN = 29.85
+MAP_LAT_MAX = 30.70
+MAP_LON_MIN = -98.25
+MAP_LON_MAX = -97.25
+
+# The only wording the public map may attach to an *unlocated* incident. Anything
+# richer (transcript, address, id, coordinates) is a privacy leak, so the notice
+# renders this string instead of the row's own fields.
+UNLOCATED_LOCATION_NOTICE = "verified location unavailable"
+
+# The wording for a located incident that is deliberately not plotted. It must
+# stay generic and must not borrow UNLOCATED_LOCATION_NOTICE: we do have a
+# location, we are simply not publishing this row on the map.
+OUT_OF_SCOPE_MAP_NOTICE = "not shown on map"
 
 # ---------------------------------------------------------------------------
 # Public-facing pages
@@ -358,6 +428,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 #stats-bar h4 { color: #94a3b8; margin-bottom: 8px; font-size: 0.7rem; letter-spacing: 1px; text-transform: uppercase; }
 .stat-row { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 3px; color: #cbd5e1; }
 .stat-val { color: #3b82f6; font-weight: 600; }
+.stat-row.unlocated .stat-val { color: #fbbf24; }
+.stat-row.out-of-scope .stat-val { color: #94a3b8; }
+.stat-reconcile { color: #475569; font-size: 0.62rem; line-height: 1.3; margin-top: 6px; }
+#unlocated-notice { position: absolute; top: 58px; right: 10px; z-index: 1000; max-width: 290px; background: rgba(10,15,30,0.92); border: 1px solid #78350f; border-radius: 8px; padding: 10px 14px; font-size: 0.72rem; color: #cbd5e1; }
+#unlocated-notice[hidden] { display: none; }
+#unlocated-notice .unl-head { color: #fbbf24; font-weight: 600; margin-bottom: 6px; }
+#unlocated-list { list-style: none; margin: 0 0 6px; padding: 0; }
+#unlocated-list li { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; border-bottom: 1px solid #1e293b; }
+#unlocated-list li:last-child { border-bottom: none; }
+#unlocated-list .unl-type { color: #e2e8f0; font-weight: 600; }
+#unlocated-list .unl-age { color: #64748b; white-space: nowrap; }
+#unlocated-notice .unl-note { color: #64748b; font-size: 0.68rem; line-height: 1.35; }
+#out-of-scope-notice { position: absolute; bottom: 250px; right: 10px; z-index: 1000; max-width: 290px; background: rgba(10,15,30,0.92); border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; font-size: 0.72rem; color: #cbd5e1; }
+#out-of-scope-notice[hidden] { display: none; }
+#out-of-scope-notice .oos-head { color: #94a3b8; font-weight: 600; margin-bottom: 4px; }
+#out-of-scope-notice .oos-note { color: #64748b; font-size: 0.68rem; line-height: 1.35; }
 #footer-ticker { background: #0f1729; border-top: 1px solid #1e3a5f; padding: 6px 20px; font-size: 0.7rem; color: #64748b; white-space: nowrap; overflow: hidden; }
 #ticker-inner { display: inline-block; animation: scroll 40s linear infinite; }
 @keyframes scroll { 0%{transform:translateX(100vw)} 100%{transform:translateX(-100%)} }
@@ -404,7 +490,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="stat-row"><span>Calls monitored</span><span class="stat-val" id="s-calls">—</span></div>
   <div class="stat-row"><span>Incidents detected</span><span class="stat-val" id="s-incidents">—</span></div>
   <div class="stat-row"><span>Active now</span><span class="stat-val" id="s-active">—</span></div>
+  <div class="stat-row"><span>Mapped on map</span><span class="stat-val" id="s-active-mapped">—</span></div>
+  <div class="stat-row unlocated"><span>Location unverified</span><span class="stat-val" id="s-active-unlocated">—</span></div>
+  <div class="stat-row out-of-scope"><span>Not shown on map</span><span class="stat-val" id="s-active-out-of-scope">—</span></div>
   <div class="stat-row"><span>Last update</span><span class="stat-val" id="s-time">—</span></div>
+  <div class="stat-reconcile">Active now = on the map + location unverified + __OUT_OF_SCOPE_MAP_NOTICE__.</div>
+</div>
+<div id="unlocated-notice" hidden>
+  <div class="unl-head" id="unl-head"></div>
+  <ul id="unlocated-list"></ul>
+  <div class="unl-note">These active incidents are real, but no verified location is available for them yet, so they are not plotted. Details are withheld until the location can be confirmed.</div>
+</div>
+<div id="out-of-scope-notice" hidden>
+  <div class="oos-head" id="oos-head"></div>
+  <div class="oos-note">Counted in Active now and deliberately left off the map. No further detail is published for these.</div>
 </div>
 <div id="footer-ticker"><div id="ticker-inner">Loading live feed...</div></div>
 <script>
@@ -415,6 +514,107 @@ const AUSTIN_BOUNDS = L.latLngBounds(
   L.latLng(29.85, -98.25),   // SW — south of Kyle/Buda, west of Bee Cave
   L.latLng(30.70, -97.25)    // NE — north of Round Rock, east of Bastrop
 );
+
+// Injected from modules.public.MAP_INCIDENT_TYPES so this list and the
+// battlebuddy_active_incidents_* SQL predicates share one definition.
+const MAP_ITYPES = new Set(__MAP_INCIDENT_TYPES__);
+const UNLOCATED_LOCATION_NOTICE = "__UNLOCATED_LOCATION_NOTICE__";
+const OUT_OF_SCOPE_MAP_NOTICE = "__OUT_OF_SCOPE_MAP_NOTICE__";
+
+// Two predicates, because placement is two questions. Collapsing them into one
+// is what made a Dallas pursuit indistinguishable from a shooting we could not
+// geocode, and the second was then described in the first's words.
+//
+//   isLocatedIncident  "do we know a real place?"
+//       false => unlocated. Only these may be called UNLOCATED_LOCATION_NOTICE,
+//               and only these are counted by
+//               battlebuddy_active_incidents_unlocated.
+//   isMappableIncident "may we plot it?"  => located AND a listed type AND
+//       inside the Austin envelope. mappable is a strict subset of located, so
+//       located-but-unplottable is never mistaken for unlocated; it is counted
+//       and described as OUT_OF_SCOPE_MAP_NOTICE instead.
+//
+// `_coords_approx` is the stamp modules.database._fill_incident_coords() puts on
+// a row whose coordinates were filled in from the agency headquarters fallback
+// table: those are a category centroid, not a place, and plotting one would put
+// a fake pin on the map at APD HQ. The stamp makes the row *not located*, which
+// keeps the coordinate out of both the pins and the unlocated list -- the notice
+// prints the type and an age, never a point.
+//
+// `TRIM` mirrors the SQL `TRIM(location) <> ''` in the metrics predicate, so a
+// whitespace-only location is unlocated on the page and in /metrics alike.
+function isLocatedIncident(i) {
+  if (!i) return false;
+  if (i._coords_approx) return false;
+  if (i.location == null || !String(i.location).trim()) return false;
+  if (!i.lat || !i.lon) return false;      // also rejects the 0 / null sentinels
+  return true;
+}
+
+function isMappableIncident(i) {
+  if (!isLocatedIncident(i)) return false;
+  if (!MAP_ITYPES.has(i.itype)) return false;
+  return AUSTIN_BOUNDS.contains([i.lat, i.lon]);
+}
+
+// Render the unlocated-active notice. Deliberately narrow: incident type,
+// relative age, and one fixed sentence. No transcript, no address, no
+// description, no incident id, no agencies and no coordinates — an incident we
+// cannot place is exactly the one whose details must not leak.
+//
+// The headline must never borrow OUT_OF_SCOPE_MAP_NOTICE. The two categories
+// mean opposite things and a reader who saw a located incident described as
+// unverified would stop trusting the count.
+function renderUnlocatedNotice(unlocated) {
+  const notice = document.getElementById('unlocated-notice');
+  const head   = document.getElementById('unl-head');
+  const list   = document.getElementById('unlocated-list');
+  if (!notice || !head || !list) return;
+  const n = unlocated.length;
+  list.innerHTML = '';
+  if (n === 0) {
+    notice.hidden = true;
+    head.textContent = '';
+    return;
+  }
+  notice.hidden = false;
+  head.textContent = n + (n === 1 ? ' active incident' : ' active incidents') +
+    ' awaiting a confirmed location — ' + UNLOCATED_LOCATION_NOTICE;
+  for (const inc of unlocated) {
+    const li = document.createElement('li');
+    const type = document.createElement('span');
+    type.className = 'unl-type';
+    type.textContent = String(inc.itype || 'Unknown');
+    const age = document.createElement('span');
+    age.className = 'unl-age';
+    age.textContent = timeAgo(inc.ts_start);
+    age.title = UNLOCATED_LOCATION_NOTICE;
+    li.appendChild(type);
+    li.appendChild(age);
+    list.appendChild(li);
+  }
+}
+
+// Render the out-of-scope notice: a count and one generic sentence, no rows.
+// These incidents *are* located — the type is simply not on the published list
+// or the point is outside the Austin envelope — so this must not borrow
+// UNLOCATED_LOCATION_NOTICE, and it publishes no per-incident detail at all so
+// there is nothing here to leak.
+function renderOutOfScopeNotice(outOfScope) {
+  const notice = document.getElementById('out-of-scope-notice');
+  const head   = document.getElementById('oos-head');
+  if (!notice || !head) return;
+  const n = outOfScope.length;
+  if (n === 0) {
+    notice.hidden = true;
+    head.textContent = '';
+    return;
+  }
+  notice.hidden = false;
+  head.textContent = n + (n === 1 ? ' active incident' : ' active incidents') +
+    ' — ' + OUT_OF_SCOPE_MAP_NOTICE;
+}
+
 const map = L.map('map', {
   minZoom: 10,
   maxBounds: AUSTIN_BOUNDS,
@@ -480,7 +680,27 @@ async function loadIncidents() {
   const all    = await allResp.json();
   const realAll    = all.filter(i => !i.is_test);
   const realActive = active.filter(i => !i.is_test);
-  document.getElementById('s-active').textContent    = realActive.length;
+
+  // Two predicates, three buckets, one partition. `mappable` is a subset of
+  // `located`, so the three lists below are disjoint and together they are
+  // exactly `realActive`:
+  //
+  //   mapped       located and plottable
+  //   unlocated    not located at all
+  //   out-of-scope located, but unlisted type or outside the envelope
+  //
+  // "Active now" is therefore not a number the reader has to take on trust: it
+  // is visibly mapped + unverified + not-shown, and the pins are the mapped
+  // list, so a count can never disagree with what is drawn.
+  const mappableActive   = realActive.filter(isMappableIncident);
+  const unlocatedActive  = realActive.filter(i => !isLocatedIncident(i));
+  const outOfScopeActive = realActive.filter(i => isLocatedIncident(i) && !isMappableIncident(i));
+  document.getElementById('s-active').textContent              = realActive.length;
+  document.getElementById('s-active-mapped').textContent       = mappableActive.length;
+  document.getElementById('s-active-unlocated').textContent    = unlocatedActive.length;
+  document.getElementById('s-active-out-of-scope').textContent = outOfScopeActive.length;
+  renderUnlocatedNotice(unlocatedActive);
+  renderOutOfScopeNotice(outOfScopeActive);
 
   // Voice: seed on first load, check for new ones on subsequent polls
   if (!_incidentsSeeded) { _seedKnownIncidents(all); _incidentsSeeded = true; }
@@ -499,16 +719,10 @@ async function loadIncidents() {
   // Clear old markers
   Object.values(incidentMarkers).forEach(m => map.removeLayer(m));
 
-  // Only plot ACTIVE incidents we have a real address for, and only crime/fire types (cleared stay off the map)
-  const MAP_ITYPES = new Set([
-    "SHOOTING","STABBING","OFFICER DOWN","PURSUIT","WEAPONS",
-    "STRUCTURE FIRE","FIRE DISPATCH","FIRE ALARM","FIRE/EMS DISPATCH","GRASS FIRE",
-    "CRASH/COLLISION","FATAL CRASH","MULTI-AGENCY RESPONSE","MASS CASUALTY",
-    "EMS DISPATCH","HAZMAT","AIR ASSET ACTIVE","DPS CAPITOL ACTIVATION",
-    "FLOODING","ROAD HAZARD","PEDESTRIAN INCIDENT","VEHICLE FIRE"
-  ]);
-  // Add incident markers
-  active.filter(i => i.location && i.lat && i.lon && MAP_ITYPES.has(i.itype) && AUSTIN_BOUNDS.contains([i.lat, i.lon])).forEach(inc => {
+  // Add incident markers — the same `mappableActive` list the "Mapped on map"
+  // count came from, so a fallback agency-HQ coordinate can never be drawn as a
+  // fake pin and the count always equals the pins.
+  mappableActive.forEach(inc => {
     const isTest   = inc.is_test === 1;
     const isActive = inc.status === 'active' && !isTest;
     const fill   = isTest ? '#78716c' : (isActive ? '#ef4444' : '#334155');
@@ -650,6 +864,18 @@ setInterval(loadMapStats, 60000);
 </body>
 </html>
 """
+
+# Fill the contract placeholders from the module-level constants above. Done
+# with replace() rather than an f-string because the page is a raw string full of
+# CSS and JS braces, and rather than a second hand-written copy of the list,
+# which is how the pins and the counts drift apart in the first place.
+PUBLIC_MAP_HTML = PUBLIC_MAP_HTML.replace(
+    "__MAP_INCIDENT_TYPES__", json.dumps(list(MAP_INCIDENT_TYPES))
+).replace(
+    "__UNLOCATED_LOCATION_NOTICE__", UNLOCATED_LOCATION_NOTICE
+).replace(
+    "__OUT_OF_SCOPE_MAP_NOTICE__", OUT_OF_SCOPE_MAP_NOTICE
+)
 
 PUBLIC_FEED_HTML = r"""<!DOCTYPE html>
 <html>
