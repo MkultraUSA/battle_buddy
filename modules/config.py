@@ -187,6 +187,12 @@ PI_FETCH_ENABLED = bool(PI_FETCH_URL and PI_FETCH_TOKEN)
 FTS_HOST = os.environ.get("FTS_HOST", "tak.example.local")
 FTS_REST_PORT = int(os.environ.get("FTS_REST_PORT", "19023"))
 FTS_COT_PORT = int(os.environ.get("FTS_COT_PORT", "8089"))
+# FTS's SSL CoT port (8089) hardcodes ssl.CERT_REQUIRED, so it demands a client
+# certificate. FTS also offers a plaintext CoT port (8087) that does not. The
+# Battle Buddy -> FTS link runs over Tailscale, which already encrypts it, so
+# plaintext on that path is not a meaningful downgrade. Defaults to TLS so the
+# transport is never downgraded implicitly; set FTS_COT_TLS=false to opt in.
+FTS_COT_TLS = os.environ.get("FTS_COT_TLS", "true").lower() in ("1", "true", "yes", "on")
 FTS_TOKEN = os.environ.get("FTS_TOKEN", "")
 FTS_ENABLED = os.environ.get("FTS_ENABLED", "false").lower() in ("1", "true", "yes", "on")
 

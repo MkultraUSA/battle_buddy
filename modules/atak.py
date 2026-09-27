@@ -12,12 +12,12 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
-from modules.config import DB_PATH, FTS_COT_PORT, FTS_ENABLED, FTS_HOST
+from modules.config import DB_PATH, FTS_COT_PORT, FTS_COT_TLS, FTS_ENABLED, FTS_HOST
 
 _atak_markers: dict[int, str] = {}  # incident_id → FTS uid, for deletion on clear
 
 _fts_lock   = threading.Lock()
-_fts_socket = None          # the live SSL socket, or None
+_fts_socket = None          # the live socket (TLS or plaintext), or None
 
 _BB_SA_UID  = "BATTLEBUDDY-SERVER"
 _BB_SA_XML  = (
@@ -41,7 +41,13 @@ def _fts_build_ctx():
     return ctx
 
 def _fts_connect():
-    """Open a fresh persistent SSL connection to FTS. Called under _fts_lock."""
+    """Open a fresh persistent connection to FTS. Called under _fts_lock.
+
+    TLS unless FTS_COT_TLS is explicitly disabled. FTS's SSL CoT port demands a
+    client certificate and drops the connection even when a valid one is
+    presented, so the plaintext port is the working transport on this link.
+    Tailscale already encrypts the path.
+    """
     global _fts_socket
     try:
         if _fts_socket:
@@ -49,7 +55,11 @@ def _fts_connect():
             except Exception: pass  # noqa: E701
             _fts_socket = None
         raw = _sock_mod.create_connection((FTS_HOST, FTS_COT_PORT), timeout=10)
-        _fts_socket = _fts_build_ctx().wrap_socket(raw)
+        if FTS_COT_TLS:
+            _fts_socket = _fts_build_ctx().wrap_socket(raw)
+        else:
+            print(f"[atak] connecting to FTS in plaintext on port {FTS_COT_PORT}", flush=True)
+            _fts_socket = raw
         # Send our SA announcement so FTS registers us as a proper client
         now_dt  = datetime.now(timezone.utc)
         stale_dt = now_dt + __import__('datetime').timedelta(minutes=10)
@@ -58,7 +68,8 @@ def _fts_connect():
                                t=now_dt.strftime(fmt),
                                s=stale_dt.strftime(fmt))
         _fts_socket.sendall(sa.encode("utf-8"))
-        print("[atak] persistent connection established to FTS", flush=True)
+        mode = "TLS" if FTS_COT_TLS else "plaintext"
+        print(f"[atak] persistent {mode} connection established to FTS", flush=True)
     except Exception as exc:
         _fts_socket = None
         print(f"[atak] connect failed: {exc}", flush=True)
