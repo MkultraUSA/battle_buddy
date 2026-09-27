@@ -5,7 +5,6 @@ pipeline. Mounted as a Flask Blueprint named public_bp and registered in
 audio_receiver.py.
 """
 
-import json
 import logging
 import re
 import sqlite3
@@ -19,6 +18,33 @@ from modules.config import DB_PATH
 logger = logging.getLogger("bb.public")
 
 public_bp = Blueprint("public", __name__)
+
+# Restrictive CSP for the public surface: no inline script may run, so a
+# missed interpolation cannot execute. All page script lives in same-origin
+# static/js files (plus the Leaflet CDN the maps already depend on); inline
+# <style> blocks are still allowed (presentation only). Mirrors the tips-admin
+# precedent in modules/tips.py (_TIPS_ADMIN_CSP), extended with the unpkg CDN
+# origin the public maps load Leaflet from and the https: image sources the
+# Esri basemap tiles come from. There is deliberately no 'unsafe-inline' in
+# script-src: every inline <script> block and onclick handler was moved to an
+# external file / addEventListener.
+_PUBLIC_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://unpkg.com; "
+    "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+    "img-src 'self' data: https:; "
+    "connect-src 'self'; "
+    "font-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'self'"
+)
+
+
+@public_bp.after_request
+def _public_csp(response):
+    response.headers.setdefault("Content-Security-Policy", _PUBLIC_CSP)
+    return response
 
 # ---------------------------------------------------------------------------
 # The map-placement contract (single source of truth)
@@ -365,32 +391,7 @@ footer {
   <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" rel="noopener" style="color:#10b981;text-decoration:none">📊 Stats</a>
 </footer>
 
-<script>
-async function loadStats() {
-  try {
-    const r = await fetch('/api/stats');
-    const d = await r.json();
-    document.getElementById('s-calls').textContent = d.calls_24h.toLocaleString();
-    document.getElementById('s-incidents').textContent = d.incidents_24h.toLocaleString();
-    // fetch homicide count separately
-    try {
-      const rh = await fetch('/api/homicides');
-      if (!rh.ok) {
-        // Seed unavailable (503) — never render a fabricated zero.
-        document.getElementById('s-homicides').textContent = 'unavailable';
-      } else {
-        const dh = await rh.json();
-        const total = dh.total_area_homicides || 0;
-        document.getElementById('s-homicides').textContent = total;
-      }
-    } catch(eh) {}
-    document.getElementById('s-agencies').textContent = d.agencies_24h.toLocaleString();
-    document.getElementById('s-updated').textContent = 'Updated ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  } catch(e) {}
-}
-loadStats();
-setInterval(loadStats, 60000);
-</script>
+<script src="/static/js/public_splash.js"></script>
 </body>
 </html>
 """
@@ -472,8 +473,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <a href="https://kevinwatkins.grafana.net/public-dashboards/235baceac1774dfe8bd12c242acbd014" target="_blank" rel="noopener">📊 Stats</a>
     <a href="/tip">Submit Tip</a>
   </nav>
-  <button id="sitrep-btn" onclick="speakSitrep()" title="Read situation report aloud">&#128266; SITREP</button>
-  <button id="voice-btn" onclick="toggleAutoVoice()" title="Auto-announce new incidents">&#128276; AUTO</button>
+  <button id="sitrep-btn" title="Read situation report aloud">&#128266; SITREP</button>
+  <button id="voice-btn" title="Auto-announce new incidents">&#128276; AUTO</button>
 </div>
 <div id="breaking"></div>
 <div id="map"></div>
@@ -494,7 +495,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="stat-row unlocated"><span>Location unverified</span><span class="stat-val" id="s-active-unlocated">—</span></div>
   <div class="stat-row out-of-scope"><span>Not shown on map</span><span class="stat-val" id="s-active-out-of-scope">—</span></div>
   <div class="stat-row"><span>Last update</span><span class="stat-val" id="s-time">—</span></div>
-  <div class="stat-reconcile">Active now = on the map + location unverified + __OUT_OF_SCOPE_MAP_NOTICE__.</div>
+  <div class="stat-reconcile">Active now = on the map + location unverified + not shown on map.</div>
 </div>
 <div id="unlocated-notice" hidden>
   <div class="unl-head" id="unl-head"></div>
@@ -506,376 +507,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="oos-note">Counted in Active now and deliberately left off the map. No further detail is published for these.</div>
 </div>
 <div id="footer-ticker"><div id="ticker-inner">Loading live feed...</div></div>
-<script>
-const CAT_COLORS = {"APD":"#3b82f6","TCSO":"#3b82f6","UTPD":"#3b82f6","DPS":"#a855f7","AFD":"#f97316","TCFD":"#f97316","TCEMS":"#22c55e","ABIA":"#eab308","Unknown":"#64748b"};
-const INCIDENT_COLOR = "#ef4444";
-
-const AUSTIN_BOUNDS = L.latLngBounds(
-  L.latLng(29.85, -98.25),   // SW — south of Kyle/Buda, west of Bee Cave
-  L.latLng(30.70, -97.25)    // NE — north of Round Rock, east of Bastrop
-);
-
-// Injected from modules.public.MAP_INCIDENT_TYPES so this list and the
-// battlebuddy_active_incidents_* SQL predicates share one definition.
-const MAP_ITYPES = new Set(__MAP_INCIDENT_TYPES__);
-const UNLOCATED_LOCATION_NOTICE = "__UNLOCATED_LOCATION_NOTICE__";
-const OUT_OF_SCOPE_MAP_NOTICE = "__OUT_OF_SCOPE_MAP_NOTICE__";
-
-// Two predicates, because placement is two questions. Collapsing them into one
-// is what made a Dallas pursuit indistinguishable from a shooting we could not
-// geocode, and the second was then described in the first's words.
-//
-//   isLocatedIncident  "do we know a real place?"
-//       false => unlocated. Only these may be called UNLOCATED_LOCATION_NOTICE,
-//               and only these are counted by
-//               battlebuddy_active_incidents_unlocated.
-//   isMappableIncident "may we plot it?"  => located AND a listed type AND
-//       inside the Austin envelope. mappable is a strict subset of located, so
-//       located-but-unplottable is never mistaken for unlocated; it is counted
-//       and described as OUT_OF_SCOPE_MAP_NOTICE instead.
-//
-// `_coords_approx` is the stamp modules.database._fill_incident_coords() puts on
-// a row whose coordinates were filled in from the agency headquarters fallback
-// table: those are a category centroid, not a place, and plotting one would put
-// a fake pin on the map at APD HQ. The stamp makes the row *not located*, which
-// keeps the coordinate out of both the pins and the unlocated list -- the notice
-// prints the type and an age, never a point.
-//
-// `TRIM` mirrors the SQL `TRIM(location) <> ''` in the metrics predicate, so a
-// whitespace-only location is unlocated on the page and in /metrics alike.
-function isLocatedIncident(i) {
-  if (!i) return false;
-  if (i._coords_approx) return false;
-  if (i.location == null || !String(i.location).trim()) return false;
-  if (!i.lat || !i.lon) return false;      // also rejects the 0 / null sentinels
-  return true;
-}
-
-function isMappableIncident(i) {
-  if (!isLocatedIncident(i)) return false;
-  if (!MAP_ITYPES.has(i.itype)) return false;
-  return AUSTIN_BOUNDS.contains([i.lat, i.lon]);
-}
-
-// Render the unlocated-active notice. Deliberately narrow: incident type,
-// relative age, and one fixed sentence. No transcript, no address, no
-// description, no incident id, no agencies and no coordinates — an incident we
-// cannot place is exactly the one whose details must not leak.
-//
-// The headline must never borrow OUT_OF_SCOPE_MAP_NOTICE. The two categories
-// mean opposite things and a reader who saw a located incident described as
-// unverified would stop trusting the count.
-function renderUnlocatedNotice(unlocated) {
-  const notice = document.getElementById('unlocated-notice');
-  const head   = document.getElementById('unl-head');
-  const list   = document.getElementById('unlocated-list');
-  if (!notice || !head || !list) return;
-  const n = unlocated.length;
-  list.innerHTML = '';
-  if (n === 0) {
-    notice.hidden = true;
-    head.textContent = '';
-    return;
-  }
-  notice.hidden = false;
-  head.textContent = n + (n === 1 ? ' active incident' : ' active incidents') +
-    ' awaiting a confirmed location — ' + UNLOCATED_LOCATION_NOTICE;
-  for (const inc of unlocated) {
-    const li = document.createElement('li');
-    const type = document.createElement('span');
-    type.className = 'unl-type';
-    type.textContent = String(inc.itype || 'Unknown');
-    const age = document.createElement('span');
-    age.className = 'unl-age';
-    age.textContent = timeAgo(inc.ts_start);
-    age.title = UNLOCATED_LOCATION_NOTICE;
-    li.appendChild(type);
-    li.appendChild(age);
-    list.appendChild(li);
-  }
-}
-
-// Render the out-of-scope notice: a count and one generic sentence, no rows.
-// These incidents *are* located — the type is simply not on the published list
-// or the point is outside the Austin envelope — so this must not borrow
-// UNLOCATED_LOCATION_NOTICE, and it publishes no per-incident detail at all so
-// there is nothing here to leak.
-function renderOutOfScopeNotice(outOfScope) {
-  const notice = document.getElementById('out-of-scope-notice');
-  const head   = document.getElementById('oos-head');
-  if (!notice || !head) return;
-  const n = outOfScope.length;
-  if (n === 0) {
-    notice.hidden = true;
-    head.textContent = '';
-    return;
-  }
-  notice.hidden = false;
-  head.textContent = n + (n === 1 ? ' active incident' : ' active incidents') +
-    ' — ' + OUT_OF_SCOPE_MAP_NOTICE;
-}
-
-const map = L.map('map', {
-  minZoom: 10,
-  maxBounds: AUSTIN_BOUNDS,
-  maxBoundsViscosity: 1.0
-}).setView([30.32, -97.77], 11);
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Tiles &copy; Esri — Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
-  maxZoom: 18
-}).addTo(map);
-
-let heatLayer = null;
-const incidentMarkers = {};
-
-function catColor(cat) { return CAT_COLORS[cat] || CAT_COLORS['Unknown']; }
-
-function makeIncidentIcon(itype) {
-  return L.divIcon({
-    html: `<div style="width:20px;height:20px;background:#ef4444;border:2px solid #fca5a5;border-radius:50%;box-shadow:0 0 12px #ef4444;animation:ping 1.5s infinite"></div>`,
-    iconSize:[20,20], iconAnchor:[10,10], className:''
-  });
-}
-
-function timeAgo(ts) {
-  const m = Math.round((Date.now()/1000 - ts) / 60);
-  if (m < 60) return `${m}m ago`;
-  return `${Math.round(m/60)}h ago`;
-}
-
-async function flagIncident(id, btn) {
-  btn.disabled = true;
-  btn.textContent = 'Flagging...';
-  try {
-    await fetch(`/api/incidents/${id}/flag`, {method:'POST'});
-    btn.textContent = '✔ FLAGGED';
-    btn.style.background = '#16a34a';
-  } catch(e) {
-    btn.textContent = '⚑ FLAG FOR DEMO';
-    btn.disabled = false;
-  }
-}
-
-async function loadHeatmap() {
-  const resp = await fetch('/api/calls');
-  const calls = await resp.json();
-  const pts = calls.filter(c => c.lat && c.lon && !c.coords_approx && AUSTIN_BOUNDS.contains([c.lat, c.lon])).map(c => [c.lat, c.lon, 0.6]);
-  if (heatLayer) map.removeLayer(heatLayer);
-  heatLayer = L.heatLayer(pts, {radius:22, blur:18, maxZoom:13,
-    gradient:{0.2:'#1e3a5f', 0.5:'#3b82f6', 0.8:'#f97316', 1.0:'#ef4444'}
-  }).addTo(map);
-  const t = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  document.getElementById('s-time').textContent = t;
-  // ticker
-  const recent = calls.slice(0,20);
-  document.getElementById('ticker-inner').textContent =
-    recent.map(c => `${c.tag||'?'} · ${c.transcript ? c.transcript.substring(0,60) : '...'}`).join('   ◆   ');
-}
-
-let _incidentsSeeded = false;
-async function loadIncidents() {
-  const [activeResp, allResp] = await Promise.all([
-    fetch('/api/incidents/active'), fetch('/api/incidents')]);
-  const active = await activeResp.json();
-  const all    = await allResp.json();
-  const realAll    = all.filter(i => !i.is_test);
-  const realActive = active.filter(i => !i.is_test);
-
-  // Two predicates, three buckets, one partition. `mappable` is a subset of
-  // `located`, so the three lists below are disjoint and together they are
-  // exactly `realActive`:
-  //
-  //   mapped       located and plottable
-  //   unlocated    not located at all
-  //   out-of-scope located, but unlisted type or outside the envelope
-  //
-  // "Active now" is therefore not a number the reader has to take on trust: it
-  // is visibly mapped + unverified + not-shown, and the pins are the mapped
-  // list, so a count can never disagree with what is drawn.
-  const mappableActive   = realActive.filter(isMappableIncident);
-  const unlocatedActive  = realActive.filter(i => !isLocatedIncident(i));
-  const outOfScopeActive = realActive.filter(i => isLocatedIncident(i) && !isMappableIncident(i));
-  document.getElementById('s-active').textContent              = realActive.length;
-  document.getElementById('s-active-mapped').textContent       = mappableActive.length;
-  document.getElementById('s-active-unlocated').textContent    = unlocatedActive.length;
-  document.getElementById('s-active-out-of-scope').textContent = outOfScopeActive.length;
-  renderUnlocatedNotice(unlocatedActive);
-  renderOutOfScopeNotice(outOfScopeActive);
-
-  // Voice: seed on first load, check for new ones on subsequent polls
-  if (!_incidentsSeeded) { _seedKnownIncidents(all); _incidentsSeeded = true; }
-  else { _checkNewIncidents(all); }
-
-  // Breaking bar — never show test incidents
-  const bar = document.getElementById('breaking');
-  if (realActive.length > 0) {
-    bar.textContent = '⚠ BREAKING: ' + realActive.map(i =>
-      i.itype + (i.location ? ' @ ' + i.location : '')).join('  ·  ');
-    bar.classList.add('show');
-  } else {
-    bar.classList.remove('show');
-  }
-
-  // Clear old markers
-  Object.values(incidentMarkers).forEach(m => map.removeLayer(m));
-
-  // Add incident markers — the same `mappableActive` list the "Mapped on map"
-  // count came from, so a fallback agency-HQ coordinate can never be drawn as a
-  // fake pin and the count always equals the pins.
-  mappableActive.forEach(inc => {
-    const isTest   = inc.is_test === 1;
-    const isActive = inc.status === 'active' && !isTest;
-    const fill   = isTest ? '#78716c' : (isActive ? '#ef4444' : '#334155');
-    const stroke = isTest ? '#a8a29e' : (isActive ? '#fca5a5' : '#475569');
-    const opacity = isTest ? 0.45 : 1;
-    const size   = isTest ? 12 : (isActive ? 24 : 16);
-    const half   = size / 2;
-    // Active = point-up triangle, Cleared = point-down triangle
-    const pts = isActive
-      ? `${half},0 ${size},${size} 0,${size}`
-      : `0,0 ${size},0 ${half},${size}`;
-    const glowFilter = isActive
-      ? `filter:drop-shadow(0 0 6px #ef4444) drop-shadow(0 0 12px #ef4444)`
-      : '';
-    const icon = L.divIcon({
-      html: `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="${glowFilter};opacity:${opacity}"><polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/></svg>`,
-      iconSize:[size,size], iconAnchor:[half,half], className:''
-    });
-    const m = L.marker([inc.lat, inc.lon], {icon}).addTo(map);
-    let agencies = '';
-    try { agencies = JSON.parse(inc.agencies||'[]').join(', '); } catch(e){}
-    m.bindPopup(`
-      <div class="popup-custom">
-        ${isTest ? `<div style="background:#292524;color:#a8a29e;font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 6px;border-radius:3px;margin-bottom:6px;display:inline-block">SYSTEM TEST — NOT A REAL INCIDENT</div><br>` : ''}
-        <div class="itype" style="${isTest?'color:#a8a29e':''}">${inc.itype}</div>
-        <div class="meta">${new Date(inc.ts_start*1000).toLocaleString()} · ${timeAgo(inc.ts_start)} · ${inc.status.toUpperCase()}</div>
-        ${inc.location ? `<div class="meta">📍 ${inc.location}</div>` : (inc._coords_approx ? `<div class="meta" style="color:#94a3b8">📍 Approximate location (no address extracted)</div>` : '')}
-        <div class="meta">Agencies: ${agencies||'unknown'}</div>
-        <div class="transcript">${inc.description||''}</div>
-        ${!isTest ? `<button onclick="flagIncident(${inc.id},this)" style="margin-top:8px;padding:4px 10px;background:${inc.flagged?'#16a34a':'#1e40af'};color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600">${inc.flagged?'✔ FLAGGED':'⚑ FLAG FOR DEMO'}</button>` : ''}
-      </div>
-    `);
-    incidentMarkers[inc.id] = m;
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Text-to-speech
-// ---------------------------------------------------------------------------
-let _voiceAutoOn = localStorage.getItem('bb_voice_auto') === '1';
-let _knownIncidentIds = new Set();
-let _speaking = false;
-
-function _bestVoice() {
-  const voices = speechSynthesis.getVoices();
-  // Prefer a natural-sounding US English voice
-  const prefs = ['Samantha', 'Google US English', 'Microsoft Aria', 'Alex', 'Karen'];
-  for (const name of prefs) {
-    const v = voices.find(v => v.name.includes(name));
-    if (v) return v;
-  }
-  return voices.find(v => v.lang === 'en-US') || voices[0] || null;
-}
-
-function _speak(text) {
-  if (!('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
-  const utt = new SpeechSynthesisUtterance(text);
-  utt.voice = _bestVoice();
-  utt.rate  = 0.92;
-  utt.pitch = 1.0;
-  utt.volume = 1.0;
-  const btn = document.getElementById('sitrep-btn');
-  const vbtn = document.getElementById('voice-btn');
-  _speaking = true;
-  if (btn) btn.textContent = '⏹ STOP';
-  utt.onend = utt.onerror = () => {
-    _speaking = false;
-    if (btn) btn.textContent = '🔊 SITREP';
-    if (vbtn) vbtn.classList.remove('speaking');
-  };
-  speechSynthesis.speak(utt);
-}
-
-async function speakSitrep() {
-  if (_speaking) { speechSynthesis.cancel(); return; }
-  const resp = await fetch('/api/voice_sitrep');
-  const data = await resp.json();
-  _speak(data.text);
-}
-
-function toggleAutoVoice() {
-  _voiceAutoOn = !_voiceAutoOn;
-  localStorage.setItem('bb_voice_auto', _voiceAutoOn ? '1' : '0');
-  const btn = document.getElementById('voice-btn');
-  btn.classList.toggle('on', _voiceAutoOn);
-  btn.title = _voiceAutoOn ? 'Auto-announce ON — click to disable' : 'Auto-announce new incidents';
-}
-
-function _checkNewIncidents(incidents) {
-  if (!_voiceAutoOn) return;
-  const real = incidents.filter(i => !i.is_test);
-  for (const inc of real) {
-    if (!_knownIncidentIds.has(inc.id)) {
-      _knownIncidentIds.add(inc.id);
-      // Don't announce on first page load — only genuinely new ones
-      if (_knownIncidentIds.size > real.length) continue;
-      const loc = inc.location ? ` at ${inc.location}` : '';
-      const itype = inc.itype.replace('/', ' or ');
-      const vbtn = document.getElementById('voice-btn');
-      if (vbtn) vbtn.classList.add('speaking');
-      _speak(`Battle Buddy alert. ${itype}${loc}. ${inc.description || ''}`);
-      return; // speak one at a time
-    }
-  }
-}
-
-// Seed known IDs on first load so we don't announce old incidents
-function _seedKnownIncidents(incidents) {
-  incidents.filter(i => !i.is_test).forEach(i => _knownIncidentIds.add(i.id));
-}
-
-// Init voice button state
-window.addEventListener('load', () => {
-  const btn = document.getElementById('voice-btn');
-  if (btn && _voiceAutoOn) btn.classList.add('on');
-  // Seed voices list (Chrome requires a user gesture first, but this primes it)
-  speechSynthesis.getVoices();
-});
-
-// ---------------------------------------------------------------------------
-
-async function loadMapStats() {
-  try {
-    const r = await fetch('/api/stats');
-    const d = await r.json();
-    document.getElementById('s-calls').textContent = d.calls_24h.toLocaleString();
-    document.getElementById('s-incidents').textContent = d.incidents_24h.toLocaleString();
-  } catch(e) {}
-}
-
-loadHeatmap();
-loadIncidents();
-loadMapStats();
-setInterval(loadHeatmap, 15000);
-setInterval(loadIncidents, 10000);
-setInterval(loadMapStats, 60000);
-</script>
+<script src="/static/js/public_map.js"></script>
 </body>
 </html>
 """
 
-# Fill the contract placeholders from the module-level constants above. Done
-# with replace() rather than an f-string because the page is a raw string full of
-# CSS and JS braces, and rather than a second hand-written copy of the list,
-# which is how the pins and the counts drift apart in the first place.
-PUBLIC_MAP_HTML = PUBLIC_MAP_HTML.replace(
-    "__MAP_INCIDENT_TYPES__", json.dumps(list(MAP_INCIDENT_TYPES))
-).replace(
-    "__UNLOCATED_LOCATION_NOTICE__", UNLOCATED_LOCATION_NOTICE
-).replace(
-    "__OUT_OF_SCOPE_MAP_NOTICE__", OUT_OF_SCOPE_MAP_NOTICE
-)
+# NOTE (C3): the live-map script now lives in static/js/public_map.js so the
+# public surface can ship a CSP with no 'unsafe-inline' script-src. The type
+# list and notice strings are hardcoded in that file and pinned equal to
+# MAP_INCIDENT_TYPES / UNLOCATED_LOCATION_NOTICE / OUT_OF_SCOPE_MAP_NOTICE by
+# tests/test_public_map_unlocated.py, which fails loudly on any drift.
 
 PUBLIC_FEED_HTML = r"""<!DOCTYPE html>
 <html>
@@ -952,84 +593,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="section-title" style="margin-top:28px">Recent Radio Activity</div>
   <div id="feed-section"></div>
 </div>
-<script>
-const CAT_COLORS = {"APD":"#3b82f6","TCSO":"#3b82f6","UTPD":"#3b82f6","DPS":"#a855f7","AFD":"#f97316","TCFD":"#f97316","TCEMS":"#22c55e","ABIA":"#eab308","Unknown":"#475569"};
-
-function timeStr(ts) { return new Date(ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function timeAgo(ts) { const m=Math.round((Date.now()/1000-ts)/60); return m<60?`${m}m ago`:`${Math.round(m/60)}h ago`; }
-
-function tipBadge(status) {
-  if (status === 'investigating') return '<span class="tip-badge investigating"><span class="pulse"></span>Investigating</span>';
-  if (status === 'matched')      return '<span class="tip-badge matched">Radio Match Found</span>';
-  if (status === 'no_data')      return '<span class="tip-badge no_data">Nothing on Radio</span>';
-  return '';
-}
-function tipBody(t) {
-  if (t.tip_status === 'matched')      return t.tip_summary || 'Radio match found.';
-  if (t.tip_status === 'no_data')      return 'Monitored 2 hours — nothing detected on radio.';
-  if (t.tip_status === 'investigating') return 'Checking radio traffic' + (t.tip_location ? (' near ' + t.tip_location) : '') + '...';
-  return '';
-}
-async function refresh() {
-  const [callsR, activeR, allR, tipsR] = await Promise.all([
-    fetch('/api/calls'), fetch('/api/incidents/active'), fetch('/api/incidents'), fetch('/api/reddit_tips')]);
-  const calls = await callsR.json();
-  const active = await activeR.json();
-  const all = await allR.json();
-  let tips = []; try { tips = await tipsR.json(); } catch(e) { tips = []; }
-
-  // Community Tips
-  const tipsEl = document.getElementById('tips-section');
-  if (!tips.length) {
-    tipsEl.innerHTML = '<p style="color:#475569;font-size:0.8rem">No community tips in the last 48 hours.</p>';
-  } else {
-    tipsEl.innerHTML = tips.map(t => {
-      const safeTitle = (t.title||'').replace(/</g,'&lt;');
-      return `<div class="tip-card ${t.tip_status||''}">
-        <div class="tip-title"><a href="${t.url||'#'}" target="_blank" rel="noopener">${safeTitle}</a>${tipBadge(t.tip_status)}</div>
-        <div class="tip-meta">r/${t.subreddit||'Austin'} · ${timeAgo(t.ts)}${t.tip_location?(' · '+t.tip_location):''}</div>
-        <div class="tip-summary">${tipBody(t)}</div>
-      </div>`;
-    }).join('');
-  }
-
-  // Breaking bar — never show test incidents
-  const realActive = active.filter(i => !i.is_test);
-  const bar = document.getElementById('breaking');
-  if (realActive.length) { bar.textContent='⚠ BREAKING: '+realActive.map(i=>i.itype+(i.location?' @ '+i.location:'')).join(' · '); bar.classList.add('show'); }
-  else bar.classList.remove('show');
-
-  // Incidents — never show test incidents
-  const realAll = all.filter(i => !i.is_test);
-  const inc = document.getElementById('incidents-section');
-  if (!realAll.length) { inc.innerHTML='<p style="color:#475569;font-size:0.8rem">No incidents in the last 48 hours.</p>'; }
-  else inc.innerHTML = realAll.map(i => {
-    let ag=''; try{ag=JSON.parse(i.agencies||'[]').join(', ');}catch(e){}
-    return `<div class="incident-card ${i.status}">
-      <div class="itype">${i.itype}${i.location?' <span style="font-weight:400;color:#94a3b8;font-size:0.85rem">@ ${i.location}</span>':''}</div>
-      <div class="meta">${new Date(i.ts_start*1000).toLocaleString()} · ${timeAgo(i.ts_start)} · ${i.status.toUpperCase()} · ${ag}</div>
-      <div class="desc">${i.description||''}</div>
-    </div>`;
-  }).join('');
-
-  // Feed
-  const feed = document.getElementById('feed-section');
-  feed.innerHTML = calls.slice(0,60).map(c => {
-    const color = CAT_COLORS[c.category]||'#475569';
-    return `<div class="call-row">
-      <div class="time">${timeStr(c.ts)}</div>
-      <div class="tag" style="color:${color}">${c.tag||'TGID '+c.tgid}<span class="cat-badge" style="background:${color}22;color:${color}">${c.category||'?'}</span></div>
-      <div class="body">
-        <div class="transcript">${c.transcript||'<em style="color:#334155">transcribing...</em>'}</div>
-        ${c.location?`<div class="loc">&#9654; ${c.location}</div>`:''}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-refresh();
-setInterval(refresh, 8000);
-</script>
+<script src="/static/js/public_feed.js"></script>
 </body>
 </html>
 """
@@ -1387,30 +951,7 @@ footer a{color:#3b82f6;text-decoration:none}
   <a href="/public/about">About</a>
 </footer>
 
-<script>
-async function loadStats() {
-  try {
-    const r = await fetch("/api/stats");
-    const d = await r.json();
-    document.getElementById("ss-calls").textContent = d.calls_24h.toLocaleString();
-    document.getElementById("ss-incidents").textContent = d.incidents_24h.toLocaleString();
-    document.getElementById("ss-agencies").textContent = d.agencies_24h.toLocaleString();
-  } catch(e) {}
-  try {
-    const r2 = await fetch("/api/homicides");
-    if (!r2.ok) {
-      // Seed unavailable (503) — never render a fabricated zero.
-      document.getElementById("ss-homicides").textContent = "unavailable";
-    } else {
-      const d2 = await r2.json();
-      const total = d2.total_area_homicides || 0;
-      document.getElementById("ss-homicides").textContent = total;
-    }
-  } catch(e) {}
-}
-loadStats();
-setInterval(loadStats, 60000);
-</script>
+<script src="/static/js/public_about.js"></script>
 </body>
 </html>
 """
@@ -1641,9 +1182,9 @@ HOMICIDE_MAP_HTML = """<!DOCTYPE html>
 </div>
 <div id="controls">
   <span style="font-size:.8rem;color:#64748b">View:</span>
-  <button class="ctrl-btn active" onclick="setMode('heat')" id="btn-heat">Heat Map</button>
-  <button class="ctrl-btn" onclick="setMode('markers')" id="btn-markers">Markers</button>
-  <button class="ctrl-btn" onclick="setMode('both')" id="btn-both">Both</button>
+  <button class="ctrl-btn active" id="btn-heat">Heat Map</button>
+  <button class="ctrl-btn" id="btn-markers">Markers</button>
+  <button class="ctrl-btn" id="btn-both">Both</button>
 </div>
 <div id="map">
   <div id="hmap-legend">

@@ -131,8 +131,32 @@ function makeElement(id) {
     hidden: false,
     className: '',
     children: [],
+    attrs: {},
+    style: {},
+    disabled: false,
     classList: { add: function () {}, remove: function () {}, toggle: function () {} },
-    appendChild: function (child) { this.children.push(child); return child; }
+    appendChild: function (child) { this.children.push(child); return child; },
+    removeChild: function (child) {
+      const i = this.children.indexOf(child);
+      if (i >= 0) this.children.splice(i, 1);
+      return child;
+    },
+    replaceChildren: function () { this.children = []; },
+    setAttribute: function (k, v) { this.attrs[k] = String(v); },
+    getAttribute: function (k) { return this.attrs[k]; },
+    addEventListener: function () {},
+    removeEventListener: function () {}
+  };
+}
+
+function makeTextNode(text) {
+  return {
+    nodeType: 3,
+    tag: '#text',
+    textContent: String(text),
+    children: [],
+    className: '',
+    attrs: {}
   };
 }
 
@@ -146,7 +170,8 @@ const document = {
     const el = makeElement('created-' + tag);
     el.tag = tag;
     return el;
-  }
+  },
+  createTextNode: function (text) { return makeTextNode(text); }
 };
 
 const counted = ['s-active', 's-active-mapped', 's-active-unlocated', 's-active-out-of-scope'];
@@ -230,12 +255,28 @@ vm.runInContext(source, sandbox, { filename: 'public-map-inline.js' });
 
 
 def _live_map_script() -> str:
-    """Extract the shipped inline script from the rendered live map page."""
+    """Return the real live-map script browsers run.
+
+    The script lives in static/js/public_map.js (CSP forbids inline script);
+    fall back to the inline <script> block so the test fails loudly on the
+    vulnerable layout instead of silently passing on nothing.
+    """
     import modules.public as public
 
+    candidate = _ROOT / "static" / "js" / "public_map.js"
+    if candidate.exists():
+        return candidate.read_text(encoding="utf-8")
     scripts = _SCRIPT_RE.findall(public.PUBLIC_MAP_HTML)
-    assert scripts, "no inline <script> block found in PUBLIC_MAP_HTML"
+    assert scripts, "no live-map script found (neither static/js asset nor inline block)"
     return max(scripts, key=len)
+
+
+def _live_map_script_source() -> str:
+    """Where the shipped live-map script came from (for contract tests)."""
+    candidate = _ROOT / "static" / "js" / "public_map.js"
+    if candidate.exists():
+        return str(candidate)
+    return "PUBLIC_MAP_HTML inline <script>"
 
 
 class _NoticeParser(HTMLParser):
@@ -1065,9 +1106,30 @@ class UnlocatedNoticeMarkupTests(unittest.TestCase):
     def test_injected_type_list_matches_the_python_contract(self):
         import modules.public as public
 
-        match = re.search(r"const MAP_ITYPES = new Set\((\[.*?\])\);", self.html, re.DOTALL)
-        self.assertIsNotNone(match, "the injected MAP_ITYPES set is missing")
+        # The script is external now (CSP); the list it ships must still equal
+        # the Python contract or pins and counts drift apart.
+        script = _live_map_script()
+        match = re.search(
+            r"(?:const|var) MAP_ITYPES = new Set\((\[.*?\])\);", script, re.DOTALL
+        )
+        self.assertIsNotNone(
+            match, f"the MAP_ITYPES set is missing ({_live_map_script_source()})"
+        )
         self.assertEqual(json.loads(match.group(1)), list(public.MAP_INCIDENT_TYPES))
+
+    def test_notice_strings_match_the_python_contract(self):
+        import modules.public as public
+
+        script = _live_map_script()
+        for name, value in (
+            ("UNLOCATED_LOCATION_NOTICE", public.UNLOCATED_LOCATION_NOTICE),
+            ("OUT_OF_SCOPE_MAP_NOTICE", public.OUT_OF_SCOPE_MAP_NOTICE),
+        ):
+            self.assertIn(
+                f'var {name} = "{value}"',
+                script,
+                f"{name} drifted from modules.public ({_live_map_script_source()})",
+            )
 
     def test_no_placeholder_survives_into_the_rendered_page(self):
         self.assertNotIn("__MAP_INCIDENT_TYPES__", self.html)
@@ -1942,8 +2004,10 @@ class UnlocatedMetricQueryCostTests(unittest.TestCase):
             (29.85, 30.70, -98.25, -97.25),
             "the Python bounds drifted from the ones the live map ships",
         )
-        self.assertIn("L.latLng(29.85, -98.25)", public.PUBLIC_MAP_HTML)
-        self.assertIn("L.latLng(30.70, -97.25)", public.PUBLIC_MAP_HTML)
+        # The script is external now (CSP); assert on what the browser runs.
+        script = _live_map_script()
+        self.assertIn("L.latLng(29.85, -98.25)", script)
+        self.assertIn("L.latLng(30.70, -97.25)", script)
 
     def test_every_contract_type_is_accepted_by_the_sql_allowlist(self):
         """A type in the JS set but absent from SQL would read as out-of-scope."""
