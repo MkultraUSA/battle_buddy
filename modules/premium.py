@@ -2,8 +2,9 @@
 """Battle Buddy premium member and subscription management.
 
 Extracted from audio_receiver.py to keep the main file focused on the audio/incident
-pipeline. Mounted as a Flask Blueprint named premium_bp and registered in
-audio_receiver.py.
+pipeline. This module provides auth/provisioning helpers only; it declares no
+routes. (A previous unregistered blueprint with dead route copies was
+removed; the live Stripe routes live in modules/stripe_billing.py as stripe_bp.)
 """
 
 import base64
@@ -20,7 +21,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from flask import Blueprint, jsonify, request
+from flask import jsonify, request
 
 from modules.config import (
     DB_PATH,
@@ -33,8 +34,6 @@ from modules.config import (
 
 _ssl_ctx = _ssl_mod._create_unverified_context()
 
-
-premium_bp = Blueprint("premium", __name__)
 
 # STRIPE + AUTH — Premium membership integration
 # ===========================================================================
@@ -721,32 +720,6 @@ def _provision_premium_user(session_obj, event_id=None):
     _send_welcome_email(customer_email, username, setup_token, tier)
 
 
-# ---------------------------------------------------------------------------
-# Auth routes
-# ---------------------------------------------------------------------------
-
-@premium_bp.route("/api/login", methods=["POST"])
-def api_login():
-    data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
-    password = (data.get("password") or "").strip()
-    if not username or not password:
-        return jsonify({"error": "username and password required"}), 400
-    if not _nc_validate_user(username, password):
-        return jsonify({"error": "invalid credentials"}), 401
-    token = _issue_session(username)
-    sess = _get_session_by_token(token)
-    from flask import make_response
-    resp = make_response(jsonify({
-        "token": token,
-        "username": username,
-        "is_premium": sess["is_premium"],
-        "is_admin": sess["is_admin"],
-    }))
-    resp.set_cookie("bb_session", token, max_age=86400*30, httponly=True, samesite="Lax")
-    return resp
-
-
 def _get_session_by_token(token):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
@@ -758,103 +731,3 @@ def _get_session_by_token(token):
         return None
     username, expires_ts, is_admin, is_premium = row
     return {"username": username, "is_admin": bool(is_admin), "is_premium": bool(is_premium)}
-
-
-@premium_bp.route("/api/logout", methods=["POST"])
-def api_logout():
-    sess = _get_session(request)
-    if sess:
-        token = request.cookies.get("bb_session") or \
-                request.headers.get("Authorization", "").replace("Bearer ", "").strip()
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("DELETE FROM sessions WHERE token=?", (token,))
-        conn.commit()
-        conn.close()
-    from flask import make_response
-    resp = make_response(jsonify({"status": "ok"}))
-    resp.set_cookie("bb_session", "", expires=0)
-    return resp
-
-
-@premium_bp.route("/api/me")
-def api_me():
-    sess = _get_session(request)
-    if not sess:
-        return jsonify({"logged_in": False}), 200
-    return jsonify({"logged_in": True, **sess})
-
-
-# ---------------------------------------------------------------------------
-# Stripe checkout + webhook
-# ---------------------------------------------------------------------------
-
-@premium_bp.route("/api/stripe/create_checkout", methods=["POST"])
-def api_stripe_create_checkout():
-    """Create a Stripe Checkout Session. Client sends username, display_name, plan."""
-    if not STRIPE_SECRET_KEY:
-        return jsonify({"error": "payments not configured"}), 503
-    data = request.get_json(silent=True) or {}
-    username     = (data.get("username") or "").strip().lower()
-    display_name = (data.get("display_name") or username).strip()
-    plan         = (data.get("plan") or "premium_monthly").strip()
-    if not username:
-        return jsonify({"error": "username required"}), 400
-    if plan not in STRIPE_PLANS:
-        return jsonify({"error": "invalid plan"}), 400
-
-    plan_info   = STRIPE_PLANS[plan]
-    nc_password = _secrets.token_urlsafe(12)
-
-    try:
-        session = _stripe.checkout.Session.create(
-            mode="subscription",
-            line_items=[{"price": plan_info["price_id"], "quantity": 1}],
-            subscription_data={"trial_period_days": 7},
-            success_url="https://battlebuddy.news/premium/welcome?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://battlebuddy.news/premium/",
-            metadata={
-                "username": username,
-                "display_name": display_name,
-                "nc_password": nc_password,
-                "tier": plan_info["tier"],
-            },
-        )
-        return jsonify({"checkout_url": session.url})
-    except Exception as e:
-        print(f"[stripe] create_checkout error: {e}", flush=True)
-        return jsonify({"error": str(e)}), 500
-
-
-@premium_bp.route("/premium/")
-def premium_dashboard_route():
-    return premium_dashboard()  # noqa: F821
-
-@premium_bp.route("/premium/setup", methods=["GET", "POST"])
-def premium_setup_route():
-    if request.method == "GET":
-        return premium_setup_page()  # noqa: F821
-    else:
-        return premium_set_password()  # noqa: F821
-
-@premium_bp.route("/premium/commute", methods=["GET", "POST"])
-def premium_commute_route():
-    if request.method == "GET":
-        return commute_map_page()  # noqa: F821
-    else:
-        return commute_map_save()  # noqa: F821
-
-@premium_bp.route("/premium/cancel", methods=["GET"])
-def premium_cancel_route():
-    return premium_cancel_page()  # noqa: F821
-
-@premium_bp.route("/premium/update_payment", methods=["GET"])
-def premium_update_payment_route():
-    return premium_update_payment_page()  # noqa: F821
-
-@premium_bp.route("/api/stripe/create_checkout", methods=["POST"])
-def stripe_create_checkout_route():
-    return stripe_create_checkout()  # noqa: F821
-
-@premium_bp.route("/api/stripe/webhook", methods=["POST"])
-def stripe_webhook_route():
-    return stripe_webhook()  # noqa: F821
