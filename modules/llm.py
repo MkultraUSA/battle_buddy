@@ -14,6 +14,7 @@ from modules.config import (
     OPENROUTER_API_BASE,
     OPENROUTER_API_KEY,
     OPENROUTER_ENABLED,
+    OPENROUTER_MODEL,
     OPENROUTER_MODEL_CACHE_SECS,
     OPENROUTER_RECOMMENDATIONS_URL,
     TALK_BASE,
@@ -121,6 +122,11 @@ def _fetch_recommendations() -> dict:
     On failure, returns the stale cache or an empty dict.
     """
     global _recommendations_cache, _recommendations_cache_ts
+    # An empty URL means the operator disabled the recommendations feed. Do not
+    # attempt a request: urllib raises "unknown url type" and the old code
+    # logged that on every single call.
+    if not OPENROUTER_RECOMMENDATIONS_URL:
+        return {}
     now = time.time()
     with _recommendations_lock:
         if now - _recommendations_cache_ts < OPENROUTER_MODEL_CACHE_SECS and _recommendations_cache:
@@ -197,11 +203,22 @@ def _pick_best_model(recommendations: dict) -> str | None:
 
 
 def _get_effective_model() -> str:
-    """Pick the best available free model from the recommendations endpoint.
-    Falls back to a hardcoded safe model if no recommendation is available.
-    Now includes catalog_only models (not just online) since many valid
-    free models appear as catalog_only in the probe data.
+    """Return the model to call.
+
+    An explicitly configured model is the operator's decision and always wins.
+    The recommendations feed is only consulted when nothing is configured, and it
+    is an optional enhancement: the host it used to live on is gone, so it must
+    never be able to override or block a working configuration.
+
+    There is deliberately no hardcoded provider-specific fallback. The id this
+    function used to return was specific to one provider; against a different
+    OpenAI-compatible endpoint it does not exist and every call returns HTTP 400,
+    which is exactly the failure it used to cause silently.
     """
+    configured = (OPENROUTER_MODEL or "").strip()
+    if configured:
+        return configured
+
     recs = _fetch_recommendations()
     model = _pick_best_model(recs)
     if model:
@@ -214,10 +231,16 @@ def _get_effective_model() -> str:
             if mid not in _MODEL_DENYLIST and not _is_runtime_banned(mid):
                 print(f"[llm] fallback to JSON model: {mid}", flush=True)
                 return mid
-    # Absolute last resort: use a known free model even if it may not support JSON.
-    SAFE_FALLBACK = "openai/gpt-oss-20b:free"
-    print(f"[llm] no suitable JSON model found — falling back to {SAFE_FALLBACK}", flush=True)
-    return SAFE_FALLBACK
+
+    # Nothing configured and no usable recommendation. Say so loudly rather than
+    # inventing a model id that is probably wrong for whichever provider is
+    # configured; the caller already treats an empty model as a failure.
+    print(
+        "[llm] no model configured and no usable recommendation — set LLM_MODEL "
+        "to the model id your provider expects",
+        flush=True,
+    )
+    return ""
 
 
 # ── Inter-call throttling for free models ───────────────────────────────────
