@@ -149,6 +149,31 @@ def init_db():
             label       TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS premium_checkout_intents (
+            intent_id         TEXT PRIMARY KEY,
+            username          TEXT NOT NULL,
+            display_name      TEXT,
+            nc_password       TEXT NOT NULL,
+            tier              TEXT,
+            plan              TEXT,
+            created_ts        REAL NOT NULL,
+            expires_ts        REAL NOT NULL,
+            consumed_ts       REAL,
+            stripe_session_id TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_checkout_intents_username
+            ON premium_checkout_intents(username)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stripe_processed_events (
+            event_id TEXT PRIMARY KEY,
+            ts       REAL NOT NULL,
+            type     TEXT
+        )
+    """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_ts   ON aircraft_positions(ts)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_aircraft_icao ON aircraft_positions(icao24, ts)")
     conn.commit()
