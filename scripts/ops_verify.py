@@ -15,6 +15,7 @@ Exit codes: 0 all gates pass, 1+ count of failed gates (capped at 10).
 """
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -22,8 +23,79 @@ import time
 import urllib.request
 
 BASE = "http://127.0.0.1:9001"
-DB = "/opt/battlebuddy/calls.db"
 RESULTS = []
+
+# ---------------------------------------------------------------------------
+# Runtime configuration
+# ---------------------------------------------------------------------------
+# The SLO gates must inspect the SAME database the running service uses, or they
+# are verifying a file nothing is reading. This script is invoked by CI over a
+# plain SSH shell, which does NOT inherit the service's environment, so reading
+# os.environ alone silently falls back to a path that no longer holds data.
+#
+# Load the same EnvironmentFile set, in the same order, that the unit file
+# declares, so later files win exactly as systemd resolves them. The list is
+# discovered from the unit rather than hardcoded, so a future change to the
+# unit cannot drift away from this script again.
+
+_UNIT_ENV_FILES = (
+    "systemctl show battlebuddy -p EnvironmentFiles --value",
+)
+
+
+def _service_env_files():
+    try:
+        out = subprocess.run(
+            _UNIT_ENV_FILES, shell=True, capture_output=True, text=True, timeout=10
+        ).stdout
+    except Exception:
+        return []
+    files = []
+    for entry in out.split():
+        # Entries look like "/path/to/file (ignore_errors=no)".
+        path = entry.split("(")[0].strip()
+        if path:
+            files.append(path)
+    return files
+
+
+def load_service_env():
+    """Populate os.environ from the service's EnvironmentFile set, in order."""
+    for path in _service_env_files():
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip().strip("'\"")
+                    if key:
+                        os.environ[key] = value
+        except OSError:
+            continue
+
+
+load_service_env()
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+# modules.config computes DB_PATH at import time. If something already imported
+# it earlier in this process, a cached copy would carry a stale value from
+# whatever environment existed then, and the gate would silently verify the
+# wrong database. Drop any cached copy so the freshly loaded service
+# environment is what actually decides DB_PATH.
+sys.modules.pop("modules.config", None)
+try:
+    from modules.config import DB_PATH as DB
+except Exception as _exc:  # pragma: no cover - surfaced by the db gate
+    DB = ""
+    _DB_IMPORT_ERROR = str(_exc)
 
 
 def gate(name, ok, detail=""):
