@@ -107,12 +107,19 @@ class RedditIntelPollerTests(unittest.TestCase):
         self.assertEqual(poller.feeds, ["https://www.reddit.com/r/Austin/new.rss"])
 
     def test_keyword_matching(self):
-        hi, matched, keywords = reddit_matches("Shots fired downtown", "")
-        self.assertTrue(hi)
-        self.assertTrue(matched)
-        self.assertEqual(set(keywords.split(",")), {"shots fired", "shots", "fire"})
-        self.assertEqual(reddit_matches("Police blocking road", ""), (False, True, "police"))
-        self.assertEqual(reddit_matches("Best tacos?", ""), (False, False, ""))
+        v = reddit_matches("Shots fired downtown", "")
+        self.assertTrue(v.captured)
+        self.assertEqual(v.confidence, "high")
+        self.assertIn("shots fired", v.keywords.split(","))
+        # Whole-word matching: "fired" must not produce a "fire" hit.
+        self.assertNotIn("fire", v.keywords.split(","))
+        self.assertNotIn("shots", v.keywords.split(","))
+        v_med = reddit_matches("Police blocking road", "")
+        self.assertTrue(v_med.captured)
+        self.assertEqual(v_med.confidence, "medium")
+        v_none = reddit_matches("Best tacos?", "")
+        self.assertFalse(v_none.captured)
+        self.assertEqual(v_none.confidence, "none")
 
     def test_non_matching_post_is_noop(self):
         poller = RedditIntelPoller()
