@@ -269,7 +269,8 @@ CREATE TABLE IF NOT EXISTS reddit_intel (
     tip_status      TEXT DEFAULT 'new',
     tip_ts_start    REAL,
     tip_ts_cleared  REAL,
-    tip_summary     TEXT
+    tip_summary     TEXT,
+    confidence      TEXT DEFAULT 'medium'
 );
 
 -- APD CAD (Computer-Aided Dispatch) records from the public Socrata feed,

@@ -21,6 +21,7 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from typing import NamedTuple
 
 from modules.pollers.base import BasePoller
 
@@ -74,12 +75,216 @@ _ADDRESS_RE = re.compile(
 )
 
 
-def reddit_matches(title: str, body: str | None) -> tuple[bool, bool, str]:
+class RedditVerdict(NamedTuple):
+    """Capture decision for one post.
+
+    captured:   True only if the post is worth storing in reddit_intel.
+    confidence: "high" (may alert), "medium" (stored, never alerts),
+                or "none" (not stored).
+    keywords:   comma-joined whole-word/phrase hits behind the decision.
+    """
+
+    captured: bool
+    confidence: str
+    keywords: str
+
+
+# Curated concrete crime/incident phrases. Each one is sufficient, on its
+# own, for a HIGH-confidence capture + alert. Matched whole-word/phrase only.
+_REDDIT_STRONG_HIGH = (
+    "shots fired", "shot fired", "shots heard", "heard shots", "shots rang out",
+    "gunshots heard", "heard gunshots", "reports of shots",
+    "gunshot", "gunshots", "gun shot", "gun shots",
+    "gunfire", "gunman", "active shooter", "mass shooting", "school shooting",
+    "shooting", "shootings", "shooter", "shootout", "shot dead",
+    "stabbing", "stabbed", "stab wound", "stab wounds", "knifed",
+    "homicide", "murder", "murdered",
+    "carjacking", "carjacked", "kidnapping", "kidnapped", "abduction", "abducted",
+    "robbery", "robbed", "armed robbery", "armed suspect", "armed man",
+    "armed woman", "armed person", "armed with", "gun pulled", "pulled a gun",
+    "pointed a gun", "brandished a gun",
+    "assault", "assaulted", "sexual assault", "aggravated assault",
+    "hit and run", "hit-and-run",
+    "swat", "standoff", "stand-off", "hostage", "hostages",
+    "barricade", "barricaded", "barricading",
+    "officer down", "officer shot", "officer killed", "officer stabbed",
+    "officer wounded", "deputy shot", "deputy down", "trooper shot",
+    "person shot", "man shot", "woman shot", "teen shot", "child shot",
+    "person stabbed", "man stabbed", "woman stabbed",
+    "body found", "bodies found", "body discovered", "found dead", "dead body",
+    "person down", "man down",
+    "at large", "avoid the area", "shelter in place", "lockdown", "lock down",
+    "evacuated", "evacuation", "evacuate",
+    "explosion", "bomb threat", "bomb squad",
+    "structure fire", "house fire", "apartment fire", "building fire",
+    "car fire", "vehicle fire", "brush fire", "arson",
+    "crime scene",
+)
+
+# Extra medium context words beyond REDDIT_MEDIUM_KW (still whole-word only,
+# still never sufficient alone).
+_REDDIT_MEDIUM_EXTRA = {
+    "ems", "deputy", "deputies", "trooper", "troopers", "dps",
+    "sirens", "chopper", "collision", "wreck", "closure", "closures", "closed",
+}
+
+# Subjects that are clearly not community crime reports. Reject when no
+# strong signal is present (a strong signal always wins: for a public-safety
+# tool a false negative is worse than a false positive).
+_REDDIT_TOPIC_EXCLUDE = (
+    "protest", "protests", "protester", "protesters", "protesting",
+    "rally", "rallies", "vigil", "vigils",
+    "press conference", "news conference", "presser",
+    "immigration", "deportation", "policy", "policies", "ordinance",
+    "city council", "council member",
+    "court", "courts", "courthouse", "judge", "judges", "jury",
+    "trial", "trials", "sentencing", "lawsuit", "hearing",
+    "hiring", "hire", "job", "jobs", "career", "careers",
+    "recruit", "recruiting", "recruitment",
+    "equipment", "bodycam", "body cam", "body camera", "budget", "funding",
+    "photo", "photos", "picture", "pictures", "pic", "pics", "selfie",
+    "sunset", "sunsets", "sunrise", "skyline",
+    "pet", "pets", "dog", "dogs", "puppy", "cat", "cats", "kitten",
+    "food", "foods", "restaurant", "restaurants", "taco", "tacos",
+    "bbq", "barbecue", "coffee", "brunch", "dinner", "lunch", "breakfast",
+    "event", "events", "festival", "concert", "parade", "marathon",
+    "party", "celebration", "sxsw",
+    "celebrity", "celebrities", "actor", "actress", "famous", "singer",
+    "band", "movie", "movies", "film", "filming", "tv", "television",
+    "netflix", "spotted", "sighting", "sightings", "autograph",
+    "seeking", "looking for",
+    "opinion", "rant",
+    "for sale", "for rent", "roommate", "garage sale",
+)
+
+_PURSUIT_WORDS = ("pursuit", "pursuing", "chase", "chased", "chasing", "fleeing")
+_AGENCY_WORDS = (
+    "police", "apd", "officer", "officers", "deputy", "deputies",
+    "trooper", "troopers", "dps",
+)
+
+
+def _phrase_re(phrase: str) -> re.Pattern:
+    return re.compile(r"\b" + re.escape(phrase) + r"\b", re.IGNORECASE)
+
+
+_STRONG_RES = tuple((kw, _phrase_re(kw)) for kw in _REDDIT_STRONG_HIGH)
+_MEDIUM_RES = tuple(
+    (kw, _phrase_re(kw))
+    for kw in sorted(set(REDDIT_MEDIUM_KW) | _REDDIT_MEDIUM_EXTRA)
+)
+_TOPIC_RES = tuple((kw, _phrase_re(kw)) for kw in _REDDIT_TOPIC_EXCLUDE)
+_PURSUIT_RES = tuple((kw, _phrase_re(kw)) for kw in _PURSUIT_WORDS)
+_AGENCY_RES = tuple((kw, _phrase_re(kw)) for kw in _AGENCY_WORDS)
+
+# Concrete detail: numbers, street/highway tokens, time words, known places.
+# A bare question title with none of these is chatter, not a report.
+_DETAIL_RE = re.compile(
+    r"\d"
+    r"|\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr"
+    r"|parkway|pkwy|highway|hwy|freeway|interstate|mopac|loop|terrace|trail"
+    r"|circle|court|plaza|exit|ramp|frontage|block)\b"
+    r"|\bi-?\d{1,3}\b|\bfm\s*\d+|\brr\s*\d+"
+    r"|block of|corner of|intersection"
+    r"|\btoday\b|\btonight\b|\bmorning\b|\bevening\b|\bafternoon\b"
+    r"|right now|just now|minutes? ago|hours? ago|o'clock|[ap]\.m\."
+    r"|\bdowntown\b|\baustin\b|\batx\b|\bcampus\b|\buniversity\b"
+    r"|\bdomain\b|\bmueller\b|\brundberg\b|hyde park|\bzilker\b"
+    r"|south congress|\bsoco\b|east 6th|dirty 6th|cedar park",
+    re.IGNORECASE,
+)
+
+# A title that is a bare question with no concrete detail.
+_CHATTER_TITLE_RE = re.compile(
+    r"\?\s*$"
+    r"|^\s*(?:does anyone|did anyone|has anyone|anyone(?: know| have| hear| see| else)?"
+    r"|is there|are there|what|where|when|why|how|who|which)\b",
+    re.IGNORECASE,
+)
+
+# Road-closure intel: a closure word plus road/traffic context.
+_CLOSURE_RE = re.compile(r"\b(?:closed|closure|closures|shut\s*down)\b", re.IGNORECASE)
+_ROAD_CONTEXT_RE = re.compile(
+    r"\broad\b|\blane\b|\blanes\b|\bhighway\b|\bfreeway\b|\binterstate\b"
+    r"|\bi-?\d{1,3}\b|\bmopac\b|\bparkway\b|\bpkwy\b|\bavenue\b|\bave\b"
+    r"|\bstreet\b|\brd\b|\bblvd\b|\bboulevard\b|\btraffic\b|\bexit\b|\bramp\b"
+    r"|\bfrontage\b|\bloop\b",
+    re.IGNORECASE,
+)
+
+
+def _matched(keywords_and_res: tuple, text: str) -> list[str]:
+    return sorted({kw for kw, rx in keywords_and_res if rx.search(text)})
+
+
+def reddit_broad_matches(title: str, body: str | None) -> tuple[bool, str]:
+    """Whole-word "matched anything at all" check over the broad keyword sets.
+
+    Uses REDDIT_HIGH_KW + REDDIT_MEDIUM_KW with word boundaries (never
+    ``kw in text``). Available for other code that needs a loose sweep; the
+    capture/alert decision in process_post goes through reddit_matches.
+    """
     text = (title + " " + (body or "")).lower()
-    hi = [kw for kw in REDDIT_HIGH_KW if kw in text]
-    med = [kw for kw in REDDIT_MEDIUM_KW if kw in text]
-    all_kw = hi + [m for m in med if m not in hi]
-    return bool(hi), bool(all_kw), ",".join(all_kw)
+    hits = _matched(_STRONG_RES, text) + [
+        kw for kw in _matched(_MEDIUM_RES, text)
+    ]
+    seen = sorted(set(hits))
+    return bool(seen), ",".join(seen)
+
+
+def reddit_matches(title: str, body: str | None) -> RedditVerdict:
+    """Confidence-based capture decision (strict).
+
+    Returns a RedditVerdict(captured, confidence, keywords) where confidence
+    is "high" (store + may alert), "medium" (store, never alerts), or "none"
+    (do not store). All matching is whole-word / whole-phrase via compiled
+    regex -- ``fire`` never matches ``fireworks``, ``cop`` never matches
+    ``copy``/``copper``/``helicopter``.
+
+    NOTE: the return contract changed from ``(hi, matched, keywords)`` to a
+    ``RedditVerdict`` named tuple; the sole caller (process_post) was updated
+    in the same commit.
+    """
+    text = (title + " " + (body or ""))
+    low = text.lower()
+
+    strong = _matched(_STRONG_RES, low)
+    medium = _matched(_MEDIUM_RES, low)
+
+    def _kw(*groups: list[str]) -> str:
+        return ",".join(sorted({kw for g in groups for kw in g}))
+
+    # A. strong signal required for HIGH; it overrides topic/chatter guards
+    # (a false negative is worse than a false positive for this tool).
+    if strong:
+        return RedditVerdict(True, "high", _kw(strong, medium))
+
+    # C. topic filter: everyday subjects are not crime reports.
+    topic = _matched(_TOPIC_RES, low)
+    if topic:
+        return RedditVerdict(False, "none", _kw(topic, medium))
+
+    # D. chatter guard: bare question, no concrete detail.
+    if _CHATTER_TITLE_RE.search(title or "") and not _DETAIL_RE.search(low):
+        return RedditVerdict(False, "none", _kw(medium) or "chatter")
+
+    # B. traffic closures with road context are stored as medium intel.
+    if _CLOSURE_RE.search(low) and _ROAD_CONTEXT_RE.search(low):
+        return RedditVerdict(True, "medium", _kw(medium) or "closure")
+
+    # B. an active pursuit naming an agency + concrete detail pages as high.
+    if (
+        any(rx.search(low) for _, rx in _PURSUIT_RES)
+        and any(rx.search(low) for _, rx in _AGENCY_RES)
+        and _DETAIL_RE.search(low)
+    ):
+        return RedditVerdict(True, "high", _kw(medium, ["pursuit"]))
+
+    # B. bare medium words alone are never enough: require concrete detail.
+    if medium and _DETAIL_RE.search(low):
+        return RedditVerdict(True, "medium", _kw(medium))
+
+    return RedditVerdict(False, "none", _kw(medium))
 
 
 def nominatim_geocode(query: str) -> tuple[float | None, float | None]:
@@ -229,6 +434,7 @@ class RedditIntelPoller(BasePoller):
             "ALTER TABLE reddit_intel ADD COLUMN tip_ts_start REAL",
             "ALTER TABLE reddit_intel ADD COLUMN tip_ts_cleared REAL",
             "ALTER TABLE reddit_intel ADD COLUMN tip_summary TEXT",
+            "ALTER TABLE reddit_intel ADD COLUMN confidence TEXT DEFAULT 'medium'",
         ]:
             try:
                 conn.execute(col_sql)
@@ -287,8 +493,8 @@ class RedditIntelPoller(BasePoller):
         }
 
     def process_post(self, post: dict, db_path: str, send_alert) -> bool:
-        hi, matched, keywords = reddit_matches(post["title"], post["body"])
-        if not matched:
+        verdict = reddit_matches(post["title"], post["body"])
+        if not verdict.captured:
             return False
 
         conn = sqlite3.connect(db_path)
@@ -301,30 +507,54 @@ class RedditIntelPoller(BasePoller):
             return False
 
         now_ts = time.time()
-        conn.execute(
-            "INSERT INTO reddit_intel "
-            "(ts,post_id,subreddit,title,url,author,body,keywords,notified,tip_status,tip_ts_start) "
-            "VALUES (?,?,?,?,?,?,?,?,0,'investigating',?)",
-            (
-                now_ts,
-                post["post_id"],
-                post["subreddit"],
-                post["title"],
-                post["url"],
-                post["author"],
-                post["body"][:500],
-                keywords,
-                now_ts,
-            ),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO reddit_intel "
+                "(ts,post_id,subreddit,title,url,author,body,keywords,notified,"
+                "tip_status,tip_ts_start,confidence) "
+                "VALUES (?,?,?,?,?,?,?,?,0,'investigating',?,?)",
+                (
+                    now_ts,
+                    post["post_id"],
+                    post["subreddit"],
+                    post["title"],
+                    post["url"],
+                    post["author"],
+                    post["body"][:500],
+                    verdict.keywords,
+                    now_ts,
+                    verdict.confidence,
+                ),
+            )
+        except sqlite3.OperationalError:
+            # Database predates the confidence column (ensure_schema not yet
+            # run): fall back to the legacy column list.
+            conn.execute(
+                "INSERT INTO reddit_intel "
+                "(ts,post_id,subreddit,title,url,author,body,keywords,notified,tip_status,tip_ts_start) "
+                "VALUES (?,?,?,?,?,?,?,?,0,'investigating',?)",
+                (
+                    now_ts,
+                    post["post_id"],
+                    post["subreddit"],
+                    post["title"],
+                    post["url"],
+                    post["author"],
+                    post["body"][:500],
+                    verdict.keywords,
+                    now_ts,
+                ),
+            )
         conn.commit()
         conn.close()
-        logger.info("[reddit] NEW %s: %s", "HI" if hi else "med", post["title"][:80])
+        logger.info(
+            "[reddit] NEW %s: %s", verdict.confidence, post["title"][:80]
+        )
 
         self.enrich_tip_location(post, db_path)
         self.enrich_incident_match(post, db_path)
-        if hi:
-            self.send_high_confidence_alert(post, keywords, db_path, send_alert)
+        if verdict.confidence == "high":
+            self.send_high_confidence_alert(post, verdict.keywords, db_path, send_alert)
         return True
 
     @staticmethod
