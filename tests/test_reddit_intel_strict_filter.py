@@ -270,8 +270,31 @@ class StrictFilterRegressionTests(unittest.TestCase):
         send_alert.assert_not_called()
 
     def test_schema_paths_carry_confidence_column(self):
+        import re
+
         schema = (_ROOT / "schema.sql").read_text(encoding="utf-8")
-        self.assertIn("confidence", schema)
+        # Block-scoped: the confidence line must sit inside the reddit_intel
+        # CREATE block itself. (A bare assertIn("confidence", schema) is
+        # vacuous -- "confidence" already appears elsewhere in schema.sql.)
+        block = re.search(
+            r"CREATE TABLE IF NOT EXISTS reddit_intel \((.*?)\);",
+            schema,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(block, "reddit_intel CREATE block missing from schema.sql")
+        self.assertRegex(block.group(1), r"\bconfidence\b")
+        # Live check: applying schema.sql to a fresh database must yield a
+        # reddit_intel table with a confidence column.
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        tmp.close()
+        self.addCleanup(lambda: Path(tmp.name).unlink(missing_ok=True))
+        conn = sqlite3.connect(tmp.name)
+        try:
+            conn.executescript(schema)
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(reddit_intel)")]
+        finally:
+            conn.close()
+        self.assertIn("confidence", cols)
         db_path = self._fresh_db()
         conn = sqlite3.connect(db_path)
         try:
@@ -279,6 +302,127 @@ class StrictFilterRegressionTests(unittest.TestCase):
         finally:
             conn.close()
         self.assertIn("confidence", cols)
+
+    # -- G. review-round regressions: property crime (finding 1) -------------
+    # The car break-in / burglary class is the most common r/Austin crime
+    # post. Each of these FAILS (not captured) on the pre-fix matcher.
+
+    def test_broke_into_car_is_captured(self):
+        v = _verdict("someone broke into my car on 6th", "")
+        self.assertTrue(v.captured, f"break-in report must capture: {v!r}")
+
+    def test_car_stolen_with_detail_is_captured(self):
+        v = _verdict("car stolen overnight on Lakeline", "")
+        self.assertTrue(v.captured, f"stolen-car report must capture: {v!r}")
+
+    def test_domestic_disturbance_is_captured(self):
+        v = _verdict("domestic disturbance on 35th", "")
+        self.assertTrue(v.captured, f"domestic disturbance must capture: {v!r}")
+
+    def test_catalytic_converter_stolen_is_captured(self):
+        v = _verdict("my catalytic converter was stolen", "")
+        self.assertTrue(v.captured, f"catalytic converter theft must capture: {v!r}")
+
+    # -- H. review-round regressions: restored base captures (finding 2) -----
+    # Captured on base d8562fb via substring, dropped by the strict matcher.
+
+    def test_police_activity_with_intersection_is_captured(self):
+        v = _verdict("Police activity at Parker and Springdale", "")
+        self.assertTrue(v.captured, f"police-activity report must capture: {v!r}")
+
+    def test_suspect_flees_police_is_captured(self):
+        v = _verdict("Suspect flees police on foot", "")
+        self.assertTrue(v.captured, f"suspect-flees report must capture: {v!r}")
+
+    def test_crash_on_suffix_less_corridor_is_captured(self):
+        v = _verdict("Crash on Ben White", "")
+        self.assertTrue(v.captured, f"crash on Ben White must capture: {v!r}")
+
+    # -- I. review-round regressions: hyphen evasion (finding 3) -------------
+
+    def test_hyphenated_cop_fragment_is_not_captured(self):
+        v = _verdict("Why the heli-cop-ter over south Austin?", "")
+        self.assertFalse(v.captured, f"heli-cop-ter must not match cop: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_hyphenated_fire_fragment_is_not_captured(self):
+        v = _verdict("fire-works going off on 4th of july", "")
+        self.assertFalse(v.captured, f"fire-works must not match fire: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_hyphenated_armed_man_is_not_high(self):
+        v = _verdict("un-armed man on 6th", "")
+        self.assertNotEqual(v.confidence, "high", f"un-armed must not alert: {v!r}")
+
+    # -- J. review-round regressions: benign context (finding 4) -------------
+    # Ambiguous strong words excused by benign context must not alert.
+
+    def test_shooting_range_is_not_captured(self):
+        v = _verdict("Best shooting range in Austin?", "")
+        self.assertFalse(v.captured, f"shooting range is not a crime report: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_sunset_shooting_spots_are_not_captured(self):
+        v = _verdict("Sunset shooting spots downtown?", "")
+        self.assertFalse(v.captured, f"sunset photo outing is not a report: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_murder_mystery_dinner_is_not_captured(self):
+        v = _verdict("Murder mystery dinner in Austin?", "")
+        self.assertFalse(v.captured, f"murder mystery dinner is not a report: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_stabbing_pain_is_not_captured(self):
+        v = _verdict("Stabbing pain in my lower back", "Any doctor recommendations?")
+        self.assertFalse(v.captured, f"medical stabbing pain is not a report: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_shooting_stars_are_not_captured(self):
+        v = _verdict("Shooting stars over Austin tonight", "")
+        self.assertFalse(v.captured, f"shooting stars are not a report: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_swat_costume_is_not_captured(self):
+        v = _verdict("SWAT team costume for halloween", "")
+        self.assertFalse(v.captured, f"swat costume is not a report: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_assault_on_taste_buds_is_not_captured(self):
+        v = _verdict("Assault on my taste buds at this taco truck", "")
+        self.assertFalse(v.captured, f"taco assault is not a report: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_hit_and_run_movie_mention_is_not_captured(self):
+        v = _verdict("Hit and run mentioned in the movie last night", "")
+        self.assertFalse(v.captured, f"movie mention is not a report: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    # -- K. review-round regressions: place-name chatter guard (finding 5) ---
+    # A bare city/neighbourhood name is not specific detail.
+
+    def test_helicopter_over_austin_is_not_captured(self):
+        v = _verdict("Helicopter over Austin", "")
+        self.assertFalse(v.captured, f"bare helicopter + city name: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    def test_helicopter_over_east_austin_question_is_not_captured(self):
+        v = _verdict("Helicopter over east Austin?", "")
+        self.assertFalse(v.captured, f"bare helicopter question: {v!r}")
+        self.assertEqual(v.confidence, "none")
+
+    # -- L. tightening guardrails: genuine reports must still capture --------
+    # If any of these start failing, the tightening over-corrected: STOP
+    # and report the trade-off instead of silently dropping real signals.
+
+    def test_shots_fired_downtown_is_high(self):
+        v = _verdict("Shots fired downtown", "")
+        self.assertTrue(v.captured, f"genuine shots-fired report: {v!r}")
+        self.assertEqual(v.confidence, "high")
+
+    def test_homicide_in_northeast_austin_is_high(self):
+        v = _verdict("APD investigating homicide in Northeast Austin", "")
+        self.assertTrue(v.captured, f"genuine homicide report: {v!r}")
+        self.assertEqual(v.confidence, "high")
 
 
 if __name__ == "__main__":

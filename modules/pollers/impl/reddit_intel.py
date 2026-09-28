@@ -34,12 +34,6 @@ REDDIT_FEEDS = [
     "https://www.reddit.com/r/Austin_Texas/new.rss",
     "https://www.reddit.com/r/ATX/new.rss",
 ]
-REDDIT_HIGH_KW = {
-    "standoff", "barricade", "swat", "shooter", "shooting", "shots fired",
-    "shots", "hostage", "suspect", "armed", "pursuit", "chase", "evacuate",
-    "lockdown", "explosion", "stabbing", "homicide", "murder",
-    "police activity", "crime scene", "avoid the area",
-}
 REDDIT_MEDIUM_KW = {
     "police", "apd", "afd", "crash", "accident", "fire", "smoke", "blocked",
     "road closed", "emergency", "cop", "cops", "officer", "helicopter",
@@ -119,6 +113,25 @@ _REDDIT_STRONG_HIGH = (
     "structure fire", "house fire", "apartment fire", "building fire",
     "car fire", "vehicle fire", "brush fire", "arson",
     "crime scene",
+    # Property crime: the most common r/Austin community crime post is the
+    # car break-in / burglary. These specific phrases are HIGH on their own.
+    "broke into", "broken into", "break in", "break-in", "break ins",
+    "break-ins", "burglary", "burglaries", "burglar", "burglars",
+    "burglarized", "burglarised", "burglarize", "burglarise",
+    "burglarizing", "burglarising",
+    "home invasion", "home invasions",
+    "mugged", "mugging", "muggings", "mugger",
+    "pedestrian struck",
+    "missing person", "missing persons",
+    "package stolen", "packages stolen", "package theft", "porch pirate",
+    "porch pirates",
+    "catalytic converter", "catalytic converters",
+    "domestic disturbance", "domestic disturbances",
+    "911 call", "911 calls",
+    # Restored base captures: the canonical r/Austin crime-report phrasing
+    # "Police activity at ..." / "Suspect flees police ..." matched on base
+    # via substring and must keep matching (whole-word now).
+    "police activity", "suspect", "suspects",
 )
 
 # Extra medium context words beyond REDDIT_MEDIUM_KW (still whole-word only,
@@ -127,6 +140,13 @@ _REDDIT_MEDIUM_EXTRA = {
     "ems", "deputy", "deputies", "trooper", "troopers", "dps",
     "sirens", "chopper", "collision", "wreck", "closure", "closures", "closed",
 }
+
+# Generic theft words: too ambiguous for HIGH on their own ("stolen valor",
+# "theft-proof"), but a post pairing one with concrete detail ("car stolen
+# overnight on Lakeline") is stored as medium intel, never an alert.
+_REDDIT_PROPERTY_MEDIUM = (
+    "stolen", "theft", "thefts", "thief", "thieves",
+)
 
 # Subjects that are clearly not community crime reports. Reject when no
 # strong signal is present (a strong signal always wins: for a public-safety
@@ -157,7 +177,10 @@ _REDDIT_TOPIC_EXCLUDE = (
     "for sale", "for rent", "roommate", "garage sale",
 )
 
-_PURSUIT_WORDS = ("pursuit", "pursuing", "chase", "chased", "chasing", "fleeing")
+_PURSUIT_WORDS = (
+    "pursuit", "pursuing", "chase", "chased", "chasing",
+    "flee", "flees", "fled", "fleeing",
+)
 _AGENCY_WORDS = (
     "police", "apd", "officer", "officers", "deputy", "deputies",
     "trooper", "troopers", "dps",
@@ -165,10 +188,17 @@ _AGENCY_WORDS = (
 
 
 def _phrase_re(phrase: str) -> re.Pattern:
-    return re.compile(r"\b" + re.escape(phrase) + r"\b", re.IGNORECASE)
+    # Separator-aware boundaries: \b treats "-" as a boundary, so \bcop\b
+    # matches inside "heli-cop-ter" and \bfire\b matches "fire-works".
+    # Excluding "-" (and "_", "/") from the boundary keeps hyphen-fragment
+    # evasions such as "heli-cop-ter", "fire-works", "un-armed" from matching.
+    return re.compile(
+        r"(?<![\w\-/])" + re.escape(phrase) + r"(?![\w\-/])", re.IGNORECASE
+    )
 
 
 _STRONG_RES = tuple((kw, _phrase_re(kw)) for kw in _REDDIT_STRONG_HIGH)
+_PROPERTY_RES = tuple((kw, _phrase_re(kw)) for kw in _REDDIT_PROPERTY_MEDIUM)
 _MEDIUM_RES = tuple(
     (kw, _phrase_re(kw))
     for kw in sorted(set(REDDIT_MEDIUM_KW) | _REDDIT_MEDIUM_EXTRA)
@@ -177,20 +207,40 @@ _TOPIC_RES = tuple((kw, _phrase_re(kw)) for kw in _REDDIT_TOPIC_EXCLUDE)
 _PURSUIT_RES = tuple((kw, _phrase_re(kw)) for kw in _PURSUIT_WORDS)
 _AGENCY_RES = tuple((kw, _phrase_re(kw)) for kw in _AGENCY_WORDS)
 
-# Concrete detail: numbers, street/highway tokens, time words, known places.
-# A bare question title with none of these is chatter, not a report.
-_DETAIL_RE = re.compile(
+# Concrete detail, split in two tiers. _DETAIL_SPECIFIC_RE is the load-bearing
+# one: street/highway tokens, suffix-less Austin corridors (Ben White has no
+# street suffix), numbers, "X and Y" intersection phrasing (only when
+# introduced by at/on/near/around/corner of, so "hit and run" is not
+# misread as an intersection), and time words. A bare medium word needs one
+# of these to be stored. _DETAIL_PLACE_RE holds city/neighbourhood names
+# that appear in nearly every r/Austin title and therefore prove nothing on
+# their own ("Helicopter over Austin" must not capture). _DETAIL_RE is the
+# union, kept for backwards compatibility.
+_DETAIL_SPECIFIC_RE = re.compile(
     r"\d"
     r"|\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr"
     r"|parkway|pkwy|highway|hwy|freeway|interstate|mopac|loop|terrace|trail"
     r"|circle|court|plaza|exit|ramp|frontage|block)\b"
     r"|\bi-?\d{1,3}\b|\bfm\s*\d+|\brr\s*\d+"
     r"|block of|corner of|intersection"
-    r"|\btoday\b|\btonight\b|\bmorning\b|\bevening\b|\bafternoon\b"
-    r"|right now|just now|minutes? ago|hours? ago|o'clock|[ap]\.m\."
-    r"|\bdowntown\b|\baustin\b|\batx\b|\bcampus\b|\buniversity\b"
+    r"|\b(?:at|on|near|around|corner of)\s+[a-z0-9][a-z0-9.'\-]*"
+    r"(?:\s+[a-z0-9][a-z0-9.'\-]*){0,3}\s+(?:and|&|/)\s+[a-z0-9][a-z0-9.'\-]*"
+    r"(?:\s+[a-z0-9][a-z0-9.'\-]*){0,3}"
+    r"|\btoday\b|\btonight\b|\bovernight\b|\byesterday\b|\bmorning\b|\bevening\b"
+    r"|\bafternoon\b|right now|just now|minutes? ago|hours? ago|o'clock|[ap]\.m\."
+    r"|\blamar\b|\bburnet\b|ben white|\briverside\b|\bcongress\b|cesar chavez"
+    r"|\bguadalupe\b|barton springs|\blakeline\b|\bparmer\b|\bslaughter\b"
+    r"|\boltorf\b|south congress|east 6th|dirty 6th",
+    re.IGNORECASE,
+)
+_DETAIL_PLACE_RE = re.compile(
+    r"\bdowntown\b|\baustin\b|\batx\b|\bcampus\b|\buniversity\b"
     r"|\bdomain\b|\bmueller\b|\brundberg\b|hyde park|\bzilker\b"
-    r"|south congress|\bsoco\b|east 6th|dirty 6th|cedar park",
+    r"|\bsoco\b|cedar park",
+    re.IGNORECASE,
+)
+_DETAIL_RE = re.compile(
+    _DETAIL_SPECIFIC_RE.pattern + r"|" + _DETAIL_PLACE_RE.pattern,
     re.IGNORECASE,
 )
 
@@ -213,23 +263,88 @@ _ROAD_CONTEXT_RE = re.compile(
 )
 
 
+# Benign-context guard for the highest-false-positive strong words. Each pair
+# is (strong-phrase family, benign context that excuses it). A guarded hit is
+# dropped UNLESS corroborated by a second, distinct strong phrase -- so
+# "Sunset shooting spots downtown?" is dropped while "Shots fired downtown"
+# (unambiguous phrase, no benign context) still alerts HIGH.
+_BENIGN_GUARDS: tuple[tuple[frozenset, re.Pattern], ...] = (
+    (
+        frozenset({"shooting", "shootings", "shooter", "shooters", "shootout"}),
+        re.compile(
+            r"\b(?:range|ranges|spot|spots|photo|photos|photography|stars?|"
+            r"scene|scenes|sunset|sunrise|film|filming|movie|movies)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        frozenset({"murder", "murdered"}),
+        re.compile(r"\bmyster(?:y|ies)\b", re.IGNORECASE),
+    ),
+    (
+        frozenset({"stabbing", "stabbed", "stab wound", "stab wounds", "knifed"}),
+        re.compile(r"\bpains?\b|\bpainful\b", re.IGNORECASE),
+    ),
+    (
+        frozenset({"swat"}),
+        re.compile(r"\bcostumes?\b|\bcosplay\b", re.IGNORECASE),
+    ),
+    (
+        frozenset({"robbery", "robbed", "armed robbery"}),
+        re.compile(
+            r"\btheme[ds]?\b|\bthemed\b|\bmovie\b|\bfilm\b|\bgame\b|\bbook\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        frozenset({"assault", "assaulted", "sexual assault", "aggravated assault"}),
+        re.compile(
+            r"\btaste\b|\bbuds?\b|\bflavou?rs?\b|\bmenu\b", re.IGNORECASE
+        ),
+    ),
+    (
+        frozenset({"hit and run", "hit-and-run"}),
+        re.compile(
+            r"\bmovie\b|\bfilm\b|\bshow\b|\bepisode\b|\bsong\b|\bbook\b"
+            r"|\bnovel\b|\bgame\b|\btv\b|\bnetflix\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+# Strong phrases so ambiguous they need a corroborating signal whenever ANY
+# topic-filter word is present (e.g. "Assault on my taste buds at this taco
+# truck": assault + taco). Unambiguous phrases (shots fired, body found,
+# suspect at large, ...) never take this path.
+_AMBIGUOUS_STRONG = frozenset({
+    "shooting", "shootings", "shooter", "shooters", "shootout",
+    "stabbing", "stabbed", "knifed",
+    "murder", "murdered", "homicide",
+    "swat", "assault", "assaulted",
+    "robbery", "robbed", "armed robbery",
+    "hit and run", "hit-and-run",
+})
+
+
+def _benign_blocked(strong: list[str], topic: list[str], text: str) -> bool:
+    """True when a strong hit is excused by benign context.
+
+    Corroboration (two or more distinct strong phrases) always overrides the
+    guard: a real report naming two independent signals still alerts.
+    """
+    if len(set(strong)) >= 2:
+        return False
+    hit = set(strong)
+    for family, benign_rx in _BENIGN_GUARDS:
+        if hit & family and benign_rx.search(text):
+            return True
+    if topic and hit and hit <= _AMBIGUOUS_STRONG:
+        return True
+    return False
+
+
 def _matched(keywords_and_res: tuple, text: str) -> list[str]:
     return sorted({kw for kw, rx in keywords_and_res if rx.search(text)})
-
-
-def reddit_broad_matches(title: str, body: str | None) -> tuple[bool, str]:
-    """Whole-word "matched anything at all" check over the broad keyword sets.
-
-    Uses REDDIT_HIGH_KW + REDDIT_MEDIUM_KW with word boundaries (never
-    ``kw in text``). Available for other code that needs a loose sweep; the
-    capture/alert decision in process_post goes through reddit_matches.
-    """
-    text = (title + " " + (body or "")).lower()
-    hits = _matched(_STRONG_RES, text) + [
-        kw for kw in _matched(_MEDIUM_RES, text)
-    ]
-    seen = sorted(set(hits))
-    return bool(seen), ",".join(seen)
 
 
 def reddit_matches(title: str, body: str | None) -> RedditVerdict:
@@ -238,8 +353,19 @@ def reddit_matches(title: str, body: str | None) -> RedditVerdict:
     Returns a RedditVerdict(captured, confidence, keywords) where confidence
     is "high" (store + may alert), "medium" (store, never alerts), or "none"
     (do not store). All matching is whole-word / whole-phrase via compiled
-    regex -- ``fire`` never matches ``fireworks``, ``cop`` never matches
-    ``copy``/``copper``/``helicopter``.
+    regex with separator-aware boundaries (``(?<![\\w\\-/])``): ``fire``
+    never matches ``fireworks``/``fire-works``, ``cop`` never matches
+    ``copy``/``copper``/``helicopter``/``heli-cop-ter``, and ``armed`` never
+    matches ``un-armed``.
+
+    Decision order: benign-context guard (an ambiguous strong word excused
+    by e.g. "range"/"mystery"/"pain"/"costume" is dropped unless a second
+    distinct strong phrase corroborates it) -> HIGH on any surviving strong
+    phrase (property-crime phrases such as "broke into" alert; generic
+    "stolen"/"theft"/"thief" only store as medium with concrete detail) ->
+    topic filter -> chatter guard (bare question with no SPECIFIC detail;
+    a city/neighbourhood name alone does not count) -> closure / pursuit /
+    medium+detail (medium, never alerts).
 
     NOTE: the return contract changed from ``(hi, matched, keywords)`` to a
     ``RedditVerdict`` named tuple; the sole caller (process_post) was updated
@@ -250,41 +376,53 @@ def reddit_matches(title: str, body: str | None) -> RedditVerdict:
 
     strong = _matched(_STRONG_RES, low)
     medium = _matched(_MEDIUM_RES, low)
+    prop = _matched(_PROPERTY_RES, low)
+    topic = _matched(_TOPIC_RES, low)
 
     def _kw(*groups: list[str]) -> str:
         return ",".join(sorted({kw for g in groups for kw in g}))
 
-    # A. strong signal required for HIGH; it overrides topic/chatter guards
-    # (a false negative is worse than a false positive for this tool).
+    # A0. benign-context guard: an ambiguous strong word excused by benign
+    # context is dropped unless corroborated (this check MUST run before the
+    # strong branch below, otherwise the topic filter is bypassed whenever a
+    # strong word is present).
+    if strong and _benign_blocked(strong, topic, low):
+        return RedditVerdict(False, "none", _kw(strong, medium, topic))
+
+    # A. strong signal required for HIGH; a surviving strong signal overrides
+    # topic/chatter guards (a false negative is worse than a false positive).
     if strong:
         return RedditVerdict(True, "high", _kw(strong, medium))
 
     # C. topic filter: everyday subjects are not crime reports.
-    topic = _matched(_TOPIC_RES, low)
     if topic:
         return RedditVerdict(False, "none", _kw(topic, medium))
 
-    # D. chatter guard: bare question, no concrete detail.
-    if _CHATTER_TITLE_RE.search(title or "") and not _DETAIL_RE.search(low):
-        return RedditVerdict(False, "none", _kw(medium) or "chatter")
+    # D. chatter guard: bare question with no SPECIFIC detail. A bare
+    # city/neighbourhood name ("Austin", "Rundberg") is not specific enough.
+    if _CHATTER_TITLE_RE.search(title or "") and not _DETAIL_SPECIFIC_RE.search(low):
+        return RedditVerdict(False, "none", _kw(medium, prop) or "chatter")
 
     # B. traffic closures with road context are stored as medium intel.
     if _CLOSURE_RE.search(low) and _ROAD_CONTEXT_RE.search(low):
-        return RedditVerdict(True, "medium", _kw(medium) or "closure")
+        return RedditVerdict(True, "medium", _kw(medium, prop) or "closure")
 
     # B. an active pursuit naming an agency + concrete detail pages as high.
     if (
         any(rx.search(low) for _, rx in _PURSUIT_RES)
         and any(rx.search(low) for _, rx in _AGENCY_RES)
-        and _DETAIL_RE.search(low)
+        and _DETAIL_SPECIFIC_RE.search(low)
     ):
         return RedditVerdict(True, "high", _kw(medium, ["pursuit"]))
 
-    # B. bare medium words alone are never enough: require concrete detail.
-    if medium and _DETAIL_RE.search(low):
-        return RedditVerdict(True, "medium", _kw(medium))
+    # B. bare medium words alone are never enough: require SPECIFIC detail
+    # (street, highway, corridor, number, intersection, or time) -- a bare
+    # city/neighbourhood name does not count. Generic theft words ("stolen",
+    # "theft", "thief") clear the same bar and are stored as medium.
+    if (medium or prop) and _DETAIL_SPECIFIC_RE.search(low):
+        return RedditVerdict(True, "medium", _kw(medium, prop))
 
-    return RedditVerdict(False, "none", _kw(medium))
+    return RedditVerdict(False, "none", _kw(medium, prop))
 
 
 def nominatim_geocode(query: str) -> tuple[float | None, float | None]:
