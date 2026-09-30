@@ -3,12 +3,27 @@
 
 Keeps /api/adsb/live fresh without feeder hardware. Token stays in
 /opt/battlebuddy/.env; nothing is printed.
+
+The ingest target must be the process that serves /api/adsb/live. Both endpoints
+read the same module-level _snapshot dict in modules/aircraft.py, which lives in
+one process's memory only. This used to point at port 5000 (a second Flask app,
+since retired), so the aircraft map was served by a process nothing else owned and
+the main app reported `stale: true, aircraft: []` forever. Point both at 9001.
 """
 import json
 import os
 import urllib.request
 
 ENV_FILE = "/opt/battlebuddy/.env"
+
+# Read at call time, not import time: main() calls load_env() first, so a
+# BB_ADSB_INGEST_URL set in .env actually takes effect. A module constant
+# evaluated at import would silently ignore it.
+_DEFAULT_INGEST_URL = "http://127.0.0.1:9001/api/adsb/ingest"
+
+
+def ingest_url() -> str:
+    return os.environ.get("BB_ADSB_INGEST_URL", _DEFAULT_INGEST_URL)
 
 
 def load_env(path: str) -> None:
@@ -37,7 +52,7 @@ def main() -> None:
         {"now": (snap.get("now") or 0) / 1000, "aircraft": snap.get("ac", [])}
     ).encode()
     req = urllib.request.Request(
-        "http://127.0.0.1:5000/api/adsb/ingest",
+        ingest_url(),
         data=payload,
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
     )
