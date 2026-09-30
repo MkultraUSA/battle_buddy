@@ -124,11 +124,16 @@ const AIRCRAFT_SVGS = {
 };
 
 function makeAircraftIcon(ac) {
-  const heading = Number.isFinite(Number(ac.track)) ? Number(ac.track) : 0;
   const kind = aircraftKind(ac);
   const priority = aircraftPriority(ac);
+  // Icons deliberately always point north. The 30-minute trail is what
+  // conveys which way an aircraft is actually going; rotating the glyph to
+  // `track` looked wrong rather than informative, because track is the ground
+  // track (null whenever an aircraft is slow or stationary) and for a
+  // helicopter it diverges from the nose direction, which is what an icon
+  // shape implies. See the trail below for the motion.
   return L.divIcon({
-    html: `<div class="aircraft-symbol ${kind} ${priority}" style="transform:rotate(${heading}deg)">${AIRCRAFT_SVGS[kind]}</div>`,
+    html: `<div class="aircraft-symbol ${kind} ${priority}">${AIRCRAFT_SVGS[kind]}</div>`,
     iconSize: [24,24], iconAnchor: [12,12], className: ''
   });
 }
