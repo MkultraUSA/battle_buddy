@@ -121,6 +121,39 @@ _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
 
 
+def _require_receive_token():
+    """Gate /receive. Fail closed -- this route is reachable from the internet.
+
+    Port 9001 binds 0.0.0.0 and nginx adds no auth, so before this gate anyone
+    could POST audio and have it transcribed, stored, run through llm_analyze,
+    turned into an incident by analyze_for_incident, and pushed to subscribers
+    by post_to_talk. That is an information-integrity problem for a product
+    whose whole value is trustworthy public-safety data.
+
+    Same shape as modules/aircraft.py's ADSB ingest: 503 when unconfigured so a
+    missing secret is loud rather than silently permissive, 401 on mismatch.
+    Read at request time, like aircraft.py, so tests can patch os.environ.
+
+    Note the backlog endpoints above are the opposite -- `if _backlog_token and
+    ...` fails OPEN when unset. Deliberately not changed here; worth its own fix.
+    """
+    expected = (os.environ.get("BB_RECEIVE_TOKEN") or "").strip()
+    if not expected:
+        print("[ingest] REFUSED — BB_RECEIVE_TOKEN is not configured", flush=True)
+        return jsonify({"error": "ingest is not configured"}), 503
+
+    supplied = request.headers.get("Authorization", "")
+    if supplied.startswith("Bearer "):
+        supplied = supplied[7:].strip()
+    if not supplied:
+        supplied = (request.headers.get("X-Receive-Token") or "").strip()
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        remote = request.headers.get("X-Real-IP") or request.remote_addr or "?"
+        print(f"[ingest] AUTH FAIL from {remote}", flush=True)
+        return jsonify({"error": "unauthorized"}), 401
+    return None
+
+
 def _get_backlog_metric_state() -> dict:
     with _backlog_lock:
         memory_pending = len(_backlog_queue)
@@ -360,6 +393,10 @@ def _should_backlog() -> bool:
 
 @app.route("/receive", methods=["POST"])
 def receive():
+    denied = _require_receive_token()
+    if denied is not None:
+        return denied
+
     data = request.get_json(force=True)
     if not data or "audio_b64" not in data:
         return jsonify({"error": "missing audio_b64"}), 400
