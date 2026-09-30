@@ -8,13 +8,11 @@ import urllib.request
 
 from modules.alerts import _check_commute_alerts
 from modules.config import (
-    _INCIDENT_TIMEOUT_DEFAULT,
     APD_SURGE_THRESHOLD,
     APD_SURGE_WINDOW_MIN,
     DB_PATH,
     HOLD_ENABLED,
     HOLD_RELEASE_MINUTES,
-    INCIDENT_TIMEOUT_MINUTES,
     MULTIAGENCY_WINDOW_MIN,
     PI1_OP25_URL,
     TALK_BASE,
@@ -22,7 +20,7 @@ from modules.config import (
     TALK_ROOMS,
     TALK_USER,
 )
-from modules.database import calls_since
+from modules.database import ACTIVE_INCIDENT_TIMEOUT_S_SQL, calls_since
 from modules.kg_integration import kg_write_incident
 from modules.talkgroups import (
     ABIA_OPS_TGIDS,
@@ -455,9 +453,16 @@ def analyze_for_incident(call: dict):
                                f"{call.get('tag','?')}: {(call.get('transcript') or '')[:80]}", ts)
 
     if not flags:
+        # loc_match was resolved under the lock and then released, and a
+        # concurrent cleanup pass can retire the row in between. Read it
+        # defensively: losing the hold is survivable, raising here would drop
+        # the call's processing entirely.
         if HOLD_ENABLED and loc_match:
-            _consider_hold(tgid, _active_incidents[loc_match]["itype"],
-                           escalation_stage=stage or _active_incidents[loc_match].get("escalation_stage"))
+            with _incident_lock:
+                held = _active_incidents.get(loc_match)
+            if held is not None:
+                _consider_hold(tgid, held["itype"],
+                               escalation_stage=stage or held.get("escalation_stage"))
         return
 
     # Use lowest priority number (highest urgency)
@@ -562,7 +567,7 @@ def _create_incident(itype: str, desc: str, call: dict, ts: float):
                     location=location, ts_start=ts)
     threading.Thread(target=create_deck_card, args=(inc_data,), daemon=True).start()
     threading.Thread(target=send_dm_alert,    args=(itype, desc, location, agencies_str, cat), daemon=True).start()
-    threading.Thread(target=post_banner,      args=(itype, location, agencies_str), daemon=True).start()
+    threading.Thread(target=post_banner,      args=(itype, location, agencies_str, inc_id), daemon=True).start()
     if call.get("location") and call.get("lat") is not None and call.get("lon") is not None:
         threading.Thread(target=_atak_post_marker,
                          args=(inc_id, call["lat"], call["lon"], itype, call.get("location"), desc),
@@ -596,31 +601,122 @@ def _update_incident(inc_id: int, call: dict, ts: float, desc: str, new_itype: s
     print(f"[incident] UPD  {stored_itype} (id={inc_id}): {desc}", flush=True)
 
 
+def clear_stale_incidents(now: float | None = None) -> list[int]:
+    """Close every active incident row whose own per-type timeout has expired.
+
+    The database is the authority on incident state, not the in-memory
+    ``_active_incidents`` dict. Several writers insert a row with
+    ``status='active'`` without registering it in that dict -- the ADS-B
+    air-asset and orbit pollers, and the APD press-release poller all do --
+    so a cleanup pass driven by the dict alone can never clear their rows and
+    they accumulate as permanent 'active' rows forever.
+
+    Staleness is judged per row from its own itype, using the same
+    ``ACTIVE_INCIDENT_TIMEOUT_S_SQL`` fragment the published population and
+    the exported gauges already read, so the writer that closes a row and the
+    readers that decide whether to show it cannot drift apart.
+
+    ``_incident_lock`` is held for the whole pass. The engine updates
+    ``ts_updated`` from ``_update_incident`` while holding that same lock, so
+    releasing it between the SELECT and the UPDATE would let a genuinely live
+    incident be matched, refreshed and then cleared out from under the
+    operator. The staleness predicate is repeated in the UPDATE as well, so a
+    row that somehow changed underneath us is not closed.
+
+    Returns ``(id, itype)`` for every row closed, so a caller can retract the
+    banner that specific incident posted.
+    """
+    now = time.time() if now is None else now
+    with _incident_lock:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            stale = conn.execute(
+                f"SELECT id, itype, ts_updated FROM incidents WHERE status='active' "
+                f"AND ts_updated < (? - {ACTIVE_INCIDENT_TIMEOUT_S_SQL})",
+                (now,),
+            ).fetchall()
+            if not stale:
+                return []
+            # A row's real clear time is when its own timeout expired, not when
+            # this pass happened to run. For a row that went stale while the
+            # service was down that can be days ago, and recording the sweep
+            # time would stretch the incident across the whole outage.
+            conn.executemany(
+                "UPDATE incidents SET status='cleared', ts_cleared=? WHERE id=? "
+                f"AND status='active' "
+                f"AND ts_updated < (? - {ACTIVE_INCIDENT_TIMEOUT_S_SQL})",
+                [
+                    (
+                        min(now, ts_updated + _timeout_seconds(itype)),
+                        inc_id,
+                        now,
+                    )
+                    for inc_id, itype, ts_updated in stale
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        for inc_id, _, _ in stale:
+            _active_incidents.pop(inc_id, None)
+        for inc_id, itype, _ in stale:
+            print(f"[incident] CLEAR {itype} (id={inc_id}) — no activity", flush=True)
+            _atak_clear_marker(inc_id)
+    return [(inc_id, itype) for inc_id, itype, _ in stale]
+
+
+def _timeout_seconds(itype: str | None) -> float:
+    """The same per-type timeout the SQL CASE and the engine agree on."""
+    from modules.config import _INCIDENT_TIMEOUT_DEFAULT, INCIDENT_TIMEOUT_MINUTES
+    return INCIDENT_TIMEOUT_MINUTES.get(itype, _INCIDENT_TIMEOUT_DEFAULT) * 60
+
+
+def _itypes_left_behind(before: set[str], after: set[str]) -> list[str]:
+    """Which incident types lost every in-memory incident in this pass.
+
+    Kept for logging and as a fallback for banners posted before ownership was
+    recorded; the banner itself is now retracted by incident id, which is
+    exact. A type-level rule is only safe when every other banner type is also
+    empty, which is not something this pass can know.
+    """
+    return sorted(before - after)
+
+
 def incident_cleanup_thread():
     """Mark incidents as cleared when they've had no updates for their type's timeout."""
     from modules.alerts import clear_banner
     while True:
         time.sleep(60)
-        now = time.time()
-        with _incident_lock:
-            to_clear = [
-                iid for iid, inc in _active_incidents.items()
-                if now - inc["ts_updated"] >
-                   INCIDENT_TIMEOUT_MINUTES.get(inc["itype"], _INCIDENT_TIMEOUT_DEFAULT) * 60
-            ]
-            for iid in to_clear:
-                itype = _active_incidents[iid]["itype"]
-                conn = sqlite3.connect(DB_PATH)
-                conn.execute(
-                    "UPDATE incidents SET status='cleared', ts_cleared=? WHERE id=?",
-                    (time.time(), iid)
+        try:
+            now = time.time()
+            with _incident_lock:
+                # itypes with an incident before this pass runs, so we can tell
+                # which of them are left with nothing afterwards.
+                before = {inc["itype"] for inc in _active_incidents.values()}
+            cleared = clear_stale_incidents(now)
+            if cleared:
+                print(
+                    f"[incident] cleanup pass closed {len(cleared)} stale row(s): "
+                    f"{', '.join(f'{i} {t}' for i, t in cleared)}",
+                    flush=True,
                 )
-                conn.commit()
-                conn.close()
-                del _active_incidents[iid]
-                print(f"[incident] CLEAR {itype} (id={iid}) — no activity", flush=True)
-                threading.Thread(target=clear_banner,        args=(itype,),    daemon=True).start()
-                threading.Thread(target=_atak_clear_marker,  args=(iid,),      daemon=True).start()
+            with _incident_lock:
+                after = {inc["itype"] for inc in _active_incidents.values()}
+            # Retract by incident id, so a banner posted by an incident that is
+            # still live (or by a different type entirely) is left alone.
+            for inc_id, itype in cleared:
+                threading.Thread(
+                    target=clear_banner, args=(itype, inc_id), daemon=True
+                ).start()
+            for itype in _itypes_left_behind(before, after):
+                # A banner with no recorded owner predates ownership tracking;
+                # fall back to the type-level rule for it.
+                threading.Thread(
+                    target=clear_banner, args=(itype,), daemon=True
+                ).start()
+        except Exception as e:
+            print(f"[incident] cleanup error: {e}", flush=True)
 
 
 # ---------------------------------------------------------------------------
