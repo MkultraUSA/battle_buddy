@@ -2282,10 +2282,26 @@ setInterval(pollAdsb, 30000);
 
 
 def _load_active_incidents_from_db():
-    """On startup, reload active incidents into _active_incidents so _release_stale can close them.
-    Any incident older than 4 hours is closed immediately as stale."""
-    MAX_AGE = 4 * 3600  # close anything untouched for >4 hours
+    """On startup, close any active row past its own per-type timeout, and
+    reload the survivors into _active_incidents so the hold and escalation
+    logic still knows about them.
+
+    The database is the authority: a row that is stale by the same
+    per-itype rule the published population and the gauges use is closed
+    here, whether or not the process that created it is still running. That
+    also clears rows no in-memory writer ever registered -- the ADS-B and
+    APD press-release pollers both insert active rows without adding them to
+    _active_incidents, so a purely in-memory lifecycle can never retire them.
+    """
     now = time.time()
+    cleared = clear_stale_incidents(now)
+    if cleared:
+        print(
+            f"[incident] startup cleanup: closed {len(cleared)} stale incident(s): "
+            f"{', '.join(f'{i} {t}' for i, t in cleared)}",
+            flush=True,
+        )
+
     conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
@@ -2293,36 +2309,21 @@ def _load_active_incidents_from_db():
     ).fetchall()
     conn.close()
 
-    to_close_now = []
     loaded = 0
     for row in rows:
         inc = dict(row)
         iid = inc['id']
-        age = now - inc['ts_updated']
-        if age > MAX_AGE:
-            to_close_now.append(iid)
-        else:
-            with _incident_lock:
-                _active_incidents[iid] = {
-                    'itype':            inc.get('itype', 'UNKNOWN'),
-                    'ts_updated':       inc['ts_updated'],
-                    'agencies':         set(json.loads(inc['agencies']) if inc.get('agencies') else []),
-                    'tgids':            set(json.loads(inc['tgids'])    if inc.get('tgids')    else []),
-                    'lat':              inc.get('lat'),
-                    'lon':              inc.get('lon'),
-                    'escalation_stage': None,
-                }
-            loaded += 1
-
-    if to_close_now:
-        conn = sqlite3.connect(DB_PATH, timeout=5.0)
-        conn.executemany(
-            "UPDATE incidents SET status='cleared', ts_cleared=? WHERE id=?",
-            [(now, iid) for iid in to_close_now]
-        )
-        conn.commit()
-        conn.close()
-        print(f"[incident] startup cleanup: closed {len(to_close_now)} stale incident(s) (>4h old)", flush=True)
+        with _incident_lock:
+            _active_incidents[iid] = {
+                'itype':            inc.get('itype', 'UNKNOWN'),
+                'ts_updated':       inc['ts_updated'],
+                'agencies':         set(json.loads(inc['agencies']) if inc.get('agencies') else []),
+                'tgids':            set(json.loads(inc['tgids'])    if inc.get('tgids')    else []),
+                'lat':              inc.get('lat'),
+                'lon':              inc.get('lon'),
+                'escalation_stage': None,
+            }
+        loaded += 1
 
     if loaded:
         print(f"[incident] startup: loaded {loaded} active incident(s) into memory for timeout tracking", flush=True)

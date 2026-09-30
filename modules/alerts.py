@@ -39,6 +39,9 @@ BANNER_ITYPES = {
 }
 
 _active_banner_id: str | None = None
+# Which incident posted the current banner, so retiring one incident cannot
+# tear down a banner that a different, still-live incident owns.
+_active_banner_incident_id: int | None = None
 _banner_lock = threading.Lock()
 
 
@@ -58,9 +61,9 @@ def _banner_api(path: str = "", data: dict | None = None, method: str | None = N
     return json.loads(resp.read())
 
 
-def post_banner(itype: str, location: str | None, agencies: str):
+def post_banner(itype: str, location: str | None, agencies: str, incident_id: int | None = None):
     """Post a site-wide breaking banner for serious incidents."""
-    global _active_banner_id
+    global _active_banner_id, _active_banner_incident_id
     if itype not in BANNER_ITYPES:
         return
     loc_str = f" @ {location}" if location else ""
@@ -77,22 +80,33 @@ def post_banner(itype: str, location: str | None, agencies: str):
                 "targetAppMode": "all", "targetApps": [],
             })
             _active_banner_id = result.get("id")
+            _active_banner_incident_id = incident_id
             print(f"[banner] posted: {message}", flush=True)
         except Exception as e:
             print(f"[banner] failed: {e}", flush=True)
 
 
-def clear_banner(itype: str):
-    """Remove the site-wide banner when an incident clears."""
-    global _active_banner_id
+def clear_banner(itype: str, incident_id: int | None = None):
+    """Remove the site-wide banner when the incident that posted it clears.
+
+    There is exactly one site-wide banner, so ownership has to be tracked or a
+    newly created incident can take the banner down when an unrelated one is
+    retired. Pass the clearing incident's id to retract only that incident's own
+    banner; omit it to force the banner down regardless (used when there is no
+    banner owner recorded).
+    """
+    global _active_banner_id, _active_banner_incident_id
     if itype not in BANNER_ITYPES:
         return
     with _banner_lock:
-        if _active_banner_id:
+        if _active_banner_id and (
+            incident_id is None or _active_banner_incident_id == incident_id
+        ):
             try:
                 _banner_api(_active_banner_id, method="DELETE")
                 print(f"[banner] cleared for {itype}", flush=True)
                 _active_banner_id = None
+                _active_banner_incident_id = None
             except Exception as e:
                 print(f"[banner] clear failed: {e}", flush=True)
 
