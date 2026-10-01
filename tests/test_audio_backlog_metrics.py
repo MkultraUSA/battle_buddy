@@ -54,6 +54,17 @@ _CHILD = textwrap.dedent(
                 "id": f"seed-{_i}", "created_ts": 1.0, "node": "pi5",
             }), encoding="utf-8")
 
+    # Record a known set of outcomes before scraping. A Prometheus family with
+    # no samples emits only HELP/TYPE and no value line, so "starts at zero" is
+    # not directly observable -- the counter has to actually be driven to be
+    # visible. Counts live in this child process only, so nothing leaks.
+    _record_ingest = audio_receiver._record_ingest_outcome
+    for _ in range(int(os.environ.get("TEST_SEED_INGEST", "0"))):
+        _record_ingest("throttled", "pi5")
+    if os.environ.get("TEST_SEED_INGEST"):
+        _record_ingest("queue_full", "broadcastify")
+        _record_ingest("backlogged", "pi5")
+
     if os.environ["TEST_SCAN_MODE"] == "unreadable":
         with mock.patch.object(
             raw_audio_queue.Path,
@@ -71,13 +82,19 @@ _CHILD = textwrap.dedent(
     resp = audio_receiver.app.test_client().get("/metrics")
     scraped = {}
     for line in resp.get_data(as_text=True).splitlines():
-        if line.startswith("battlebuddy_backlog_"):
+        if line.startswith("battlebuddy_backlog_") or line.startswith("battlebuddy_ingest_"):
+            # Labelled samples keep their labels in the first field, so key on
+            # name+labels rather than the bare metric name.
             scraped[line.split(" ")[0]] = float(line.rsplit(" ", 1)[1])
     print(json.dumps({
         "state": state,
         "metrics": audio_receiver._backlog_file_metric_specs(state),
         "scraped": scraped,
         "scrape_status": resp.status_code,
+        "ingest_help": chr(10).join(
+            l for l in resp.get_data(as_text=True).splitlines()
+            if l.startswith("# HELP battlebuddy_ingest_outcomes")
+        ),
     }))
     """
 )
@@ -146,6 +163,7 @@ class AudioBacklogMetricsTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.base = Path(self.tmp.name)
         self.root = self.base / "raw_audio_queue"
+        self.seed_ingest = 0
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -161,6 +179,7 @@ class AudioBacklogMetricsTests(unittest.TestCase):
             "SMOKE_TEST_BASE_URL": "",
             "TEST_MEMORY_DEPTH": str(memory_depth),
             "TEST_SCAN_MODE": scan_mode,
+            "TEST_SEED_INGEST": str(self.seed_ingest),
         })
         result = subprocess.run(
             [sys.executable, "-c", _CHILD],
@@ -257,6 +276,49 @@ class AudioBacklogMetricsTests(unittest.TestCase):
             "ops_verify gates on it and a Grafana panel graphs it, so a constant "
             "here means a permanently blind alert",
         )
+
+    def test_ingest_outcome_counter_reports_shed_and_queued(self):
+        """Shed audio must be visible, or overload loss cannot be measured.
+
+        The backlog's whole claim is that clips get queued instead of dropped.
+        That is only falsifiable if the dropping is counted -- and before this,
+        discarded audio left no trace anywhere: it never reached the database,
+        so a shed hour looked exactly like a busy one. That is how the backlog sat
+        at 92 clips shedding 35% of audio with nothing in the data to say so.
+        """
+        self.seed_ingest = 2
+        payload = self._run(memory_depth=0)
+
+        self.assertEqual(payload["scrape_status"], 200)
+        self.assertIn(
+            "LOSSES", payload["ingest_help"],
+            "the help text must say which outcomes are losses, so the metric "
+            "cannot be misread as a throughput count",
+        )
+        s = payload["scraped"]
+        # prometheus_client appends _total to a CounterMetricFamily and emits
+        # labels in sorted order, hence node= before reason=.
+        self.assertEqual(
+            2.0, s['battlebuddy_ingest_outcomes_total{node="pi5",reason="throttled"}'],
+            "shed audio must be counted, not dropped silently",
+        )
+        self.assertEqual(
+            1.0, s['battlebuddy_ingest_outcomes_total{node="broadcastify",reason="queue_full"}'],
+        )
+        self.assertEqual(
+            1.0, s['battlebuddy_ingest_outcomes_total{node="pi5",reason="backlogged"}'],
+            "audio safely queued must be counted separately from audio lost",
+        )
+
+    def test_ingest_outcomes_absent_before_anything_is_shed(self):
+        """A fresh process emits the HELP block but no value lines.
+
+        Prometheus omits a family with zero samples, so this asserts the family
+        is registered and documented rather than inventing a zero.
+        """
+        payload = self._run(memory_depth=0)
+        self.assertEqual(payload["scrape_status"], 200)
+        self.assertIn("battlebuddy_ingest_outcomes", payload["ingest_help"])
 
     def test_missing_root_sets_scan_error_without_creating_it(self):
         # depth 0 so the child does not create the root it is meant to be absent
