@@ -233,6 +233,85 @@ class TestRatioGatesNeedADenominator(unittest.TestCase):
         self.assertTrue(any("success ratio" in r for r in reasons), reasons)
 
 
+class TestNotifyTransitions(unittest.TestCase):
+    """The behaviour the operator actually relies on.
+
+    "It tells me when it gets bad and when it recovers." That transition logic
+    lived inline in main() and had no test whatsoever -- it was simply carried
+    over in the port. This pins every transition.
+    """
+
+    NOW = 1_000_000
+    REPEAT = watch.REPEAT_SECS
+
+    def test_stays_quiet_while_healthy(self):
+        self.assertEqual(
+            (False, False), watch.decide_notify("ok", "ok", self.NOW - 10, self.NOW)
+        )
+
+    def test_new_fault_notifies_immediately(self):
+        # 10s since the last message, far inside the repeat interval: a NEW fault
+        # must not wait an hour to be reported.
+        self.assertEqual(
+            (True, False), watch.decide_notify("warning", "ok", self.NOW - 10, self.NOW)
+        )
+
+    def test_same_fault_is_deduped_inside_the_repeat_window(self):
+        self.assertEqual(
+            (False, False), watch.decide_notify("warning", "warning", self.NOW - 10, self.NOW)
+        )
+
+    def test_persistent_fault_repeats_after_the_interval(self):
+        self.assertEqual(
+            (True, False),
+            watch.decide_notify("warning", "warning", self.NOW - self.REPEAT - 1, self.NOW),
+            "an unresolved fault must keep reminding, not go silent for a day",
+        )
+
+    def test_severity_change_notifies(self):
+        self.assertEqual(
+            (True, False),
+            watch.decide_notify("critical", "warning", self.NOW - 10, self.NOW),
+            "warning -> critical is new information and must be sent",
+        )
+
+    def test_recovery_notifies_and_is_labelled(self):
+        self.assertEqual(
+            (True, True), watch.decide_notify("ok", "warning", self.NOW - 10, self.NOW)
+        )
+        self.assertEqual(
+            (True, True), watch.decide_notify("ok", "critical", self.NOW - 10, self.NOW)
+        )
+
+    def test_recovery_does_not_repeat_every_run(self):
+        """The classic alert bug: 'recovered' every five minutes, forever."""
+        self.assertEqual(
+            (False, False),
+            watch.decide_notify("ok", "ok", self.NOW - 10, self.NOW),
+            "once recovered, subsequent healthy runs must be silent",
+        )
+
+    def test_first_ever_run_on_a_healthy_system_is_silent(self):
+        self.assertEqual(
+            (False, False), watch.decide_notify("ok", "unknown", 0, self.NOW)
+        )
+
+    def test_first_ever_run_against_a_fault_notifies(self):
+        self.assertEqual(
+            (True, False), watch.decide_notify("critical", "unknown", 0, self.NOW)
+        )
+
+    def test_message_is_labelled_recovered(self):
+        """The label itself is what tells them the outage is over."""
+        st = watch.build_status(
+            watch.MetricReader(watch.parse_metrics(_body()))
+        )
+        msg = watch.summarize("ok", [], st, "")
+        recovered = "Battle Buddy transcription watch: RECOVERED\n" + msg
+        self.assertIn("RECOVERED", recovered)
+        self.assertIn("dashboard:", recovered)
+
+
 class TestIngestOutcomes(unittest.TestCase):
     def test_shed_audio_is_counted_and_alerts_once_meaningful(self):
         reader = watch.MetricReader(watch.parse_metrics(
