@@ -411,6 +411,20 @@ _llm_call_times: list      = []
 _llm_rate_lock             = threading.Lock()
 _llm_backoff_until         = 0.0
 _LLM_MIN_TRANSCRIPT        = 50
+# Whisper's stock output on non-speech. Measured over 3 days of production:
+# "Thank you." x396, "You" x288, "." x257, "10-4." x65, dot-runs x52. Every one
+# of the 191 calls an LLM described as garbled/unintelligible in 24h was
+# classified ROUTINE pri=NONE -- none produced a real incident. So a marker
+# match here costs no detection and saves the call.
+_LLM_NONSPEECH_PHRASES = frozenset({
+    "thank you", "thank you very much", "go ahead", "uh huh", "all right",
+    "alright", "bye now", "so long",
+})
+_LLM_NONSPEECH_SINGLE = frozenset({
+    "thank", "thanks", "you", "bye", "okay", "ok", "never", "good", "careful",
+    "sure", "yeah", "yes", "no", "oh", "um", "uh", "hmm", "mm", "what", "right",
+})
+_LLM_MIN_NONSPEECH_RATIO = 0.9   # share of the utterance that must be markers
 _LLM_MIN_DURATION          = 2.5
 _LLM_BACKOFF_SECS          = 600
 _LLM_ROUTINE_STREAK        = 3
@@ -494,6 +508,29 @@ def _per_call_tgid_restrictions(tgid: int) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _looks_like_nonspeech(transcript: str) -> bool:
+    """True when a transcript is Whisper's stock filler rather than speech.
+
+    Three ways to qualify, in order of confidence:
+      1. nothing but punctuation/digits -- "." and ". . ." are the classic
+         output on a squelch tail;
+      2. the whole utterance is a stock phrase ("thank you.", "go ahead.");
+      3. nearly every token is a stock filler word.
+
+    Deliberately conservative. Real radio chatter rarely qualifies, and a false
+    negative only costs one call we did not need to make -- whereas a false
+    positive would silently drop an incident.
+    """
+    norm = " ".join(re.sub(r"[^a-z' ]+", " ", (transcript or "").lower()).split())
+    if not norm:
+        return True                      # punctuation / digits only
+    if norm in _LLM_NONSPEECH_PHRASES:
+        return True
+    words = norm.split()
+    hits = sum(1 for w in words if w in _LLM_NONSPEECH_SINGLE)
+    return hits >= max(1, int(len(words) * _LLM_MIN_NONSPEECH_RATIO))
+
+
 def llm_analyze(call: dict, recent_calls_list: list):
     """Analyze a radio call for incident detection using OpenRouter LLM.
     Returns a dict with incident_type, priority, should_hold, description,
@@ -507,6 +544,8 @@ def llm_analyze(call: dict, recent_calls_list: list):
     transcript = call.get("transcript") or ""
     if not transcript or len(transcript) < _LLM_MIN_TRANSCRIPT:
         return None
+    if _looks_like_nonspeech(transcript):
+        return None                      # Whisper filler, not speech
     if call.get("duration", 99.0) < _LLM_MIN_DURATION:
         return None
     tgid = call.get("tgid", 0)
