@@ -82,7 +82,9 @@ _FABRICATED = {
 }
 
 
-def _run(route: str, *, token=None, body=None, headers=None):
+def _run(route: str, *, token=None, body=None, headers=None,
+         queue_dir=None, skip_seed=False, seeded_id=None,
+         stub_side_effects=False, fail_insert=False):
     """Run one scenario in a clean interpreter; returns the child's JSON result."""
     if body is None:
         body = dict(_FABRICATED) if route == "complete" else {}
@@ -96,6 +98,13 @@ def _run(route: str, *, token=None, body=None, headers=None):
                     "token": token,
                     "body": body,
                     "headers": headers or {},
+                    # Share one store across two child runs to simulate a
+                    # restart; each run is a separate interpreter.
+                    "queue_dir": str(queue_dir) if queue_dir else None,
+                    "skip_seed": skip_seed,
+                    "seeded_id": seeded_id,
+                    "stub_side_effects": stub_side_effects,
+                    "fail_insert": fail_insert,
                 }
             ),
             encoding="utf-8",
@@ -124,27 +133,41 @@ class TestBacklogEndpointsRefuseUnauthenticatedCallers(_BacklogAuthzCase):
     def test_unset_secret_refuses_claim(self):
         r = _run("claim", token=None)
         self.assertEqual(503, r["status"])
-        self.assertEqual(1, r["queue_depth"], "refused claim must not drain the queue")
+        # Claim takes a lease rather than popping, so depth alone cannot
+        # distinguish refused from successful. What matters is that nothing was
+        # leased: an unauthorised caller must leave the clip untouched.
+        self.assertIsNone(r["lease_worker_id"], "refused claim must not take a lease")
+        self.assertEqual(1, r["queue_depth"])
 
     def test_unset_secret_refuses_complete(self):
         r = _run("complete", token=None)
         self.assertEqual(503, r["status"])
         self.assertEqual(0, r["calls_rows"], "refused complete must not write a call")
+        self.assertTrue(r["seed_present"], "refused complete must not delete queued audio")
 
     def test_missing_token_refuses_claim(self):
         r = _run("claim", token="s" * 64, body={})
         self.assertEqual(401, r["status"])
+        self.assertIsNone(r["lease_worker_id"])
         self.assertEqual(1, r["queue_depth"])
 
     def test_missing_token_refuses_complete(self):
         r = _run("complete", token="s" * 64, body={})
         self.assertEqual(401, r["status"])
         self.assertEqual(0, r["calls_rows"])
+        self.assertTrue(r["seed_present"], "refused complete must not delete queued audio")
 
     def test_wrong_token_refuses_complete(self):
         r = _run("complete", token="s" * 64, body={"token": "wrong"})
         self.assertEqual(401, r["status"])
         self.assertEqual(0, r["calls_rows"], "a wrong token must not fabricate a call")
+        self.assertEqual(1, r["queue_depth"], "refused complete must not discard the clip")
+        # Depth alone is not enough: a refused request that wrongly removed the
+        # item and then reported a clean depth would pass the check above.
+        self.assertTrue(
+            r["seed_present"],
+            "an unauthenticated complete must not delete queued audio",
+        )
 
     def test_non_ascii_token_is_401_not_500(self):
         """compare_digest raises TypeError on a non-ASCII str.
@@ -162,7 +185,30 @@ class TestBacklogEndpointsAcceptAValidWorker(_BacklogAuthzCase):
         r = _run("claim", token="s" * 64, body={"token": "s" * 64})
         self.assertEqual(200, r["status"])
         self.assertEqual("ok", (r["body"] or {}).get("status"))
-        self.assertEqual(0, r["queue_depth"], "an authorised claim does drain the queue")
+        item = (r["body"] or {}).get("item") or {}
+        self.assertEqual(12345, item.get("tgid"))
+        self.assertEqual("seeding", item.get("tag"))
+        # The clip is leased, not removed: if the worker dies the lease expires
+        # and the audio comes back instead of being lost.
+        self.assertIsNotNone(r["lease_worker_id"], "an authorised claim must take a lease")
+        self.assertEqual(1, r["queue_depth"])
+
+    def test_empty_transcript_discards_the_clip(self):
+        """A poison item must not block the queue forever.
+
+        The old in-memory queue popped on claim, so an empty transcript consumed
+        the item. Under a lease it would expire, be re-claimed, and loop --
+        starving every clip behind it. `complete` with an empty transcript must
+        therefore remove the item.
+        """
+        r = _run(
+            "complete",
+            token="s" * 64,
+            body={"token": "s" * 64, "item_id": "SEEDED_ID", "transcript": ""},
+        )
+        self.assertEqual(200, r["status"])
+        self.assertEqual(0, r["queue_depth"], "empty transcript must clear the item")
+        self.assertFalse(r["seed_present"], "the clip and its metadata must both be gone")
 
     def test_valid_token_via_bearer_reaches_complete(self):
         # Empty transcript: the handler returns early as "empty", so the test
@@ -174,6 +220,134 @@ class TestBacklogEndpointsAcceptAValidWorker(_BacklogAuthzCase):
             headers={"Authorization": "Bearer " + "s" * 64},
         )
         self.assertEqual(200, r["status"])
+
+
+class TestBacklogCompletionLifecycle(_BacklogAuthzCase):
+    """A completed clip must leave the queue, and only after it is stored.
+
+    Mutation testing showed the success path was unpinned: deleting the
+    `remove_queued_audio` call after a successful `complete` passed every test,
+    because nothing drove a real processed result. That bug re-claims and
+    re-transcribes the same audio forever.
+    """
+
+    TOKEN = "s" * 64
+
+    def test_failed_complete_keeps_the_clip_for_retry(self):
+        """Ordering matters: remove only after the transcript is stored.
+
+        If the clip is unlinked first, a transient failure -- a locked database,
+        a Talk outage -- silently destroys audio that upstream recorders already
+        discarded on our 202. That is the C5 data-loss problem reproduced inside
+        the fix for it.
+        """
+        r = _run(
+            "complete",
+            token=self.TOKEN,
+            body={
+                "token": self.TOKEN,
+                "item_id": "SEEDED_ID",
+                "transcript": "Engine 12 responding to a structure fire.",
+                "tgid": 12345,
+                "tag": "seeding",
+                "duration": 4.0,
+            },
+            stub_side_effects=True,
+            fail_insert=True,
+        )
+        self.assertEqual(500, r["status"])
+        self.assertEqual(0, r["calls_rows"])
+        self.assertTrue(
+            r["seed_present"],
+            "a failed complete must retain the clip; its lease will expire and "
+            "it becomes claimable again",
+        )
+
+    def test_successful_complete_stores_the_call_and_clears_the_clip(self):
+        r = _run(
+            "complete",
+            token=self.TOKEN,
+            body={
+                "token": self.TOKEN,
+                "item_id": "SEEDED_ID",
+                "transcript": "Engine 12 responding to a structure fire on Barton Springs.",
+                "tgid": 12345,
+                "tag": "seeding",
+                "duration": 4.0,
+            },
+            stub_side_effects=True,
+        )
+        self.assertEqual(200, r["status"])
+        self.assertEqual("processed", (r["body"] or {}).get("status"))
+        self.assertEqual(1, r["calls_rows"], "the transcript must be durably stored")
+        self.assertFalse(
+            r["seed_present"],
+            "a completed clip must be removed, or it is re-claimed and "
+            "re-transcribed forever",
+        )
+        self.assertEqual(0, r["queue_depth"])
+
+
+class TestBacklogSurvivesRestart(_BacklogAuthzCase):
+    """The whole point of the change: a queued clip outlives the process.
+
+    Before this, the remote-worker queue was an in-memory deque, so every clip
+    waiting for a worker was lost the moment the service restarted -- which is
+    exactly when a backlog is most likely to be under pressure.
+
+    Two child runs against one shared queue directory is a restart: separate
+    interpreters, no shared memory, so a clip that is still claimable in the
+    second one demonstrably came off disk. Asserts the audio bytes survive too,
+    not just the metadata, and that a discarded clip does not reappear.
+    """
+
+    TOKEN = "s" * 64
+
+    def test_queued_clip_is_claimable_after_a_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            queue_dir = Path(tmp) / "queue"
+
+            first = _run("claim", token=None, queue_dir=queue_dir)
+            # The seeded clip exists in a fresh interpreter...
+            self.assertEqual(503, first["status"])
+            self.assertEqual(1, first["queue_depth"])
+
+            # ...and a brand new interpreter can still claim it.
+            second = _run(
+                "claim", token=self.TOKEN, body={"token": self.TOKEN},
+                queue_dir=queue_dir, skip_seed=True,
+                seeded_id=first["seeded_id"],
+            )
+            self.assertEqual(200, second["status"])
+            self.assertEqual("ok", (second["body"] or {}).get("status"))
+            item = (second["body"] or {}).get("item") or {}
+            self.assertEqual(first["seeded_id"], item.get("id"))
+            self.assertEqual("seeding", item.get("tag"))
+            self.assertTrue(item.get("audio_b64"))
+            import base64 as _b64
+            self.assertEqual(b"HELLO", _b64.b64decode(item["audio_b64"]))
+
+    def test_completed_clip_is_gone_after_a_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            queue_dir = Path(tmp) / "queue"
+            first = _run("claim", token=None, queue_dir=queue_dir)
+            self.assertEqual(1, first["queue_depth"])
+
+            _run(
+                "complete", token=self.TOKEN,
+                body={"token": self.TOKEN, "item_id": first["seeded_id"],
+                      "transcript": ""},
+                queue_dir=queue_dir, skip_seed=True,
+            )
+            after = _run(
+                "claim", token=self.TOKEN, body={"token": self.TOKEN},
+                queue_dir=queue_dir, skip_seed=True,
+            )
+            self.assertEqual(200, after["status"])
+            self.assertEqual(
+                "no_work", (after["body"] or {}).get("status"),
+                "a discarded clip must not reappear after a restart",
+            )
 
 
 class TestBacklogTokenIsNeverEchoed(_BacklogAuthzCase):

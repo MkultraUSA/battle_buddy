@@ -60,6 +60,19 @@ def main() -> None:
         os.environ["TIPS_UPLOAD_DIR"] = str(Path(tmp) / "tips")
         os.environ["TGID_TSV"] = str(Path(tmp) / "no-such-tags.tsv")
 
+        # The backlog is file-backed now, and raw_audio_queue reads its root at
+        # import time. Without this the child would seed, claim and delete items
+        # in the REAL queue directory -- on the VPS that is
+        # /opt/battlebuddy/raw_audio_queue. Point it inside the temp dir.
+        #
+        # A caller may supply queue_dir to share one store across two child runs,
+        # which is how the restart-survival test proves durability: two
+        # interpreters, one queue directory.
+        _qdir = scenario.get("queue_dir")
+        os.environ["BB_RAW_AUDIO_QUEUE_DIR"] = (
+            str(_qdir) if _qdir else str(Path(tmp) / "raw_audio_queue")
+        )
+
         token = scenario.get("token")
         if token is None:
             os.environ.pop("BB_BACKLOG_AGENT_TOKEN", None)
@@ -71,19 +84,16 @@ def main() -> None:
 
         init_db()
 
-        # Seed one real queue item so `claim` has work to hand out and so the
-        # refusal cases prove the queue was not drained.
-        with audio_receiver._backlog_lock:
-            audio_receiver._backlog_queue.append(
-                {
-                    "id": "seed-item",
-                    "audio_b64": "SEVMTG8=",
-                    "tgid": 12345,
-                    "tag": "seeding",
-                    "node": "pie3",
-                    "duration": 1.0,
-                    "received_ts": 1.0,
-                }
+        # Seed one real durable queue item so `claim` has work to hand out and
+        # so the refusal cases prove the store was neither drained nor deleted.
+        from modules.raw_audio_queue import enqueue_raw_audio
+
+        _skip_seed = scenario.get("skip_seed")
+        seeded_id = scenario.get("seeded_id") or ""
+        if not _skip_seed:
+            seeded_id = enqueue_raw_audio(
+                ts=1.0, tgid=12345, tag="seeding", category="Test", node="pie3",
+                duration=1.0, wav_bytes=b"HELLO",
             )
 
         client = audio_receiver.app.test_client()
@@ -92,10 +102,34 @@ def main() -> None:
             if value is not None:
                 headers[name] = value
 
+        # The success path of /complete runs llm_analyze (spends an LLM call),
+        # analyze_for_incident (can file an incident) and post_to_talk (pushes to
+        # subscribers). Stub those so a test can drive a real processed result
+        # without network egress, while insert_call still writes a genuine row.
+        if scenario.get("stub_side_effects"):
+            from unittest import mock as _mock
+
+            audio_receiver.llm_analyze = _mock.MagicMock(return_value=None)
+            audio_receiver.analyze_for_incident = _mock.MagicMock(return_value=None)
+            audio_receiver.post_to_talk = _mock.MagicMock(return_value=None)
+
+        # Force the storage step to fail so the test can prove a clip is
+        # retained when processing errors. Removing the clip before the
+        # transcript is durably stored is silent data loss: a transient SQLite
+        # lock or a Talk outage would discard audio that was already paid for.
+        if scenario.get("fail_insert"):
+            def _boom(*_a, **_kw):
+                raise RuntimeError("simulated storage failure")
+            audio_receiver.insert_call = _boom
+
         route = scenario["route"]
+        # Let a scenario refer to the clip it just seeded. Tests cannot know the
+        # generated id, and guessing one would make remove_queued_audio a no-op
+        # so the assertion pass for the wrong reason.
+        body = json.loads(json.dumps(scenario.get("body") or {}).replace("SEEDED_ID", seeded_id))
         response = client.post(
             f"/api/backlog/{route}",
-            json=scenario.get("body") or {},
+            json=body,
             headers=headers,
         )
 
@@ -103,10 +137,33 @@ def main() -> None:
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
 
-        # _backlog_queue is a collections.deque (the handler uses popleft), not
-        # a queue.Queue, so depth is len().
-        with audio_receiver._backlog_lock:
-            queued = len(audio_receiver._backlog_queue)
+        # Durable depth. `claim` does NOT unlink: it takes a lease and leaves the item
+        # in pending, so an authorised claim still shows depth 1 here. What proves
+        # the claim worked is `claimed` (the lease holder) and that the item is
+        # no longer claimable by a second worker.
+        from modules.raw_audio_queue import get_raw_audio_queue_counts
+
+        counts = get_raw_audio_queue_counts()
+        queued = int(counts.get("pending") or 0)
+
+        # Does the seeded clip still exist on disk? queue_depth can hide a
+        # delete-then-refuse ordering bug because a refused request that wrongly
+        # removed the item still reports a clean depth.
+        try:
+            seed_present = (
+                Path(os.environ["BB_RAW_AUDIO_QUEUE_DIR"]) / "pending" / f"{seeded_id}.json"
+            ).exists()
+        except Exception:
+            seed_present = None
+
+        claimed = None
+        try:
+            claimed = json.loads(
+                (Path(os.environ["BB_RAW_AUDIO_QUEUE_DIR"]) / "pending" / f"{seeded_id}.json")
+                .read_text(encoding="utf-8")
+            ).get("lease_worker_id")
+        except Exception:
+            claimed = None
 
         Path(result_path).write_text(
             json.dumps(
@@ -116,6 +173,9 @@ def main() -> None:
                     "body": response.get_json(silent=True),
                     "calls_rows": rows,
                     "queue_depth": queued,
+                    "lease_worker_id": claimed,
+                    "seeded_id": seeded_id,
+                    "seed_present": seed_present,
                 }
             ),
             encoding="utf-8",

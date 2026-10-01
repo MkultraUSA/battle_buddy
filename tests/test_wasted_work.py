@@ -141,15 +141,33 @@ class TestBacklogIsOptIn(unittest.TestCase):
         )
 
     def test_flag_guard_precedes_depth_throttling(self):
+        """The property is ORDER, not mechanism.
+
+        This used to look for `ast.With` containing "depth", which asserted the
+        shape of the old in-memory implementation (`with _backlog_lock: depth =
+        len(_backlog_queue)`). The durable queue reads depth through a helper
+        call instead, so the With-based check failed on correct code -- the same
+        trap that let an inverted guard ship twice.
+
+        What actually matters: the enable check must run before anything reads
+        queue depth, so that with queueing switched off we never touch the store.
+        """
         body = self._code_without_docstring()
         guard_idx = depth_idx = None
         for i, node in enumerate(body):
-            if isinstance(node, ast.If) and "_BACKLOG_ENABLED" in ast.unparse(node.test):
+            src = ast.unparse(node)
+            if isinstance(node, ast.If) and "_BACKLOG_ENABLED" in src:
                 guard_idx = i
-            if isinstance(node, ast.With) and "depth" in ast.unparse(node):
+            # Any statement that reads depth, by whatever mechanism.
+            if "_backlog_depth" in src or (
+                isinstance(node, ast.With) and "depth" in src
+            ):
                 depth_idx = i
         self.assertIsNotNone(guard_idx, "no flag guard found")
-        self.assertIsNotNone(depth_idx, "no depth throttle found")
+        self.assertIsNotNone(
+            depth_idx,
+            "no depth throttle found: _should_backlog must consult queue depth",
+        )
         self.assertLess(
             guard_idx, depth_idx,
             "the enable check must come before the depth throttle, otherwise a "
