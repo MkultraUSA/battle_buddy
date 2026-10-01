@@ -296,15 +296,17 @@ class AudioBacklogMetricsTests(unittest.TestCase):
             "cannot be misread as a throughput count",
         )
         s = payload["scraped"]
+        # prometheus_client appends _total to a CounterMetricFamily and emits
+        # labels in sorted order, hence node= before reason=.
         self.assertEqual(
-            2.0, s['battlebuddy_ingest_outcomes{reason="throttled",node="pi5"}'],
+            2.0, s['battlebuddy_ingest_outcomes_total{node="pi5",reason="throttled"}'],
             "shed audio must be counted, not dropped silently",
         )
         self.assertEqual(
-            1.0, s['battlebuddy_ingest_outcomes{reason="queue_full",node="broadcastify"}'],
+            1.0, s['battlebuddy_ingest_outcomes_total{node="broadcastify",reason="queue_full"}'],
         )
         self.assertEqual(
-            1.0, s['battlebuddy_ingest_outcomes{reason="backlogged",node="pi5"}'],
+            1.0, s['battlebuddy_ingest_outcomes_total{node="pi5",reason="backlogged"}'],
             "audio safely queued must be counted separately from audio lost",
         )
 
