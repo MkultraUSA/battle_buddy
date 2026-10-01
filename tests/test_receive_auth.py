@@ -137,35 +137,88 @@ class TestReceiveRequiresAToken(_ReceiveAuthCase):
         self.assertEqual(r.status, 401)
         self.assertEqual(r.calls_rows, 0)
 
-    def test_token_is_not_accepted_as_a_query_parameter(self):
-        """Only the header counts; a token in a URL lands in access logs."""
-        r = run(token=TOKEN, body={"token": TOKEN})
+    def test_token_is_not_accepted_from_the_request_body(self):
+        """Only headers count. A token in the body is attacker-controlled input,
+        so accepting it would let anyone who can reach the route authenticate
+        themselves by guessing a field name."""
+        r = run(token=TOKEN, body={"token": TOKEN, "auth": TOKEN, "bb_receive_token": TOKEN})
         self.assertEqual(r.status, 401)
         self.assertEqual(r.calls_rows, 0)
 
 
 class TestReceiveAcceptsAValidCredential(_ReceiveAuthCase):
-    """A correct credential passes the gate. An empty body then fails validation,
-    which is how we observe success with zero side effects."""
+    """A correct credential passes the gate; an empty body then fails validation,
+    which is how success is observed with zero side effects.
+
+    Each test also asserts the negative in the same run. Asserting only the
+    positive is weak: with the gate deleted entirely, `/receive` returns that
+    same 400 for ANY credential, so the positive case alone cannot tell
+    "authenticated" from "unguarded". Pairing them makes each test fail if the
+    gate is removed.
+    """
 
     def test_bearer_token_passes_the_gate(self):
-        r = run(token=TOKEN, headers={"Authorization": f"Bearer {TOKEN}"})
+        good = run(token=TOKEN, headers={"Authorization": f"Bearer {TOKEN}"})
         # 400 missing audio_b64 == authentication succeeded, then body validation.
-        self.assertEqual(r.status, 400)
-        self.assertEqual((r.body or {}).get("error"), "missing audio_b64")
-        self.assertEqual(r.calls_rows, 0, "an empty body must never write a call")
+        self.assertEqual(good.status, 400)
+        self.assertEqual((good.body or {}).get("error"), "missing audio_b64")
+        self.assertEqual(good.calls_rows, 0, "an empty body must never write a call")
+
+        bad = run(token=TOKEN, headers={"Authorization": "Bearer wrong"})
+        self.assertEqual(
+            bad.status, 401,
+            "the same request with a wrong credential must be refused; if this "
+            "returns 400 the gate is not running at all",
+        )
 
     def test_x_receive_token_header_is_accepted(self):
         """Documented alternative for clients that cannot set Authorization."""
-        r = run(token=TOKEN, headers={"X-Receive-Token": TOKEN})
-        self.assertEqual(r.status, 400)
-        self.assertEqual(r.calls_rows, 0)
+        good = run(token=TOKEN, headers={"X-Receive-Token": TOKEN})
+        self.assertEqual(good.status, 400)
+        self.assertEqual(good.calls_rows, 0)
+
+        bad = run(token=TOKEN, headers={"X-Receive-Token": "wrong"})
+        self.assertEqual(bad.status, 401, "X-Receive-Token must be checked, not ignored")
 
     def test_bearer_is_case_sensitive_on_the_scheme(self):
         """Only `Bearer ` is stripped, so `bearer x` is compared literally."""
         r = run(token=TOKEN, headers={"Authorization": f"bearer {TOKEN}"})
         self.assertEqual(r.status, 401)
         self.assertEqual(r.calls_rows, 0)
+
+
+class TestNonAsciiCredentials(_ReceiveAuthCase):
+    """Non-ASCII must not turn an auth rejection into a 500.
+
+    HTTP header values arrive as latin-1, so a single byte >= 0x80 is enough.
+    `hmac.compare_digest` raises TypeError when handed a non-ASCII `str`, which
+    in a Flask route becomes an unhandled 500 with a traceback — reachable on
+    demand by anyone who can reach the port. It is equally fatal the other way:
+    a non-ASCII *configured* secret would 500 every legitimate request and take
+    ingest down entirely.
+    """
+
+    def test_non_ascii_supplied_credential_is_rejected_not_500(self):
+        for bad in ("Bearer sécret", "Bearer ütf8", "Bearer \x80\x81"):
+            with self.subTest(credential=bad):
+                r = run(token=TOKEN, headers={"Authorization": bad})
+                self.assertEqual(
+                    r.status, 401,
+                    f"{bad!r} produced HTTP {r.status}; a 500 here means "
+                    f"compare_digest was handed a non-ASCII str",
+                )
+                self.assertEqual(r.calls_rows, 0)
+
+    def test_non_ascii_configured_secret_still_authenticates(self):
+        secret = "sécret-token-ü"
+        good = run(token=secret, headers={"Authorization": f"Bearer {secret}"})
+        self.assertEqual(
+            good.status, 400,
+            "a non-ASCII configured secret must still authenticate; a 500 means "
+            "compare_digest raises before the credential is even compared",
+        )
+        bad = run(token=secret, headers={"Authorization": "Bearer wrong"})
+        self.assertEqual(bad.status, 401)
 
 
 class TestGateRunsBeforeAnyWork(_ReceiveAuthCase):

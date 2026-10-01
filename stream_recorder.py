@@ -13,6 +13,7 @@ import os
 import struct
 import subprocess
 import time
+import urllib.error
 import urllib.request
 import wave
 
@@ -31,6 +32,8 @@ SILENCE_CHUNKS= int(SILENCE_SECS / CHUNK_SECS)
 MIN_CALL_SECS = 1.0     # discard shorter clips
 MAX_CALL_SECS = 90      # force-flush at this length
 RECONNECT_WAIT= 10      # seconds before reconnect on failure
+POST_ATTEMPTS= 3        # bounded retries for a transient /receive failure
+POST_RETRY_WAIT= 3      # seconds between those attempts
 
 
 def rms_db(data: bytes) -> float:
@@ -52,6 +55,20 @@ def pcm_to_wav(pcm: bytes) -> bytes:
     return buf.getvalue()
 
 
+def receive_headers() -> dict:
+    """Headers for a /receive POST. Never logs or prints the token.
+
+    /receive is authenticated (BB_RECEIVE_TOKEN). Without this header the gate
+    returns 401/503 and every Broadcastify clip is discarded, so this must match
+    what pi/call_recorder.py sends.
+    """
+    headers = {"Content-Type": "application/json"}
+    token = os.environ.get("BB_RECEIVE_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    return headers
+
+
 def post_call(pcm: bytes, duration: float):
     payload = json.dumps({
         "audio_b64": base64.b64encode(pcm_to_wav(pcm)).decode(),
@@ -59,17 +76,38 @@ def post_call(pcm: bytes, duration: float):
         "tag":  STREAM_TAG,
         "node": "broadcastify",
     }).encode()
-    try:
-        req = urllib.request.Request(
-            VM_URL, data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            code = resp.getcode()
-        print(f"[{time.strftime('%H:%M:%S')}] posted dur={duration:.1f}s → {code}", flush=True)
-    except Exception as exc:
-        print(f"[{time.strftime('%H:%M:%S')}] POST error: {exc}", flush=True)
+    if not os.environ.get("BB_RECEIVE_TOKEN", "").strip():
+        print(f"[{time.strftime('%H:%M:%S')}] POST error: BB_RECEIVE_TOKEN is not set "
+              f"— /receive will refuse every clip", flush=True)
+        return
+
+    body = None
+    for attempt in range(1, POST_ATTEMPTS + 1):
+        try:
+            req = urllib.request.Request(
+                VM_URL, data=payload,
+                headers=receive_headers(),
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                code = resp.getcode()
+            print(f"[{time.strftime('%H:%M:%S')}] posted dur={duration:.1f}s → {code}", flush=True)
+            return
+        except urllib.error.HTTPError as exc:
+            # 401/403 means the token is wrong or unset: a configuration fault,
+            # not a blip. Retrying cannot fix it, so say so plainly and stop
+            # rather than emitting a line every 20 seconds forever.
+            if exc.code in (401, 403, 503):
+                print(f"[{time.strftime('%H:%M:%S')}] POST error: HTTP {exc.code} — "
+                      f"check BB_RECEIVE_TOKEN matches the server; clip dropped", flush=True)
+                return
+            body = f"HTTP {exc.code}"
+        except Exception as exc:
+            body = str(exc)
+        if attempt < POST_ATTEMPTS:
+            time.sleep(POST_RETRY_WAIT)
+    print(f"[{time.strftime('%H:%M:%S')}] POST error after {POST_ATTEMPTS} tries: "
+          f"{body} dur={duration:.1f}s — clip dropped", flush=True)
 
 
 def build_ffmpeg_cmd() -> list:

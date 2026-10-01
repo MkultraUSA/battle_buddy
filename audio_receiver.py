@@ -147,8 +147,12 @@ def _require_receive_token():
         supplied = supplied[7:].strip()
     if not supplied:
         supplied = (request.headers.get("X-Receive-Token") or "").strip()
-    if not supplied or not hmac.compare_digest(supplied, expected):
-        remote = request.headers.get("X-Real-IP") or request.remote_addr or "?"
+    # compare_digest raises TypeError on a non-ASCII str, and HTTP header values
+    # arrive as latin-1, so a single byte >= 0x80 would turn this into a 500 with
+    # a traceback -- reachable by anyone who can reach the port. Compare the
+    # encoded bytes instead, which also handles a non-ASCII configured secret.
+    if not supplied or not hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+        remote = request.remote_addr or "?"
         print(f"[ingest] AUTH FAIL from {remote}", flush=True)
         return jsonify({"error": "unauthorized"}), 401
     return None
