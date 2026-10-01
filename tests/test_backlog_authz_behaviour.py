@@ -288,6 +288,66 @@ class TestBacklogCompletionLifecycle(_BacklogAuthzCase):
         self.assertEqual(0, r["queue_depth"])
 
 
+class TestBacklogDerivesCategoryFromTag(_BacklogAuthzCase):
+    """Backlogged calls must be categorised like live ones.
+
+    #163 established that the server-side TSV is a bad authority for category:
+    it filed TCSO ADAM-WEST as TCEMS and left Bee Cave, AFD and every TCSO
+    channel on "Unknown", so /receive derives the category from the recorder's
+    tag instead.
+
+    The backlog path kept reading the TSV. Found end to end against a real
+    worker: a backlogged call came back category "Unknown" while the identical
+    tag arriving on /receive was categorised correctly. Only calls that happened
+    to be backlogged were affected, which is a poor class of bug to meet later.
+    """
+
+    TOKEN = "s" * 64
+    TCSO_TAG = "TCSO BAKER-EAST"
+
+    def test_backlogged_call_is_categorised_from_its_tag(self):
+        r = _run(
+            "complete",
+            token=self.TOKEN,
+            body={
+                "token": self.TOKEN,
+                "item_id": "SEEDED_ID",
+                "transcript": "Dispatch, we are handling a traffic stop on Barton Springs.",
+                "tgid": 12345,
+                "tag": self.TCSO_TAG,
+                "duration": 4.0,
+            },
+            stub_side_effects=True,
+        )
+        self.assertEqual(200, r["status"])
+        self.assertEqual(1, r["calls_rows"])
+        stored_category = r["last_call_category"]
+        self.assertNotEqual(
+            "Unknown", stored_category,
+            "the tag is authoritative for category; deriving it from the TSV is "
+            "the exact defect #163 fixed on the live path",
+        )
+
+    def test_uncategorisable_tag_falls_back_rather_than_guessing(self):
+        r = _run(
+            "complete",
+            token=self.TOKEN,
+            body={
+                "token": self.TOKEN,
+                "item_id": "SEEDED_ID",
+                "transcript": "Some traffic on an unknown channel.",
+                "tgid": 12345,
+                "tag": "ZZZ-NOT-A-REAL-CHANNEL",
+                "duration": 4.0,
+            },
+            stub_side_effects=True,
+        )
+        self.assertEqual(200, r["status"])
+        self.assertEqual(1, r["calls_rows"])
+        # A tag matching no pattern must still store honestly, not invent one.
+        self.assertEqual("Unknown", r["last_call_category"])
+
+
 class TestBacklogSurvivesRestart(_BacklogAuthzCase):
     """The whole point of the change: a queued clip outlives the process.
 

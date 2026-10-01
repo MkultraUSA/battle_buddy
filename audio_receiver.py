@@ -741,8 +741,30 @@ def api_backlog_complete():
 
     # Process the transcription result just like a local call
     meta = TGID_META.get(tgid, {})
-    def_lat = meta.get("lat")
-    def_lon = meta.get("lon")
+
+    # Category from the tag, not the TSV -- the same authority /receive uses.
+    #
+    # #163 established that the server-side TSV has drifted badly enough to file
+    # TCSO ADAM-WEST as TCEMS and leave Bee Cave, AFD and every TCSO channel on
+    # "Unknown", so live ingest derives the category from the recorder's tag. The
+    # backlog path kept reading the TSV, which meant backlogged calls were
+    # categorised by an authority already known to be wrong -- and only for calls
+    # that happened to be backlogged, which is a maddening class of bug to chase
+    # later. Verified end to end: a backlogged TCSO call came back "Unknown"
+    # while the identical tag arriving on /receive was categorised correctly.
+    category = _tag_to_category(tag) if tag else (data.get("category") or meta.get("cat", "Unknown"))
+
+    # Coordinates: prefer what /receive captured at enqueue time. It had already
+    # resolved the right default for the tag at that point; re-deriving from the
+    # TSV here is both the wrong source and unavailable for a talkgroup the TSV
+    # has never heard of, which lands the call at lat/lon 0.
+    stored = load_queued_audio_metadata(item_id) or {}
+    def_lat = stored.get("default_lat")
+    def_lon = stored.get("default_lon")
+    if def_lat is None or def_lon is None:
+        def_lat = meta.get("lat")
+        def_lon = meta.get("lon")
+
     location = None
     coords_approx = 1
     try:
@@ -757,10 +779,12 @@ def api_backlog_complete():
     ts = time.time()
     print(f"[backlog] {tag}: {transcript[:80]}", flush=True)
     try:
-        call_id = insert_call(ts, tgid, tag, meta.get("cat", "Unknown"), node,
+        call_id = insert_call(ts, tgid, tag, category, node,
                               duration, transcript, def_lat, def_lon, location, coords_approx, accuracy)
+        # The category is threaded through to llm_analyze and analyze_for_incident,
+        # so deriving it correctly above only matters if the call dict carries it.
         call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag,
-                    category=meta.get("cat", "Unknown"),
+                    category=category,
                     transcript=transcript, lat=def_lat, lon=def_lon, location=location)
         recent = calls_since(ts - 15 * 60)
         call["llm"] = llm_analyze(call, recent)

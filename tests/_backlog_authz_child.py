@@ -134,8 +134,13 @@ def main() -> None:
         )
 
         rows = 0
+        last_category = None
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
+            _row = conn.execute(
+                "SELECT category FROM calls ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            last_category = _row[0] if _row else None
 
         # Durable depth. `claim` does NOT unlink: it takes a lease and leaves the item
         # in pending, so an authorised claim still shows depth 1 here. What proves
@@ -176,6 +181,7 @@ def main() -> None:
                     "lease_worker_id": claimed,
                     "seeded_id": seeded_id,
                     "seed_present": seed_present,
+                    "last_call_category": last_category,
                 }
             ),
             encoding="utf-8",
