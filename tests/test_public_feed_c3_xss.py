@@ -432,6 +432,12 @@ _INGEST_CHILD = textwrap.dedent(
     # client input -- a compromised or buggy recorder is exactly the threat --
     # so these cases still matter, they just have to authenticate first.
     os.environ["BB_RECEIVE_TOKEN"] = "c3-child-token"
+    # These cases drive /receive's BACKLOG path deliberately -- the semaphore is
+    # exhausted so the item is queued instead of transcribed, which is the
+    # cheapest way to observe the stored tag. Queueing became opt-in in
+    # _should_backlog (BB_BACKLOG_ENABLED, default off) because no remote worker
+    # drains the queue; opt back in here or `stored` comes back None.
+    os.environ["BB_BACKLOG_ENABLED"] = "1"
     auth = {"Authorization": "Bearer c3-child-token"}
 
     import audio_receiver
