@@ -154,7 +154,10 @@ def ingest_aircraft():
     supplied = request.headers.get("Authorization", "")
     if supplied.startswith("Bearer "):
         supplied = supplied[7:].strip()
-    if not supplied or not hmac.compare_digest(supplied, ingest_token):
+    # Compare encoded bytes: hmac.compare_digest raises TypeError on a non-ASCII
+    # str, and HTTP header values arrive as latin-1, so one byte >= 0x80 would
+    # otherwise turn an auth rejection into a 500 with a traceback.
+    if not supplied or not hmac.compare_digest(supplied.encode("utf-8"), ingest_token.encode("utf-8")):
         return jsonify({"error": "unauthorized"}), 401
 
     if request.content_length and request.content_length > _MAX_SNAPSHOT_BYTES:

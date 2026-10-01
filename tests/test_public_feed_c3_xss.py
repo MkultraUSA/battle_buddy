@@ -3,8 +3,10 @@
 The public feed is reachable by every visitor and untrusted input reaches its
 HTML unescaped, in two halves:
 
-  INGEST  POST /receive accepts an unauthenticated ``tag`` and stores it
-          almost verbatim (only ``TGID <digits>`` is discarded).
+  INGEST  POST /receive accepts a client-supplied ``tag`` and stores it
+          almost verbatim (only ``TGID <digits>`` is discarded). The caller is
+          authenticated by the C4 gate, but a compromised or buggy recorder is
+          still an untrusted source for this field, so the sanitisation matters.
   OUTPUT  modules/public.py builds the incident/call/tip feed by raw template
           interpolation (``${inc.itype}``, ``${inc.location}``,
           ``${agencies}``, ``${inc.description}``, call tags/transcripts,
@@ -426,6 +428,12 @@ _INGEST_CHILD = textwrap.dedent(
 
     sys.modules["stripe"] = mock.MagicMock()
 
+    # /receive is authenticated since the C4 gate. The tag is still untrusted
+    # client input -- a compromised or buggy recorder is exactly the threat --
+    # so these cases still matter, they just have to authenticate first.
+    os.environ["BB_RECEIVE_TOKEN"] = "c3-child-token"
+    auth = {"Authorization": "Bearer c3-child-token"}
+
     import audio_receiver
     from modules import transcription as tr
 
@@ -454,7 +462,7 @@ _INGEST_CHILD = textwrap.dedent(
             "tgid": 4242,
             "tag": entry,
             "node": "test-node",
-        })
+        }, headers=auth)
         stored = None
         if len(audio_receiver._backlog_queue) > before:
             stored = audio_receiver._backlog_queue[-1]["tag"]

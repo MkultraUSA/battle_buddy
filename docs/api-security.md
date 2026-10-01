@@ -31,7 +31,7 @@ Reverse proxy with HTTPS
 | `/api/calls` | Restricted by default | Can expose raw transcript text and operational metadata |
 | `/api/tgid_guesses` | Restricted by default | Can expose inferred talkgroup analysis |
 | `/metrics` | Private only | Prometheus metrics should usually be localhost, VPN, or monitoring-network only |
-| `/receive` | Private only | Audio ingest route; should be accepted only from trusted capture nodes |
+| `/receive` | **Token required** (`BB_RECEIVE_TOKEN`) | Audio ingest. Fails closed: 503 when the token is unset, 401 when it does not match. Capture nodes send `Authorization: Bearer <token>`. Do not remove the gate: the route reaches `analyze_for_incident` and `post_to_talk`, so an unauthenticated caller can place an incident on the public map and alert subscribers. |
 | `/watchdog_event` | Private only | Operational alert route from capture node watchdogs |
 | `/pi/commands` | Private only | Command queue for capture nodes; do not publish publicly |
 | `/test_call` | Development/private only | Injects synthetic calls and can create false incidents |
