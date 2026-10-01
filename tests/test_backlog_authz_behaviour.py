@@ -327,6 +327,40 @@ class TestBacklogDerivesCategoryFromTag(_BacklogAuthzCase):
             "the tag is authoritative for category; deriving it from the TSV is "
             "the exact defect #163 fixed on the live path",
         )
+        # The incident engine and the Talk post read the call dict, not the
+        # database row. A fix that only corrects insert_call leaves an incident
+        # filed under the wrong category, which is the part that reaches a map.
+        self.assertEqual(
+            stored_category, r["incident_category"],
+            "the category handed to analyze_for_incident must match the stored one",
+        )
+
+    def test_enqueue_time_coordinates_survive_the_round_trip(self):
+        """/receive resolves the right default at enqueue time.
+
+        complete re-derived coordinates from the TSV, which has no entry for many
+        real talkgroups -- landing those calls at lat/lon 0, i.e. Null Island.
+        """
+        r = _run(
+            "complete",
+            token=self.TOKEN,
+            body={
+                "token": self.TOKEN,
+                "item_id": "SEEDED_ID",
+                "transcript": "Dispatch, traffic stop on Barton Springs.",
+                "tgid": 12345,
+                "tag": self.TCSO_TAG,
+                "duration": 4.0,
+            },
+            stub_side_effects=True,
+        )
+        self.assertEqual(200, r["status"])
+        self.assertAlmostEqual(30.2672, r["last_call_lat"], places=4)
+        self.assertAlmostEqual(-97.7431, r["last_call_lon"], places=4)
+        self.assertAlmostEqual(
+            30.2672, r["incident_lat"], places=4,
+            msg="the incident must be placed at the enqueue-time coordinates",
+        )
 
     def test_uncategorisable_tag_falls_back_rather_than_guessing(self):
         r = _run(
