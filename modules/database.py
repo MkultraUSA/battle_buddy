@@ -45,9 +45,26 @@ def init_db():
             location    TEXT,
             lat         REAL,
             lon         REAL,
-            status      TEXT DEFAULT 'active'
+            status      TEXT DEFAULT 'active',
+            is_test     INTEGER DEFAULT 0,
+            flagged     INTEGER DEFAULT 0
         )
     """)
+    # is_test and flagged are read and written by audio_receiver but were never
+    # created here, so they exist only where someone ran the ALTER by hand. A
+    # from-scratch database therefore had no such columns: /metrics aborted with
+    # "no such column: is_test" and returned an EMPTY body under HTTP 200, so
+    # every Grafana panel went blank and the ops_verify metric gates went blind
+    # with no error anywhere; and `UPDATE incidents SET flagged=1` -- the flag
+    # endpoint -- raised a 500. Production survived only by accident.
+    #
+    # Idempotent, because the table already exists on every real deployment.
+    for _col, _decl in (("is_test", "INTEGER DEFAULT 0"),
+                        ("flagged", "INTEGER DEFAULT 0")):
+        try:
+            conn.execute(f"ALTER TABLE incidents ADD COLUMN {_col} {_decl}")
+        except Exception:
+            pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS subscriptions (
             username    TEXT    NOT NULL,
