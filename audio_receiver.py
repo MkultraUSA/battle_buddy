@@ -606,9 +606,9 @@ def receive():
 @app.route("/api/backlog/claim", methods=["POST"])
 def api_backlog_claim():
     """Claim a backlogged audio item for remote transcription (pie3 overflow)."""
-    checked = _require_backlog_token()
-    if checked is None:
-        return checked
+    denied = _require_backlog_token()
+    if denied is not None:
+        return denied
 
     with _backlog_lock:
         if not _backlog_queue:
@@ -621,10 +621,11 @@ def api_backlog_claim():
 def api_backlog_complete():
     """Receive transcription result from a remote backlog worker."""
     global _backlog_completed
-    checked = _require_backlog_token()
-    if checked is None:
-        return checked
-    data = checked
+    denied = _require_backlog_token()
+    if denied is not None:
+        return denied
+
+    data = request.get_json(force=True) or {}
 
     item_id = data.get("item_id", "")
     transcript = data.get("transcript", "")

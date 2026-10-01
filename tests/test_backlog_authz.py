@@ -97,9 +97,19 @@ class TestBothRoutesAreGated(unittest.TestCase):
                     "_require_backlog_token()", src,
                     f"{route} does not call the fail-closed guard",
                 )
+                # _require_backlog_token returns None on SUCCESS and a
+                # (response, status) tuple on refusal, matching
+                # _require_receive_token. An `if checked is None: return checked`
+                # call site inverts that and makes the endpoint MORE open, not
+                # less -- it was the bug this very PR introduced.
                 self.assertIn(
+                    "if denied is not None", src,
+                    f"{route} must act on the guard's refusal; a None check "
+                    "inverts the contract and lets unauthenticated callers through",
+                )
+                self.assertNotIn(
                     "if checked is None", src,
-                    f"{route} must act on the guard's return value",
+                    f"{route} uses the inverted guard contract",
                 )
 
     def test_the_old_fail_open_check_is_gone(self):
