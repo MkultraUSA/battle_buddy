@@ -117,6 +117,10 @@ _backlog_queue: deque = deque()
 _backlog_lock = threading.Lock()
 _BACKLOG_MAX_ITEMS = 300
 _BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
+# Queueing is opt-in: see _should_backlog. A worker must exist to drain it.
+_BACKLOG_ENABLED = (os.environ.get("BB_BACKLOG_ENABLED") or "").strip().lower() in (
+    "1", "true", "yes", "on",
+)
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
 
@@ -383,7 +387,21 @@ def _should_backlog() -> bool:
 
     Adaptive throttling: when the backlog is shallow we accept everything;
     as it deepens we drop increasingly aggressively so pie3 can catch up.
+
+    Gated on BB_BACKLOG_ENABLED (default off) because the queue has no
+    consumer unless a remote `pie3` worker is actually deployed. Nothing claims
+    these items otherwise: it is an in-memory deque, so they are lost on
+    restart, and `battlebuddy_backlog_completed_total` stayed at 0 in
+    production for as long as it was observed. Queueing audio nobody will
+    transcribe is worse than shedding it honestly -- and worse still, a stuck
+    queue pins `_should_backlog` in its aggressive band, so every call that
+    cannot get a process slot is shed forever. That is what happened: depth sat
+    at 92 and 35% of audio was being dropped continuously.
+
+    Set BB_BACKLOG_ENABLED=1 when a worker exists to drain it.
     """
+    if not _BACKLOG_ENABLED:
+        return False
     with _backlog_lock:
         depth = len(_backlog_queue)
     if depth <= 5:
