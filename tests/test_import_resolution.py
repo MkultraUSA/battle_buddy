@@ -29,6 +29,7 @@ rather than in production.
 from __future__ import annotations
 
 import ast
+import builtins
 import json
 import subprocess
 import sys
@@ -49,19 +50,124 @@ KNOWN_PRIVATE_HELPERS = (
 )
 
 
-def _module_level_calls() -> set[str]:
-    """Names called at module scope or inside handlers, minus locals.
+def _star_import_names(module: str) -> set[str]:
+    """Public names a `from <module> import *` brings into scope.
 
-    Deliberately conservative: it collects every call anywhere in the file and
-    lets the runtime check decide which ones resolve. Anything the runtime does
-    not have is reported, because in this file a missing name is a crash.
+    audio_receiver leans on star imports heavily, so ignoring them would report
+    every helper it legitimately gets that way -- insert_call, calls_since,
+    llm_analyze and friends -- as unresolvable.
+
+    Only public names, because that is exactly the star-import rule: underscore
+    names are excluded. That exclusion is the bug this file exists to catch.
+    """
+    if not module:
+        return set()
+    path = _ROOT / (module.replace(".", "/") + ".py")
+    if not path.exists():
+        return set()
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                names.add((a.asname or a.name).split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                names.add(a.asname or a.name)
+    return {n for n in names if not n.startswith("_")}
+
+
+def _unresolvable_calls() -> set[str]:
+    """Names called but not resolvable in their own scope.
+
+    A NameError has no behaviour to assert on, so this is the only way to see it
+    before production does. Scope matters: the file imports helpers *inside*
+    functions in several places, and defines nested helpers like `respond` and
+    `summarize`, so a flat "is it a module attribute" check produces a wall of
+    false positives.
+
+    For each function, collect what is in scope (parameters, assignments, nested
+    defs, imports) and treat a call as resolvable if the name is a builtin, a
+    module-level global, or local to that function.
     """
     tree = ast.parse(_APP.read_text(encoding="utf-8"))
-    called: set[str] = set()
+
+    module_globals: set[str] = set(dir(builtins))
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            called.add(node.func.id)
-    return called
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            module_globals.add(node.name)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                module_globals.add((a.asname or a.name).split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                if a.name == "*":
+                    module_globals |= _star_import_names(node.module or "")
+                else:
+                    module_globals.add(a.asname or a.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            module_globals.add(node.id)
+        elif isinstance(node, ast.arg):
+            module_globals.add(node.arg)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            module_globals.add(node.name)
+        elif isinstance(node, ast.Global):
+            module_globals.update(node.names)
+
+    def locals_in(node) -> set[str]:
+        names: set[str] = set()
+        args = getattr(node, "args", None)
+        if args is not None:
+            for a in list(args.args) + list(args.kwonlyargs) + list(args.posonlyargs):
+                names.add(a.arg)
+            if args.vararg:
+                names.add(args.vararg.arg)
+            if args.kwarg:
+                names.add(args.kwarg.arg)
+        for n in ast.walk(node):
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+                names.add(n.id)
+            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(n.name)
+            elif isinstance(n, ast.arg):
+                names.add(n.arg)
+            elif isinstance(n, ast.Import):
+                for a in n.names:
+                    names.add((a.asname or a.name).split(".")[0])
+            elif isinstance(n, ast.ImportFrom):
+                for a in n.names:
+                    names.add(a.asname or a.name)
+            elif isinstance(n, ast.ExceptHandler) and n.name:
+                names.add(n.name)
+            elif isinstance(n, ast.Global):
+                names.update(n.names)
+        return names
+
+    unresolvable: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        scope = module_globals | locals_in(node)
+        for call in ast.walk(node):
+            if (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and not call.func.id.startswith("__")
+                and call.func.id not in scope
+            ):
+                unresolvable.add(call.func.id)
+    return unresolvable
 
 
 def _probe(names: list[str]) -> dict:
@@ -141,20 +247,29 @@ class TestPrivateHelpersAreImported(unittest.TestCase):
             "handlers working",
         )
 
-    def test_every_called_name_resolves(self):
-        """The general form: no call anywhere in the file may be unresolvable.
 
-        A NameError cannot be found by asserting on behaviour -- it has no
-        behaviour -- so this is the only way to see it before production does.
+
+
+class TestScopeAnalysisNeedsNoDependencies(unittest.TestCase):
+    """Static check, so it runs everywhere rather than only on the prod venv.
+
+    The runtime probe needs faster_whisper to import audio_receiver. The scope
+    analysis needs nothing, and it is the check that actually generalises, so it
+    must not be skipped in every ordinary development environment.
+    """
+
+    def test_scope_analysis_finds_no_unresolvable_calls(self):
+        """The general form, statically.
+
+        Catches the bug class without needing a runtime import, so it runs
+        everywhere rather than only where faster_whisper is installed.
         """
-        called = sorted(n for n in _module_level_calls() if not n.startswith("__"))
-        resolved = _probe(called)
-        missing = sorted(name for name, ok in resolved.items() if not ok)
+        missing = sorted(_unresolvable_calls())
         self.assertEqual(
             [], missing,
-            f"audio_receiver calls names that do not resolve: {missing}. "
-            "Each is a NameError at runtime, i.e. a 500 from whichever "
-            "handler reaches it.",
+            f"audio_receiver calls names that are not in scope: {missing}. "
+            "Each is a NameError at runtime, i.e. a 500 from whichever handler "
+            "reaches it.",
         )
 
 
