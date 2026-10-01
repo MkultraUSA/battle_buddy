@@ -123,6 +123,37 @@ _BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
 _BACKLOG_ENABLED = (os.environ.get("BB_BACKLOG_ENABLED") or "").strip().lower() in (
     "1", "true", "yes", "on",
 )
+
+
+def _require_backlog_token():
+    """Gate /api/backlog/claim and /api/backlog/complete. Fail closed.
+
+    These were guarded by `if _backlog_token and token != _backlog_token`, which
+    is fail-OPEN: with BB_BACKLOG_AGENT_TOKEN unset the check was skipped
+    entirely. nginx proxies /api/, so both routes were reachable from the
+    internet -- an unauthenticated caller could drain the queue and, through
+    /complete, write a fabricated transcript and description back into an
+    incident.
+
+    A worker cannot be optional here the way queueing is: these endpoints are
+    how a worker mutates state, so an unset secret must refuse rather than
+    admit. Same shape as _require_receive_token: 503 unconfigured, 401 mismatch.
+    """
+    expected = (_backlog_token or "").strip()
+    if not expected:
+        return jsonify({"ok": False, "error": "backlog agent is not configured"}), 503
+
+    data = request.get_json(force=True) or {}
+    supplied = (data.get("token")
+                or request.headers.get("Authorization", "").replace("Bearer ", "").strip())
+    if not supplied:
+        supplied = (request.headers.get("X-Backlog-Token") or "").strip()
+    # compare_digest raises TypeError on a non-ASCII str, and header values arrive
+    # as latin-1 -- compare encoded bytes so a stray byte is a 401, not a 500.
+    if not supplied or not hmac.compare_digest(supplied.encode("utf-8"),
+                                              expected.encode("utf-8")):
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    return data
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
 
@@ -575,10 +606,9 @@ def receive():
 @app.route("/api/backlog/claim", methods=["POST"])
 def api_backlog_claim():
     """Claim a backlogged audio item for remote transcription (pie3 overflow)."""
-    data = request.get_json(force=True) or {}
-    token = (data.get("token") or request.headers.get("Authorization", "").replace("Bearer ", ""))
-    if _backlog_token and token != _backlog_token:
-        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    checked = _require_backlog_token()
+    if checked is None:
+        return checked
 
     with _backlog_lock:
         if not _backlog_queue:
@@ -591,10 +621,10 @@ def api_backlog_claim():
 def api_backlog_complete():
     """Receive transcription result from a remote backlog worker."""
     global _backlog_completed
-    data = request.get_json(force=True) or {}
-    token = (data.get("token") or request.headers.get("Authorization", "").replace("Bearer ", ""))
-    if _backlog_token and token != _backlog_token:
-        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    checked = _require_backlog_token()
+    if checked is None:
+        return checked
+    data = checked
 
     item_id = data.get("item_id", "")
     transcript = data.get("transcript", "")
