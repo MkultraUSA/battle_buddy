@@ -78,7 +78,7 @@ _CHILD = textwrap.dedent(
         "metrics": audio_receiver._backlog_file_metric_specs(state),
         "scraped": scraped,
         "scrape_status": resp.status_code,
-        "ingest_help": "\n".join(
+        "ingest_help": chr(10).join(
             l for l in resp.get_data(as_text=True).splitlines()
             if l.startswith("# HELP battlebuddy_ingest_outcomes")
         ),
