@@ -24,8 +24,6 @@ import ssl
 import threading
 import time
 import urllib.request
-import uuid
-from collections import deque
 
 import modules.space_weather as space_weather_mod
 import modules.weather as weather_mod
@@ -82,7 +80,14 @@ from modules.pi_watchdog import (  # noqa: E402
     _pi_watchdog_alert,
 )
 from modules.pollers import *  # noqa: E402
-from modules.raw_audio_queue import get_raw_audio_queue_counts  # noqa: E402
+from modules.raw_audio_queue import (  # noqa: E402
+    claim_queued_audio,
+    enqueue_raw_audio,
+    get_raw_audio_queue_counts,
+    load_queued_audio_metadata,
+    release_queued_audio_claim,
+    remove_queued_audio,
+)
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
@@ -115,10 +120,20 @@ from modules.tips import tips_bp  # noqa: E402, I001
 app.register_blueprint(tips_bp)
 
 # --- Backlog queue for remote overflow workers (pie3) ---
-_backlog_queue: deque = deque()
+#
+# Durable: modules/raw_audio_queue is the source of truth, not this process. The
+# queue used to be an in-memory deque, so every clip queued for a remote worker
+# was lost on restart -- which is exactly when a backlog is most likely to be
+# under pressure. It was also invisible to `get_raw_audio_queue_counts`, so
+# `battlebuddy_backlog_files_pending` read 0 forever while audio piled up in RAM.
+#
+# The lock no longer guards the store (raw_audio_queue writes via atomic
+# os.replace); it serialises the read-depth-then-insert cap check so two
+# concurrent receives cannot both pass the cap.
 _backlog_lock = threading.Lock()
 _BACKLOG_MAX_ITEMS = 300
 _BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
+_BACKLOG_RETRY_DELAY = 120   # backoff before a retried clip is claimable again
 # Queueing is opt-in: see _should_backlog. A worker must exist to drain it.
 _BACKLOG_ENABLED = (os.environ.get("BB_BACKLOG_ENABLED") or "").strip().lower() in (
     "1", "true", "yes", "on",
@@ -198,19 +213,67 @@ def _require_receive_token():
     return None
 
 
+def _backlog_depth() -> int:
+    """Clips waiting in the durable backlog.
+
+    This scans the pending directory, so it is only called on the overload path
+    (_should_backlog and the cap check), never per received call. `scan_error`
+    is deliberately ignored here: on an unreadable store we report 0 and let the
+    enqueue attempt decide, rather than refusing traffic outright.
+    """
+    try:
+        return int(get_raw_audio_queue_counts().get("pending") or 0)
+    except Exception:
+        return 0
+
+
+def _backlog_store(
+    *,
+    audio_b64: str,
+    tgid: int,
+    tag: str,
+    category: str,
+    node: str,
+    duration: float,
+    ts: float,
+    def_lat=None,
+    def_lon=None,
+) -> str:
+    """Persist one clip to the durable backlog and return its item id.
+
+    Split out because the receive path had two byte-identical inline enqueue
+    blocks (broadcastify and pi5) that had to stay in step; a durable store with
+    two copies of its own call site is how they drift.
+    """
+    return enqueue_raw_audio(
+        ts=ts,
+        tgid=tgid,
+        tag=tag,
+        category=category,
+        node=node,
+        duration=duration,
+        wav_bytes=base64.b64decode(audio_b64),
+        default_lat=def_lat,
+        default_lon=def_lon,
+    )
+
+
 def _get_backlog_metric_state() -> dict:
-    with _backlog_lock:
-        memory_pending = len(_backlog_queue)
     try:
         file_counts = get_raw_audio_queue_counts()
     except Exception:
         file_counts = {"pending": 0, "failed": 0, "scan_error": 1}
+    pending = int(file_counts["pending"])
     return {
-        "memory_pending": memory_pending,
-        "file_pending": file_counts["pending"],
+        # Durable depth. Previously this was len(_backlog_queue) plus the file
+        # count; there was only ever one queue, and reading it from RAM is what
+        # let ops_verify's "backlog depth < 50" gate report 0 while 92 clips sat
+        # in the deque. The gate is only useful if this is the real depth.
+        "pending": pending,
+        "file_pending": pending,
         "file_failed": file_counts["failed"],
         "file_scan_error": file_counts["scan_error"],
-        "total_pending": memory_pending + file_counts["pending"],
+        "total_pending": pending,
     }
 
 
@@ -228,8 +291,9 @@ def _backlog_file_metric_specs(state: dict) -> tuple[tuple[str, str, int], ...]:
         ),
         (
             "battlebuddy_backlog_total_depth",
-            "Audio clips waiting in the in-memory remote-worker queue and file-backed pending directory; "
-            "failed items are excluded and file counts may be incomplete when scan-error is 1",
+            "Audio clips waiting in the durable file-backed backlog for a remote worker; "
+            "this is the only queue, it survives restart, failed items are excluded, and the "
+            "count may be incomplete when scan-error is 1",
             state["total_pending"],
         ),
         (
@@ -425,21 +489,13 @@ def _should_backlog() -> bool:
     as it deepens we drop increasingly aggressively so pie3 can catch up.
 
     Gated on BB_BACKLOG_ENABLED (default off) because the queue has no
-    consumer unless a remote `pie3` worker is actually deployed. Nothing claims
-    these items otherwise: it is an in-memory deque, so they are lost on
-    restart, and `battlebuddy_backlog_completed_total` stayed at 0 in
-    production for as long as it was observed. Queueing audio nobody will
-    transcribe is worse than shedding it honestly -- and worse still, a stuck
-    queue pins `_should_backlog` in its aggressive band, so every call that
-    cannot get a process slot is shed forever. That is what happened: depth sat
-    at 92 and 35% of audio was being dropped continuously.
+    consumer unless a remote `pie3` worker is actually deployed.
 
     Set BB_BACKLOG_ENABLED=1 when a worker exists to drain it.
     """
     if not _BACKLOG_ENABLED:
         return False
-    with _backlog_lock:
-        depth = len(_backlog_queue)
+    depth = _backlog_depth()
     if depth <= 5:
         return True                     # accept everything
     if depth <= 40:
@@ -522,17 +578,13 @@ def receive():
             print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — backlog throttled", flush=True)
             return jsonify({"status": "throttled"}), 202
         with _backlog_lock:
-            if len(_backlog_queue) < _BACKLOG_MAX_ITEMS:
-                _backlog_queue.append({
-                    "id": uuid.uuid4().hex,
-                    "audio_b64": data["audio_b64"],
-                    "tgid": tgid,
-                    "tag": tag,
-                    "node": node,
-                    "duration": duration,
-                    "received_ts": ts,
-                })
-                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [broadcastify] — cap reached, queued for remote ({len(_backlog_queue)} total)", flush=True)
+            if _backlog_depth() < _BACKLOG_MAX_ITEMS:
+                item_id = _backlog_store(
+                    audio_b64=data["audio_b64"], tgid=tgid, tag=tag,
+                    category=category, node=node, duration=duration, ts=ts,
+                    def_lat=def_lat, def_lon=def_lon,
+                )
+                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [broadcastify] — cap reached, queued for remote ({item_id})", flush=True)
             else:
                 print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — backlog queue full ({_BACKLOG_MAX_ITEMS})", flush=True)
         return jsonify({"status": "backlogged"}), 202
@@ -545,17 +597,13 @@ def receive():
             print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog throttled", flush=True)
             return jsonify({"status": "throttled"}), 202
         with _backlog_lock:
-            if len(_backlog_queue) < _BACKLOG_MAX_ITEMS:
-                _backlog_queue.append({
-                    "id": uuid.uuid4().hex,
-                    "audio_b64": data["audio_b64"],
-                    "tgid": tgid,
-                    "tag": tag,
-                    "node": node,
-                    "duration": duration,
-                    "received_ts": ts,
-                })
-                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [{src_label}] — queued for remote worker ({len(_backlog_queue)} total)", flush=True)
+            if _backlog_depth() < _BACKLOG_MAX_ITEMS:
+                item_id = _backlog_store(
+                    audio_b64=data["audio_b64"], tgid=tgid, tag=tag,
+                    category=category, node=node, duration=duration, ts=ts,
+                    def_lat=def_lat, def_lon=def_lon,
+                )
+                print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [{src_label}] — queued for remote worker ({item_id})", flush=True)
             else:
                 print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_BACKLOG_MAX_ITEMS})", flush=True)
         return jsonify({"status": "backlogged"}), 202
@@ -608,16 +656,32 @@ def receive():
 
 @app.route("/api/backlog/claim", methods=["POST"])
 def api_backlog_claim():
-    """Claim a backlogged audio item for remote transcription (pie3 overflow)."""
+    """Claim a backlogged audio item for remote transcription (pie3 overflow).
+
+    The lease in `claim_queued_audio` is what makes this safe to survive a
+    restart: if the worker dies mid-transcription the lease expires and the
+    clip becomes claimable again, instead of vanishing with the process that
+    took it out of RAM.
+    """
     denied = _require_backlog_token()
     if denied is not None:
         return denied
 
-    with _backlog_lock:
-        if not _backlog_queue:
-            return jsonify({"ok": True, "item": None, "status": "no_work"}), 200
-        item = _backlog_queue.popleft()
-    return jsonify({"ok": True, "item": item, "status": "ok"}), 200
+    item = claim_queued_audio(worker_id=request.remote_addr or "unknown")
+    if not item:
+        return jsonify({"ok": True, "item": None, "status": "no_work"}), 200
+    # Base64 lives in the HTTP layer; raw_audio_queue stores bytes and has no
+    # opinion about transport.
+    return jsonify({"ok": True, "item": {
+        "id": item["id"],
+        "audio_b64": base64.b64encode(item["wav_bytes"]).decode("ascii"),
+        "tgid": int(item.get("tgid") or 0),
+        "tag": item.get("tag") or "",
+        "category": item.get("category") or "",
+        "node": item.get("node") or "",
+        "duration": float(item.get("duration") or 0.0),
+        "received_ts": float(item.get("ts") or 0.0),
+    }, "status": "ok"}), 200
 
 
 @app.route("/api/backlog/complete", methods=["POST"])
@@ -640,23 +704,39 @@ def api_backlog_complete():
     accuracy = float(data.get("accuracy", 0.0))
 
     if action == "retry":
-        # Put back at end of queue
+        # Prefer releasing the claim on the stored clip: it is the same audio,
+        # it keeps the worker's item_id, and it avoids moving bytes back over
+        # the wire. The delay keeps a hot-looping worker from re-claiming the
+        # same clip immediately.
+        if item_id and load_queued_audio_metadata(item_id):
+            release_queued_audio_claim(
+                item_id, status="retry", retry_delay_seconds=_BACKLOG_RETRY_DELAY,
+            )
+            return jsonify({"ok": True, "status": "requeued"}), 200
+        # Otherwise the worker is returning audio we have no record of, so store
+        # it as a new item rather than dropping it on the floor.
         retry_audio = data.get("audio_b64", "")
         if retry_audio:
-            with _backlog_lock:
-                _backlog_queue.append({
-                    "id": item_id,
-                    "audio_b64": retry_audio,
-                    "tgid": tgid,
-                    "tag": tag,
-                    "node": node,
-                    "duration": duration,
-                    "received_ts": time.time(),
-                })
+            try:
+                new_id = _backlog_store(
+                    audio_b64=retry_audio, tgid=tgid, tag=tag,
+                    category=data.get("category") or "", node=node,
+                    duration=duration, ts=time.time(),
+                )
+            except Exception as exc:
+                print(f"[backlog] retry enqueue failed for {item_id!r}: {exc}", flush=True)
+                return jsonify({"ok": False, "status": "retry_failed"}), 500
+            return jsonify({"ok": True, "status": "requeued", "item_id": new_id}), 200
         return jsonify({"ok": True, "status": "requeued"}), 200
 
     if not transcript.strip():
+        # Discard the clip. The old in-memory queue popped on claim, so an empty
+        # transcript simply consumed the item; with a lease it would otherwise
+        # stay pending, expire, and be re-claimed forever -- a poison item
+        # blocking everything behind it. Most of these are non-speech anyway,
+        # which is why #162 stopped queueing LLM work for them.
         print(f"[backlog] empty transcript from worker for {tag} id={item_id}", flush=True)
+        remove_queued_audio(item_id)
         return jsonify({"ok": True, "status": "empty"}), 200
 
     # Process the transcription result just like a local call
@@ -688,9 +768,14 @@ def api_backlog_complete():
         post_to_talk(call)
         _backlog_completed += 1
     except Exception as e:
+        # Deliberately do NOT remove the clip: the lease will expire and it
+        # becomes claimable again. Losing it here would silently drop audio that
+        # failed for a transient reason (a locked model, a Talk outage).
         print(f"[backlog] error processing result: {e}", flush=True)
         return jsonify({"ok": False, "error": str(e)}), 500
 
+    # Only now that the transcript is durably stored is it safe to drop the audio.
+    remove_queued_audio(item_id)
     return jsonify({"ok": True, "status": "processed"}), 200
 
 
@@ -1057,9 +1142,10 @@ try:
                 _backlog = _get_backlog_metric_state()
                 g_backlog = GaugeMetricFamily(
                     "battlebuddy_backlog_queue_depth",
-                    "Number of audio clips waiting in the in-memory backlog queue for remote workers (pie3)",
+                    "Number of audio clips waiting in the durable file-backed backlog for "
+                    "remote workers (pie3); survives restart",
                 )
-                g_backlog.add_metric([], float(_backlog["memory_pending"]))
+                g_backlog.add_metric([], float(_backlog["pending"]))
                 yield g_backlog
 
                 g_backlog_done = CounterMetricFamily(
