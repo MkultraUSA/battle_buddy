@@ -527,9 +527,10 @@ def _create_incident(itype: str, desc: str, call: dict, ts: float):
     conn = sqlite3.connect(DB_PATH)
     cur  = conn.execute(
         "INSERT INTO incidents (ts_start, ts_updated, itype, description, agencies, tgids, "
-        "location, lat, lon, status) VALUES (?,?,?,?,?,?,?,?,?,'active')",
+        "location, lat, lon, status, is_test) VALUES (?,?,?,?,?,?,?,?,?,'active',?)",
         (ts, ts, itype, desc, agencies, tgids,
-         call.get("location"), call.get("lat"), call.get("lon"))
+         call.get("location"), call.get("lat"), call.get("lon"),
+         1 if call.get("is_test") else 0)
     )
     inc_id = cur.lastrowid
     conn.commit()

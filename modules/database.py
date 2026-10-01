@@ -20,11 +20,22 @@ def init_db():
             transcript  TEXT,
             lat         REAL,
             lon         REAL,
-            location    TEXT
+            location    TEXT,
+            is_test     INTEGER DEFAULT 0
         )
     """)
     conn.execute("ALTER TABLE calls ADD COLUMN coords_approx INTEGER DEFAULT 0") if False else None
     try:
+        # is_test marks synthetic injections so they can be excluded from
+        # quality metrics and from the incident map. /test_call writes rows with
+        # node='test', but node is caller-influenced and nothing filtered on it,
+        # so a test call was indistinguishable from a real dispatch in every
+        # aggregate. incidents.is_test already existed (added by hand -- see
+        # init_db) and is excluded by a dozen queries; calls had nothing.
+        try:
+            conn.execute("ALTER TABLE calls ADD COLUMN is_test INTEGER DEFAULT 0")
+        except Exception:
+            pass
         conn.execute("ALTER TABLE calls ADD COLUMN coords_approx INTEGER DEFAULT 0")
     except Exception:
         pass
@@ -225,12 +236,15 @@ def remove_subscription(username: str, beat: str = "all"):
     conn.close()
 
 
-def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx=0, accuracy=None) -> int:
+def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location,
+               coords_approx=0, accuracy=None, is_test=0) -> int:
     conn = sqlite3.connect(DB_PATH, timeout=5.0)
     cur  = conn.execute(
-        "INSERT INTO calls (ts,tgid,tag,category,node,duration,transcript,lat,lon,location,coords_approx,accuracy) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx, accuracy)
+        "INSERT INTO calls (ts,tgid,tag,category,node,duration,transcript,lat,lon,"
+        "location,coords_approx,accuracy,is_test) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ts, tgid, tag, category, node, duration, transcript, lat, lon, location,
+         coords_approx, accuracy, 1 if is_test else 0)
     )
     row_id = cur.lastrowid
     conn.commit()
@@ -241,7 +255,10 @@ def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, l
 def recent_calls(limit=200):
     conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM calls ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+    rows = conn.execute(
+        "SELECT * FROM calls WHERE (is_test IS NULL OR is_test = 0) "
+        "ORDER BY ts DESC LIMIT ?", (limit,)
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -250,7 +267,8 @@ def calls_since(since_ts: float) -> list:
     conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT * FROM calls WHERE ts > ? ORDER BY ts DESC", (since_ts,)
+        "SELECT * FROM calls WHERE ts > ? AND (is_test IS NULL OR is_test = 0) "
+        "ORDER BY ts DESC", (since_ts,)
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
