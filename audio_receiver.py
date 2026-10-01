@@ -87,6 +87,8 @@ from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
 from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
 from modules.talkgroups import *  # noqa: E402
+# star-import skips underscore names, so these need naming explicitly
+from modules.talkgroups import _tag_is_ignored, _tag_to_category  # noqa: E402,F401
 from modules.transcription import *  # noqa: E402
 from modules.transcription import (  # noqa: E402
     _BROADCASTIFY_MAX,  # noqa: F401
@@ -424,15 +426,25 @@ def receive():
         return jsonify({"error": "missing audio_b64"}), 400
 
     tgid = int(data.get("tgid", 0))
+    incoming_tag = _sanitize_pi_tag(data.get("tag") or "")
 
-    # Drop non-public-safety talkgroups — don't waste Whisper on them
-    if tgid in IGNORE_TGIDS:
+    # Drop non-public-safety talkgroups — don't waste Whisper on them.
+    #
+    # The recorder's tag is authoritative here. IGNORE_TGIDS is derived from the
+    # SERVER's TSV, which has drifted from what the recorders actually send:
+    # 2306 is absent from it entirely and 2403 is labelled "Transportation Trans"
+    # while the Pi sends "TCSO BAKER-EAST". IGNORE_TAGS already contains "GB Juv"
+    # and "Juv JC" -- someone had already decided to drop the juvenile-detention
+    # traffic -- but it never fired, because only the TGID set was consulted and
+    # neither JJC talkgroup was in it. 1,011 calls a week, a third of them
+    # untranscribable.
+    if tgid in IGNORE_TGIDS or (incoming_tag and _tag_is_ignored(incoming_tag)):
         return jsonify({"status": "ignored"}), 202
 
     wav_bytes = base64.b64decode(data["audio_b64"])
 
     meta     = TGID_META.get(tgid, {})
-    pi_tag   = _sanitize_pi_tag((data.get("tag") or ""))
+    pi_tag   = incoming_tag
     # The Pi may send generic labels like "TGID 2454" when its local TSV is stale.
     # Treat those as unresolved so the server-side tag table can still label calls.
     if re.fullmatch(r"TGID\s+\d+", pi_tag, flags=re.I):
@@ -440,7 +452,11 @@ def receive():
     tag      = pi_tag or meta.get("tag") or f"TGID {tgid}"
     node     = data.get("node", "unknown")
     ts       = time.time()
-    category = meta.get("cat", "Unknown")
+    # Derive the category from the tag, not from the server TSV. The recorder
+    # knows what the channel is; the TSV had drifted enough to file TCSO
+    # ADAM-WEST under TCEMS and leave Bee Cave, AFD and every TCSO channel on
+    # "Unknown". Fall back to the TSV only when the tag is unresolved.
+    category = _tag_to_category(tag) if pi_tag else meta.get("cat", "Unknown")
     def_lat  = meta.get("lat")
     def_lon  = meta.get("lon")
 
