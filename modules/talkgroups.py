@@ -29,6 +29,7 @@ CATEGORY_PATTERNS = [
     ("Burnet",       ["Burnet", "Llano", "Blanco", "Hamilton"]),
     ("Comal",        ["Comal"]),
     ("Kerr",         ["Kerr"]),
+    ("BeeCave",     ["Bee Cave", "BeeCave"]),
     ("Pflugerville", ["Pflug"]),
     ("Lakeway",      ["Lakeway"]),
     ("TXDOT",        ["TXDOT Hero"]),
@@ -48,6 +49,7 @@ CAT_COORDS = {
     "Burnet":       (30.7488, -98.2345),
     "Comal":        (29.7030, -98.1245),
     "Kerr":         (30.0474, -99.1403),
+    "BeeCave":      (30.3085, -97.9450),   # USGS city centroid
     "Pflugerville": (30.4394, -97.6200),
     "Lakeway":      (30.3577, -97.9772),
     "TXDOT":        (30.2672, -97.7431),
