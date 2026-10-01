@@ -149,6 +149,12 @@ _backlog_lock = threading.Lock()
 _BACKLOG_MAX_ITEMS = 300
 _BACKLOG_SOFT_CAP = 120      # start dropping when queue exceeds this
 _BACKLOG_RETRY_DELAY = 120   # backoff before a retried clip is claimable again
+# /test_call is a fabrication primitive, so it takes two independent switches and
+# neither defaults on. See _require_test_call_token.
+_TEST_CALL_ENABLED = (os.environ.get("BB_TEST_CALL_ENABLED") or "").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+
 # Queueing is opt-in: see _should_backlog. A worker must exist to drain it.
 _BACKLOG_ENABLED = (os.environ.get("BB_BACKLOG_ENABLED") or "").strip().lower() in (
     "1", "true", "yes", "on",
@@ -210,6 +216,7 @@ def _require_backlog_token():
     # and echo the caller's token straight back in the response.
     return None
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
+_test_call_token = os.environ.get("BB_TEST_CALL_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
 
 
@@ -870,10 +877,67 @@ def pi_commands():
     return jsonify({"commands": cmds}), 200
 
 
+def _require_test_call_token():
+    """Gate /test_call. Two independent conditions, both required.
+
+    This is the most dangerous route on the service. It bypasses Whisper
+    entirely, so it needs no audio: a two-line POST from anywhere injects a
+    fully-formed call with caller-chosen tag, category, coordinates and location.
+    That call then reaches analyze_for_incident -- which fires for any
+    non-locution talkgroup, using the LLM result as its primary signal -- so it
+    can file an incident, and post_to_talk, which pushes the caller-supplied
+    text and location to subscribers. For a product whose entire value is
+    trustworthy public-safety information, that is fabrication, not a privilege
+    bug: anyone could pin a fake shooting at chosen coordinates on the public
+    map.
+
+    Two gates rather than one, on purpose:
+
+      * BB_TEST_CALL_ENABLED, default OFF, so the hook is inert until someone
+        deliberately arms it. If the token ever leaks, the route is still
+        disarmed unless it was also enabled.
+      * BB_TEST_CALL_TOKEN, fail-closed and separate from BB_RECEIVE_TOKEN.
+        Deliberately NOT shared: the receive token lives on the recorder Pi, so
+        sharing it would hand every recorder the ability to fabricate incidents.
+        A compromised recorder could already inject audio; this would let it
+        invent a transcript outright.
+
+    Injected rows are marked is_test so they are excluded from quality metrics
+    and from the incident map (see insert_call and _create_incident).
+    """
+    if not _TEST_CALL_ENABLED:
+        # 404 rather than 403: if the hook is off, it should not advertise itself.
+        return jsonify({"error": "not found"}), 404
+    expected = (_test_call_token or "").strip()
+    if not expected:
+        return jsonify({"error": "test call injection is not configured"}), 503
+    data = request.get_json(force=True) or {}
+    supplied = (
+        data.get("token")
+        or request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+    )
+    if not supplied:
+        supplied = (request.headers.get("X-Test-Call-Token") or "").strip()
+    # Compare encoded bytes: compare_digest raises TypeError on a non-ASCII str,
+    # and header values arrive as latin-1, so a stray byte would be a 500.
+    if not supplied or not hmac.compare_digest(supplied.encode("utf-8"),
+                                              expected.encode("utf-8")):
+        remote = request.remote_addr or "?"
+        print(f"[test_call] AUTH FAIL from {remote}", flush=True)
+        return jsonify({"error": "unauthorized"}), 401
+    return data
+
+
 @app.route("/test_call", methods=["POST"])
 def test_call():
-    """Inject a synthetic call for pipeline testing — bypasses Whisper."""
-    data = request.get_json(force=True)
+    """Inject a synthetic call for pipeline testing — bypasses Whisper.
+
+    Gated by _require_test_call_token; see its docstring for why this route is
+    the most dangerous one on the service.
+    """
+    data = _require_test_call_token()
+    if isinstance(data, tuple):
+        return data
     tgid       = int(data.get("tgid", 1315))
     transcript = data.get("transcript", "")
     tag        = data.get("tag") or TGID_META.get(tgid, {}).get("tag") or f"TGID {tgid}"
@@ -883,9 +947,11 @@ def test_call():
     lat        = data.get("lat") or meta.get("lat")
     lon        = data.get("lon") or meta.get("lon")
     location   = data.get("location")
-    call_id = insert_call(ts, tgid, tag, category, "test", 5.0, transcript, lat, lon, location)
+    call_id = insert_call(ts, tgid, tag, category, "test", 5.0, transcript, lat, lon,
+                          location, is_test=1)
     call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag, category=category,
-                transcript=transcript, lat=lat, lon=lon, location=location)
+                transcript=transcript, lat=lat, lon=lon, location=location,
+                is_test=1)
     recent = calls_since(ts - 15 * 60)
     call["llm"] = llm_analyze(call, recent)
     analyze_for_incident(call)
