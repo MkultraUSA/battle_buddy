@@ -21,23 +21,12 @@ _CHILD = textwrap.dedent(
     from modules import raw_audio_queue
     from modules.database import init_db
 
-    # The /metrics collector reads the incidents table and aborts the whole
-    # response if it is missing ("[metrics] collector error: no such table:
-    # incidents"), so an uninitialised DB silently yields NO metrics at all.
-    # That is exactly the failure mode an end-to-end scrape must not be fooled
-    # by, so create the schema rather than assert against an empty body.
+    # init_db() alone is not enough for the collector: it must be able to read
+    # every column audio_receiver queries. That used to require an ALTER here,
+    # which is how the missing columns stayed missing -- the workaround lived in
+    # a test instead of in init_db. tests/test_schema_contract.py now asserts the
+    # schema directly, so this can just call init_db().
     init_db()
-
-    # init_db() alone does NOT produce a schema the collector can read. The
-    # incidents queries filter on `is_test`, which is added by a migration, so a
-    # from-scratch database yields "[metrics] collector error: no such column:
-    # is_test" and an EMPTY body under HTTP 200. Bring the test schema up to
-    # production shape.
-    import sqlite3 as _sqlite3
-    with _sqlite3.connect(os.environ["DB_PATH"]) as _c:
-        _cols = {r[1] for r in _c.execute("PRAGMA table_info(incidents)")}
-        if "is_test" not in _cols:
-            _c.execute("ALTER TABLE incidents ADD COLUMN is_test INTEGER DEFAULT 0")
 
     # Seed the durable queue rather than an in-memory deque: there is no longer
     # an in-process queue, and seeding real items is what makes the depth
