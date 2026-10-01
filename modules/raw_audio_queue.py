@@ -318,9 +318,23 @@ def get_raw_audio_queue_counts() -> dict:
 
 
 def get_raw_audio_queue_stats(now: Optional[float] = None) -> dict:
+    """Summarise the durable queue without creating anything.
+
+    Deliberately uses RAW_AUDIO_QUEUE_DIR directly instead of _pending_dir() /
+    _queue_dir(), which mkdir. Scraping /metrics calls this, and a metric that
+    creates the directories it is meant to be observing destroys the only signal
+    that says they are missing: `get_raw_audio_queue_counts` reports
+    scan_error=1 for an absent root, and the Hostinger watcher alerts on that.
+    Creating the directory would make an uninitialised queue report as healthy
+    forever. Caught by test_missing_root_sets_scan_error_without_creating_it.
+    """
     now = now or time.time()
-    pending = _pending_dir()
-    failed = _queue_dir("failed")
+    pending = RAW_AUDIO_QUEUE_DIR / "pending"
+    failed = RAW_AUDIO_QUEUE_DIR / "failed"
+    if not pending.is_dir():
+        return {"pending": 0, "bytes": 0, "oldest_age_seconds": -1.0,
+                "failed": len(list(failed.glob("*.json"))) if failed.is_dir() else 0,
+                "scan_error": 1}
     count = 0
     bytes_total = 0
     oldest_ts = None
@@ -345,5 +359,6 @@ def get_raw_audio_queue_stats(now: Optional[float] = None) -> dict:
         "pending": count,
         "bytes": bytes_total,
         "oldest_age_seconds": max(0.0, now - oldest_ts) if oldest_ts else 0.0,
-        "failed": len(list(failed.glob("*.json"))),
+        "failed": len(list(failed.glob("*.json"))) if failed.is_dir() else 0,
+        "scan_error": 0,
     }

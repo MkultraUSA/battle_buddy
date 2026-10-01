@@ -1231,7 +1231,8 @@ try:
                 try:
                     _stats = get_raw_audio_queue_stats()
                 except Exception:
-                    _stats = {"oldest_age_seconds": -1.0, "bytes": 0.0}
+                    _stats = {"oldest_age_seconds": -1.0, "bytes": 0.0,
+                              "scan_error": 1}
                 g_age = GaugeMetricFamily(
                     "battlebuddy_backlog_oldest_age_seconds",
                     "Age of the oldest clip waiting in the durable backlog; -1 when the "
