@@ -397,6 +397,36 @@ def save_state(path: Path, state: dict) -> None:
     path.write_text(json.dumps(state), encoding="utf-8")
 
 
+def decide_notify(
+    level: str,
+    last_level: str,
+    last_sent: int,
+    now: int,
+    repeat_secs: int = REPEAT_SECS,
+) -> tuple[bool, bool]:
+    """Should this run message Telegram, and is it a recovery?
+
+    Returns (should_send, is_recovery).
+
+    Extracted from main() because this is the behaviour the operator actually
+    relies on -- "it tells me when it gets bad and when it recovers" -- and while
+    it lived inline in main() it had no test at all. Two things it must get
+    right:
+
+      * a fresh fault notifies immediately, without waiting out the repeat
+        interval, including when it changes severity (warning -> critical);
+      * returning to healthy notifies once, labelled RECOVERED, and then goes
+        quiet again rather than repeating "recovered" every five minutes.
+    """
+    if level in {"warning", "critical"}:
+        if level != last_level or (now - last_sent) >= repeat_secs:
+            return True, False
+        return False, False
+    if last_level in {"warning", "critical"}:
+        return True, True
+    return False, False
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true",
@@ -426,13 +456,9 @@ def main(argv: list[str] | None = None) -> int:
 
     last_level = state.get("level", "unknown")
     last_sent = int(state.get("last_sent", 0))
-    should_send = False
 
-    if level in {"warning", "critical"}:
-        if level != last_level or (now - last_sent) >= REPEAT_SECS:
-            should_send = True
-    elif last_level in {"warning", "critical"}:
-        should_send = True
+    should_send, is_recovery = decide_notify(level, last_level, last_sent, now)
+    if is_recovery:
         message = "Battle Buddy transcription watch: RECOVERED\n" + message
 
     if should_send and not args.dry_run:
