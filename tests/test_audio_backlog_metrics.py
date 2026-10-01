@@ -78,6 +78,10 @@ _CHILD = textwrap.dedent(
         "metrics": audio_receiver._backlog_file_metric_specs(state),
         "scraped": scraped,
         "scrape_status": resp.status_code,
+        "ingest_help": "\n".join(
+            l for l in resp.get_data(as_text=True).splitlines()
+            if l.startswith("# HELP battlebuddy_ingest_outcomes")
+        ),
     }))
     """
 )
@@ -256,6 +260,27 @@ class AudioBacklogMetricsTests(unittest.TestCase):
             "the scraped queue_depth gauge must report the real durable depth; "
             "ops_verify gates on it and a Grafana panel graphs it, so a constant "
             "here means a permanently blind alert",
+        )
+
+    def test_ingest_outcome_counter_is_exported_and_starts_empty(self):
+        """Shed audio must be visible, or overload loss cannot be measured.
+
+        The whole point of the backlog is that clips get queued instead of
+        dropped. That claim is only falsifiable if the dropping is counted --
+        and before this, discarded audio left no trace anywhere: it never reached
+        the database, so a shed hour looked exactly like a busy one.
+        """
+        payload = self._run(memory_depth=0)
+        self.assertEqual(payload["scrape_status"], 200)
+        self.assertIn("battlebuddy_ingest_outcomes", payload["scraped"])
+        self.assertEqual(
+            0.0, payload["scraped"]["battlebuddy_ingest_outcomes"],
+            "a fresh process has shed nothing yet",
+        )
+        self.assertIn(
+            "LOSSES", payload["ingest_help"],
+            "the help text must say which outcomes are losses, so the metric "
+            "cannot be misread as a throughput count",
         )
 
     def test_missing_root_sets_scan_error_without_creating_it(self):

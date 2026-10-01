@@ -139,6 +139,28 @@ _BACKLOG_ENABLED = (os.environ.get("BB_BACKLOG_ENABLED") or "").strip().lower() 
     "1", "true", "yes", "on",
 )
 
+# --- Ingest accounting -------------------------------------------------
+#
+# Audio accepted by a recorder, paid for upstream, and then discarded by us was
+# completely invisible: it never reaches the database, so it never appeared in
+# any metric or query. That made overload loss impossible to measure -- a busy
+# hour and a shed hour looked identical from the outside, which is exactly the
+# situation that let the backlog sit at 92 clips with 35% of audio being dropped
+# continuously and nobody able to say so from the data.
+#
+# These counters are what make the backlog's benefit falsifiable: shed audio
+# should fall to zero once clips are queued instead of dropped.
+#   reason: throttled  -> adaptive throttle declined it (depth-based shedding)
+#           queue_full  -> durable queue was at BB_MAX_ITEMS
+#           backlogged  -> durably queued for a remote worker (not a loss)
+_INGEST_SHED: dict = {}
+
+
+def _record_ingest_outcome(reason: str, node: str) -> None:
+    """Count one ingest outcome. Cheap enough for the request path."""
+    key = (str(reason), str(node or "unknown"))
+    _INGEST_SHED[key] = _INGEST_SHED.get(key, 0) + 1
+
 
 def _require_backlog_token():
     """Gate /api/backlog/claim and /api/backlog/complete. Fail closed.
@@ -576,6 +598,7 @@ def receive():
         # Push to remote backlog queue (with adaptive throttling)
         if not _should_backlog():
             print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — backlog throttled", flush=True)
+            _record_ingest_outcome("throttled", "broadcastify")
             return jsonify({"status": "throttled"}), 202
         with _backlog_lock:
             if _backlog_depth() < _BACKLOG_MAX_ITEMS:
@@ -587,6 +610,9 @@ def receive():
                 print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [broadcastify] — cap reached, queued for remote ({item_id})", flush=True)
             else:
                 print(f"[recv] DROP {tag} ({duration:.1f}s) [broadcastify] — backlog queue full ({_BACKLOG_MAX_ITEMS})", flush=True)
+                _record_ingest_outcome("queue_full", "broadcastify")
+                return jsonify({"status": "dropped_queue_full"}), 202
+            _record_ingest_outcome("backlogged", "broadcastify")
         return jsonify({"status": "backlogged"}), 202
     if not _process_sem.acquire(blocking=False):
         if is_broadcastify:
@@ -595,6 +621,7 @@ def receive():
         src_label = "pi5" if node == "pi5" else "broadcastify"
         if not _should_backlog():
             print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog throttled", flush=True)
+            _record_ingest_outcome("throttled", src_label)
             return jsonify({"status": "throttled"}), 202
         with _backlog_lock:
             if _backlog_depth() < _BACKLOG_MAX_ITEMS:
@@ -606,6 +633,9 @@ def receive():
                 print(f"[recv] BACKLOG {tag} ({duration:.1f}s) [{src_label}] — queued for remote worker ({item_id})", flush=True)
             else:
                 print(f"[recv] DROP {tag} ({duration:.1f}s) [{src_label}] — backlog full ({_BACKLOG_MAX_ITEMS})", flush=True)
+                _record_ingest_outcome("queue_full", src_label)
+                return jsonify({"status": "dropped_queue_full"}), 202
+            _record_ingest_outcome("backlogged", src_label)
         return jsonify({"status": "backlogged"}), 202
 
     def process():
@@ -1171,6 +1201,21 @@ try:
                 )
                 g_backlog.add_metric([], float(_backlog["pending"]))
                 yield g_backlog
+
+                # Shed vs queued, so the backlog's benefit is falsifiable:
+                # shed_total should fall to ~0 once clips are queued rather than
+                # dropped, and backlogged_total should rise to absorb them.
+                g_ingest = CounterMetricFamily(
+                    "battlebuddy_ingest_outcomes",
+                    "Received audio by outcome: throttled/queue_full are LOSSES "
+                    "(audio discarded after the recorder handed it over), "
+                    "backlogged is audio durably queued for a remote worker",
+                    labels=["reason", "node"],
+                )
+                with _backlog_lock:
+                    for (_reason, _node), _n in sorted(_INGEST_SHED.items()):
+                        g_ingest.add_metric([_reason, _node], float(_n))
+                yield g_ingest
 
                 g_backlog_done = CounterMetricFamily(
                     "battlebuddy_backlog_completed_total",
