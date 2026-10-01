@@ -153,7 +153,12 @@ def report_failure(item: dict, reason: str) -> None:
 def handle_one(item: dict) -> None:
     wav_bytes = base64.b64decode(item["audio_b64"])
     started = time.time()
-    transcript, accuracy = transcribe(wav_bytes)
+    # raise_on_error matters here more than anywhere else. transcribe() returns
+    # ("", 0.0) for a genuine silent clip AND for a total failure, and an empty
+    # transcript makes the server DISCARD the clip. Without this, one broken
+    # decode library would silently destroy every queued clip while looking
+    # like a run of quiet radio.
+    transcript, accuracy = transcribe(wav_bytes, raise_on_error=True)
     elapsed = time.time() - started
     transcript = (transcript or "").strip()
 

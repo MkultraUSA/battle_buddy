@@ -155,6 +155,77 @@ class TestBacklogAgentContract(unittest.TestCase):
         self.assertIn("longer than", buf.getvalue())
 
 
+class TestBacklogAgentDistinguishesSilenceFromFailure(unittest.TestCase):
+    """The distinction that stops a broken worker destroying real audio.
+
+    transcribe() returns ("", 0.0) for a quiet clip AND for a total failure, and
+    an empty transcript makes the server discard the clip permanently. So a
+    worker that cannot tell them apart turns one broken decode library into
+    silent, permanent data loss -- with the metrics showing a run of quiet radio
+    rather than an outage.
+
+    Found because `av` resolved to an incompatible version on Hostinger and every
+    transcription failed while the log cheerfully said "empty transcript".
+    """
+
+    def tearDown(self):
+        if getattr(self, "_module", None) is not None:
+            _restore(self._module)
+
+    def _worker(self, transcribe_impl):
+        module = self._module = _load_agent()
+        module.sent = []
+        module.api_request = lambda path, payload: module.sent.append((path, payload)) or {}
+        module.transcribe = transcribe_impl
+        return module
+
+    def test_genuine_silence_is_discarded(self):
+        module = self._worker(lambda _b, **_kw: ("", 0.0))
+        module.handle_one(dict(ITEM))
+        self.assertEqual("complete", module.sent[-1][1]["action"],
+                         "a truly silent clip should be discarded, not looped")
+
+    def test_transcription_failure_is_retried_not_discarded(self):
+        # Any exception type: the worker catches Exception, and what is under
+        # test is that a failure returns the clip rather than discarding it.
+        def _boom(_b, **_kw):
+            raise RuntimeError("decode failed")
+
+        module = self._worker(_boom)
+        module.BB_TOKEN = "test-token"
+
+        class _Stop(Exception):
+            pass
+
+        with mock.patch.object(module, "claim_one", side_effect=[dict(ITEM), None]), \
+             mock.patch.object(module.time, "sleep", side_effect=_Stop):
+            with self.assertRaises(_Stop):
+                module.main()
+
+        self.assertEqual(
+            "retry", module.sent[-1][1]["action"],
+            "a FAILED transcription must return the clip; discarding it here is "
+            "permanent data loss for every queued clip",
+        )
+
+    def test_worker_asks_for_failure_to_be_raised(self):
+        """Guard the flag itself, not just the outcome it produces."""
+        module = self._worker(lambda _b, **_kw: ("", 0.0))
+        seen = {}
+
+        def _capture(_b, **kwargs):
+            seen.update(kwargs)
+            return ("hello", 0.5)
+
+        module.transcribe = _capture
+        module.handle_one(dict(ITEM))
+        self.assertTrue(
+            seen.get("raise_on_error"),
+            "the worker must request raise_on_error; the default returns "
+            "(\"\", 0.0) for both silence and failure",
+        )
+
+
 class TestBacklogAgentClaimBehaviour(unittest.TestCase):
     def tearDown(self):
         if getattr(self, "_module", None) is not None:

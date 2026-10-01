@@ -91,9 +91,13 @@ def main() -> None:
         _skip_seed = scenario.get("skip_seed")
         seeded_id = scenario.get("seeded_id") or ""
         if not _skip_seed:
+            # Coordinates are part of what enqueue captures, so the seed must
+            # carry some -- otherwise "the stored default is preserved" is not
+            # observable and a mutation that discards it passes silently.
             seeded_id = enqueue_raw_audio(
                 ts=1.0, tgid=12345, tag="seeding", category="Test", node="pie3",
                 duration=1.0, wav_bytes=b"HELLO",
+                default_lat=30.2672, default_lon=-97.7431,
             )
 
         client = audio_receiver.app.test_client()
@@ -106,11 +110,19 @@ def main() -> None:
         # analyze_for_incident (can file an incident) and post_to_talk (pushes to
         # subscribers). Stub those so a test can drive a real processed result
         # without network egress, while insert_call still writes a genuine row.
+        incident_call = {}
         if scenario.get("stub_side_effects"):
             from unittest import mock as _mock
 
             audio_receiver.llm_analyze = _mock.MagicMock(return_value=None)
-            audio_receiver.analyze_for_incident = _mock.MagicMock(return_value=None)
+            _analyze = _mock.MagicMock(return_value=None)
+
+            def _capture(call, *_a, **_kw):
+                incident_call.update(call if isinstance(call, dict) else {})
+                return None
+
+            _analyze.side_effect = _capture
+            audio_receiver.analyze_for_incident = _analyze
             audio_receiver.post_to_talk = _mock.MagicMock(return_value=None)
 
         # Force the storage step to fail so the test can prove a clip is
@@ -134,8 +146,16 @@ def main() -> None:
         )
 
         rows = 0
+        last_category = None
+        last_lat = last_lon = None
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
+            _row = conn.execute(
+                "SELECT category, lat, lon FROM calls ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            last_category = _row[0] if _row else None
+            last_lat = _row[1] if _row else None
+            last_lon = _row[2] if _row else None
 
         # Durable depth. `claim` does NOT unlink: it takes a lease and leaves the item
         # in pending, so an authorised claim still shows depth 1 here. What proves
@@ -176,6 +196,11 @@ def main() -> None:
                     "lease_worker_id": claimed,
                     "seeded_id": seeded_id,
                     "seed_present": seed_present,
+                    "last_call_category": last_category,
+                    "last_call_lat": last_lat,
+                    "last_call_lon": last_lon,
+                    "incident_category": incident_call.get("category"),
+                    "incident_lat": incident_call.get("lat"),
                 }
             ),
             encoding="utf-8",
