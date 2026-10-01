@@ -54,6 +54,20 @@ from modules.atak import (  # noqa: E402
 from modules.audio_dedup import is_duplicate_and_mark  # noqa: E402
 from modules.commute import *  #noqa: E402
 from modules.commute import _routes_travel_time  #noqa: E402
+# Underscore-prefixed names are NOT brought in by `from x import *`, so any
+# private helper used from here has to be imported explicitly. Three were not,
+# and each was a live NameError -> HTTP 500:
+#
+#   _fill_incident_coords              /api/incidents/flagged  -> 500 in production
+#   _commute_route_info                /api/commute/incidents  -> 500
+#   _point_to_segment_distance_miles   nearby-incident query  -> 500
+#
+# The last is duplicated identically in modules/commute.py and modules/alerts.py;
+# imported from alerts, which is the domain of the call site (distance from an
+# incident to a point).
+from modules.commute import _commute_route_info  # noqa: E402
+from modules.alerts import _point_to_segment_distance_miles  # noqa: E402
+from modules.database import _fill_incident_coords  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
