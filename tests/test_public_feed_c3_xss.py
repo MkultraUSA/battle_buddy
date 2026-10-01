@@ -460,9 +460,15 @@ _INGEST_CHILD = textwrap.dedent(
 
     client = audio_receiver.app.test_client()
     payload = json.loads(os.environ["TEST_TAGS_JSON"])
+    # The backlog is durable now, so the tag lands in an on-disk metadata file
+    # rather than an in-process deque. Read it back off disk: these tests exist
+    # to prove what a malicious client tag becomes once persisted.
+    from modules.raw_audio_queue import RAW_AUDIO_QUEUE_DIR
+
+    pending = RAW_AUDIO_QUEUE_DIR / "pending"
     out = []
     for entry in payload:
-        before = len(audio_receiver._backlog_queue)
+        before = {p.name for p in pending.glob("*.json")}
         r = client.post("/receive", json={
             "audio_b64": make_wav_b64(),
             "tgid": 4242,
@@ -470,8 +476,9 @@ _INGEST_CHILD = textwrap.dedent(
             "node": "test-node",
         }, headers=auth)
         stored = None
-        if len(audio_receiver._backlog_queue) > before:
-            stored = audio_receiver._backlog_queue[-1]["tag"]
+        new = [p for p in pending.glob("*.json") if p.name not in before]
+        if new:
+            stored = json.loads(new[0].read_text(encoding="utf-8")).get("tag")
         out.append({"status": r.status_code, "stored": stored})
     print(json.dumps(out))
     """
@@ -487,7 +494,12 @@ def _drive_ingest(tags: list) -> list:
             capture_output=True, text=True, timeout=180, cwd=_ROOT,
             env={**os.environ, "TEST_TAGS_JSON": json.dumps(tags),
                  "PYTHONPATH": str(_ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""),
-                 "PYTHONDONTWRITEBYTECODE": "1"},
+                 "PYTHONDONTWRITEBYTECODE": "1",
+                 # Keep the durable queue inside the scratch dir. Without this
+                 # the child would persist clips to the real
+                 # /opt/battlebuddy/raw_audio_queue. Must be set before the
+                 # child imports audio_receiver: the root is read at import.
+                 "BB_RAW_AUDIO_QUEUE_DIR": str(Path(tmp) / "raw_audio_queue")},
         )
     if proc.returncode != 0:
         raise AssertionError(f"ingest child failed ({proc.returncode}): {proc.stderr[-3000:]}")

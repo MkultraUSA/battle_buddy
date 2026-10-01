@@ -19,8 +19,41 @@ _CHILD = textwrap.dedent(
 
     import audio_receiver
     from modules import raw_audio_queue
+    from modules.database import init_db
 
-    audio_receiver._backlog_queue.extend(range(int(os.environ["TEST_MEMORY_DEPTH"])))
+    # The /metrics collector reads the incidents table and aborts the whole
+    # response if it is missing ("[metrics] collector error: no such table:
+    # incidents"), so an uninitialised DB silently yields NO metrics at all.
+    # That is exactly the failure mode an end-to-end scrape must not be fooled
+    # by, so create the schema rather than assert against an empty body.
+    init_db()
+
+    # init_db() alone does NOT produce a schema the collector can read. The
+    # incidents queries filter on `is_test`, which is added by a migration, so a
+    # from-scratch database yields "[metrics] collector error: no such column:
+    # is_test" and an EMPTY body under HTTP 200. Bring the test schema up to
+    # production shape.
+    import sqlite3 as _sqlite3
+    with _sqlite3.connect(os.environ["DB_PATH"]) as _c:
+        _cols = {r[1] for r in _c.execute("PRAGMA table_info(incidents)")}
+        if "is_test" not in _cols:
+            _c.execute("ALTER TABLE incidents ADD COLUMN is_test INTEGER DEFAULT 0")
+
+    # Seed the durable queue rather than an in-memory deque: there is no longer
+    # an in-process queue, and seeding real items is what makes the depth
+    # assertions mean something.
+    # Only seed when asked. These tests include cases that deliberately leave
+    # the queue root missing to prove the metrics code does not create it as a
+    # side effect, and seeding would create it.
+    _depth = int(os.environ["TEST_MEMORY_DEPTH"])
+    if _depth:
+        _q = raw_audio_queue.RAW_AUDIO_QUEUE_DIR / "pending"
+        _q.mkdir(parents=True, exist_ok=True)
+        for _i in range(_depth):
+            (_q / f"seed-{_i}.json").write_text(json.dumps({
+                "id": f"seed-{_i}", "created_ts": 1.0, "node": "pi5",
+            }), encoding="utf-8")
+
     if os.environ["TEST_SCAN_MODE"] == "unreadable":
         with mock.patch.object(
             raw_audio_queue.Path,
@@ -30,9 +63,21 @@ _CHILD = textwrap.dedent(
             state = audio_receiver._get_backlog_metric_state()
     else:
         state = audio_receiver._get_backlog_metric_state()
+    # The real /metrics body, not just the helper's spec list. ops_verify gates
+    # on battlebuddy_backlog_queue_depth and a Grafana panel graphs it, so a
+    # regression that leaves the gauge reading a constant 0 would silently
+    # disable the alert while every unit test on _get_backlog_metric_state still
+    # passed. Only an end-to-end scrape can catch that.
+    resp = audio_receiver.app.test_client().get("/metrics")
+    scraped = {}
+    for line in resp.get_data(as_text=True).splitlines():
+        if line.startswith("battlebuddy_backlog_"):
+            scraped[line.split(" ")[0]] = float(line.rsplit(" ", 1)[1])
     print(json.dumps({
         "state": state,
         "metrics": audio_receiver._backlog_file_metric_specs(state),
+        "scraped": scraped,
+        "scrape_status": resp.status_code,
     }))
     """
 )
@@ -185,45 +230,57 @@ class AudioBacklogMetricsTests(unittest.TestCase):
         payload = self._run(memory_depth=3)
         metrics = self._metric_map(payload)
 
+        # There is one queue now, not two. It used to report
+        # memory_pending + file_pending, which double-counted nothing and
+        # measured nothing useful: ops_verify gates on queue_depth, and that
+        # gauge read the in-memory half, so it showed 0 while 92 clips waited.
         self.assertEqual(
             payload["state"],
             {
-                "memory_pending": 3,
-                "file_pending": 2,
+                "pending": 5,
+                "file_pending": 5,
                 "file_failed": 1,
                 "file_scan_error": 0,
                 "total_pending": 5,
             },
         )
-        self.assertEqual(metrics["battlebuddy_backlog_files_pending"]["value"], 2)
+        self.assertEqual(metrics["battlebuddy_backlog_files_pending"]["value"], 5)
         self.assertEqual(metrics["battlebuddy_backlog_files_failed"]["value"], 1)
         self.assertEqual(metrics["battlebuddy_backlog_total_depth"]["value"], 5)
-        self.assertIn("in-memory remote-worker queue", metrics["battlebuddy_backlog_total_depth"]["help"])
+        self.assertIn("durable", metrics["battlebuddy_backlog_total_depth"]["help"])
         self.assertIn("scan-error", metrics["battlebuddy_backlog_total_depth"]["help"])
         self.assertEqual(metrics["battlebuddy_backlog_files_scan_error"]["value"], 0)
+        self.assertEqual(payload["scrape_status"], 200)
+        self.assertEqual(
+            payload["scraped"]["battlebuddy_backlog_queue_depth"], 5.0,
+            "the scraped queue_depth gauge must report the real durable depth; "
+            "ops_verify gates on it and a Grafana panel graphs it, so a constant "
+            "here means a permanently blind alert",
+        )
 
     def test_missing_root_sets_scan_error_without_creating_it(self):
-        payload = self._run(memory_depth=2)
+        # depth 0 so the child does not create the root it is meant to be absent
+        payload = self._run(memory_depth=0)
         metrics = self._metric_map(payload)
 
         self.assertFalse(self.root.exists())
-        self.assertEqual(payload["state"]["file_pending"], 0)
+        self.assertEqual(payload["state"]["pending"], 0)
         self.assertEqual(payload["state"]["file_failed"], 0)
         self.assertEqual(payload["state"]["file_scan_error"], 1)
-        self.assertEqual(payload["state"]["total_pending"], 2)
+        self.assertEqual(payload["state"]["total_pending"], 0)
         self.assertEqual(metrics["battlebuddy_backlog_files_scan_error"]["value"], 1)
 
     def test_unreadable_root_sets_scan_error(self):
         (self.root / "pending").mkdir(parents=True)
         (self.root / "failed").mkdir()
 
-        payload = self._run(memory_depth=2, scan_mode="unreadable")
+        payload = self._run(memory_depth=0, scan_mode="unreadable")
         metrics = self._metric_map(payload)
 
-        self.assertEqual(payload["state"]["file_pending"], 0)
+        self.assertEqual(payload["state"]["pending"], 0)
         self.assertEqual(payload["state"]["file_failed"], 0)
         self.assertEqual(payload["state"]["file_scan_error"], 1)
-        self.assertEqual(payload["state"]["total_pending"], 2)
+        self.assertEqual(payload["state"]["total_pending"], 0)
         self.assertEqual(metrics["battlebuddy_backlog_files_scan_error"]["value"], 1)
 
 
