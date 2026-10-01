@@ -2,40 +2,85 @@
 
 `init_db()` did not create `incidents.is_test` or `incidents.flagged`, both of
 which `audio_receiver.py` reads and writes. They existed in production only
-because someone had once run the ALTER by hand and it was never codified. So:
+because the ALTER had once been run by hand and was never codified. So:
 
   * a fresh deploy produced a database with neither column;
   * `/metrics` then aborted with "no such column: is_test" and returned an EMPTY
-    body under HTTP 200 -- every Grafana panel blank, ops_verify's metric gates
+    body under HTTP 200 — every Grafana panel blank, ops_verify's metric gates
     blind, and no error surfaced anywhere to say so;
   * `UPDATE incidents SET flagged=1`, the flag endpoint, raised a 500.
 
 The failure is silent and only appears during a rebuild, which is the worst time
-to discover it. The check below is deliberately blunt: build a brand-new
-database with nothing but `init_db()`, then run the application's own queries
-against it. Any column the app needs and the schema lacks shows up here rather
-than during an incident.
+to discover it. The check is deliberately blunt: build a database from nothing
+but `init_db()`, then run the application's own queries against it. Any column the
+app needs and the schema lacks fails here rather than during an incident.
 
-The metric-scrape case is the important one, because the collector catches
-exceptions and returns a partial body, so a missing column degrades monitoring
-instead of breaking it.
+The scrape case matters most, because the collector catches exceptions and
+streams what it already has — so a missing column degrades monitoring instead of
+breaking it, and nothing looks wrong.
+
+Everything runs in a subprocess (`_schema_contract_child.py`) because
+`modules.database` does `from modules.config import DB_PATH`, which freezes the
+path at *import* time. Setting `os.environ["DB_PATH"]` in-process does nothing
+once another suite has imported `modules.config` — an earlier version of this test
+silently tested whatever database the run happened to have, and could write into a
+database other tests were using.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
-import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
+_HERE = Path(__file__).resolve().parent
+_ROOT = _HERE.parent
+_CHILD = _HERE / "_schema_contract_child.py"
+
+
+def _importable() -> tuple[bool, str]:
+    """Can this interpreter import audio_receiver at all?
+
+    The scrape scenario needs it, and it requires faster_whisper. Skip rather than
+    fail where it is absent: an environment limitation reported as a red test
+    looks like a regression, and this suite has a whole point about not confusing
+    the two. Mirrors test_receive_auth.py.
+    """
+    proc = subprocess.run(
+        [sys.executable, "-c", "import audio_receiver"],
+        cwd=str(_ROOT), capture_output=True, text=True, timeout=300,
+    )
+    return proc.returncode == 0, (proc.stderr or "")[-300:]
+
+
+_IMPORTABLE, _IMPORT_ERROR = _importable()
+
+
+def _run(*, scrape_metrics: bool = False) -> dict:
+    """Run the child in a clean interpreter; returns its JSON result."""
+    with tempfile.TemporaryDirectory() as tmp:
+        scenario_path = Path(tmp) / "scenario.json"
+        result_path = Path(tmp) / "result.json"
+        scenario_path.write_text(
+            json.dumps({"scrape_metrics": scrape_metrics}), encoding="utf-8"
+        )
+        proc = subprocess.run(
+            [sys.executable, str(_CHILD), str(scenario_path), str(result_path)],
+            cwd=str(_ROOT), capture_output=True, text=True, timeout=300,
+        )
+        if proc.returncode != 0 or not result_path.exists():
+            raise AssertionError(
+                f"schema child failed ({proc.returncode})\n"
+                f"stdout:\n{proc.stdout[-2000:]}\nstderr:\n{proc.stderr[-2000:]}"
+            )
+        return json.loads(result_path.read_text(encoding="utf-8"))
 
 
 def _created_columns(db_source: str, table: str) -> set[str]:
-    """Column names init_db() puts in `table`."""
     block = re.search(
         rf"CREATE TABLE IF NOT EXISTS {table} \((.*?)\n\s*\)", db_source, re.S
     )
@@ -43,140 +88,83 @@ def _created_columns(db_source: str, table: str) -> set[str]:
     return set(re.findall(r"^\s*([a-z_]+)\s", block.group(1), re.M))
 
 
-class TestFromScratchSchemaSupportsTheApp(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.db_source = (_ROOT / "modules" / "database.py").read_text(encoding="utf-8")
-        cls.app_source = (_ROOT / "audio_receiver.py").read_text(encoding="utf-8")
-        cls.tmp = tempfile.TemporaryDirectory()
-        cls.path = Path(cls.tmp.name) / "fresh.db"
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tmp.cleanup()
-
-    def _fresh_db(self) -> sqlite3.Connection:
-        """Build a database from nothing else."""
-        if self.path.exists():
-            self.path.unlink()
-        prev = os.environ.get("DB_PATH")
-        os.environ["DB_PATH"] = str(self.path)
-        try:
-            from modules.database import init_db
-
-            init_db()
-        finally:
-            if prev is None:
-                os.environ.pop("DB_PATH", None)
-            else:
-                os.environ["DB_PATH"] = prev
-        return sqlite3.connect(self.path)
-
+class TestInitDbCreatesWhatTheAppUses(unittest.TestCase):
     def test_init_db_creates_is_test(self):
-        self.assertIn("is_test", _created_columns(self.db_source, "incidents"))
+        source = (_ROOT / "modules" / "database.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "is_test", _created_columns(source, "incidents"),
+            "audio_receiver filters on incidents.is_test in a dozen places",
+        )
 
     def test_init_db_creates_flagged(self):
-        self.assertIn("flagged", _created_columns(self.db_source, "incidents"))
-
-    def test_incident_queries_run_on_a_from_scratch_database(self):
-        """The queries audio_receiver actually issues, against a fresh DB."""
-        conn = self._fresh_db()
-        conn.execute(
-            "INSERT INTO incidents (ts_start, ts_updated, itype, description) "
-            "VALUES (1.0, 1.0, 'Fire', 'test')"
+        source = (_ROOT / "modules" / "database.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "flagged", _created_columns(source, "incidents"),
+            "audio_receiver executes UPDATE incidents SET flagged=1",
         )
-        conn.commit()
-        # Every filter the app uses to exclude test rows.
-        for label, sql in (
-            ("metrics active", "SELECT COUNT(*) FROM incidents "
-                               "WHERE (is_test IS NULL OR is_test=0)"),
-            ("sitrep", "SELECT id FROM incidents "
-                       "WHERE (is_test IS NULL OR is_test=0) LIMIT 1"),
-            ("recent window", "SELECT id FROM incidents WHERE ts_start > 0 "
-                              "AND (is_test IS NULL OR is_test=0)"),
-            ("flag write", "UPDATE incidents SET flagged=1 WHERE id=1"),
-            ("flag read", "SELECT COUNT(*) FROM incidents WHERE flagged=1"),
-        ):
-            with self.subTest(query=label):
-                try:
-                    conn.execute(sql).fetchall()
-                except sqlite3.Error as exc:
-                    self.fail(
-                        f"{label!r} fails on a from-scratch database: {exc}. "
-                        "init_db() does not create a column the app requires."
-                    )
-        conn.close()
+
+
+class TestFromScratchSchemaRunsTheAppsQueries(unittest.TestCase):
+    def test_child_actually_used_a_fresh_database(self):
+        """Guards the harness itself.
+
+        If DB_PATH were not set before the first project import, this suite would
+        cheerfully test whatever database the run happened to have — which is how
+        the first version of this file passed while proving nothing.
+        """
+        result = _run()
+        self.assertEqual(
+            result["db_path_expected"], result["db_path_used"],
+            "the child did not get its own database; DB_PATH was frozen by an "
+            "earlier import and this test was inspecting someone else's data",
+        )
+
+    def test_every_incident_query_runs_on_a_from_scratch_database(self):
+        result = _run()
+        self.assertEqual(
+            {}, result["query_errors"],
+            "init_db() does not create a column the application requires: "
+            f"{result['query_errors']}",
+        )
+
+    def test_columns_present_after_init(self):
+        result = _run()
+        for column in ("is_test", "flagged"):
+            self.assertIn(column, result["columns"])
 
     def test_init_db_is_idempotent(self):
-        """Deploys call init_db() on every start, so it must survive reruns."""
-        conn = self._fresh_db()
-        from modules.database import init_db
-
-        init_db()  # second run, same process
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(incidents)")}
-        self.assertIn("is_test", cols)
-        self.assertIn("flagged", cols)
-        conn.close()
-
-    def test_metrics_endpoint_serves_a_full_body_on_a_fresh_database(self):
-        """The collector swallows errors and returns HTTP 200 with less output.
-
-        That is why the missing column went unnoticed: monitoring degraded
-        silently instead of failing loudly. Assert the body is actually
-        populated, and that no collector error was printed.
-        """
-        import subprocess
-        import sys
-
-        child = r"""
-import io, contextlib, json, os, sys, tempfile
-from unittest import mock
-sys.modules["stripe"] = mock.MagicMock()
-
-with tempfile.TemporaryDirectory() as tmp:
-    os.environ["DB_PATH"] = os.path.join(tmp, "fresh.db")
-    os.environ["BATTLE_BUDDY_HOME"] = tmp
-    os.environ["BATTLE_BUDDY_DATA_DIR"] = tmp
-    os.environ["BB_RAW_AUDIO_QUEUE_DIR"] = os.path.join(tmp, "raw_queue")
-    os.environ["TIPS_UPLOAD_DIR"] = os.path.join(tmp, "tips")
-    os.environ["TGID_TSV"] = os.path.join(tmp, "none.tsv")
-
-    import audio_receiver
-    from modules.database import init_db
-    init_db()
-
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-        resp = audio_receiver.app.test_client().get("/metrics")
-    body = resp.get_data(as_text=True)
-    print(json.dumps({
-        "status": resp.status_code,
-        "lines": len([l for l in body.splitlines() if l and not l.startswith("#")]),
-        "has_backlog": "battlebuddy_backlog_queue_depth" in body,
-        "noise": buf.getvalue(),
-    }))
-"""
-        env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-        proc = subprocess.run(
-            [sys.executable, "-c", child],
-            cwd=str(_ROOT), env=env, capture_output=True, text=True, timeout=300,
+        """The service calls init_db() on every start, so a rerun must not fail."""
+        result = _run()
+        self.assertEqual(
+            "", result["init_rerun_error"],
+            f"a second init_db() raised: {result['init_rerun_error']}",
         )
-        if proc.returncode != 0:
-            self.skipTest(f"audio_receiver not importable here: {proc.stderr[-300:]}")
-        payload = json.loads(proc.stdout.splitlines()[-1])
 
-        self.assertEqual(200, payload["status"])
+
+class TestMetricsAreFullyServedOnAFreshDatabase(unittest.TestCase):
+    def setUp(self) -> None:
+        if not _IMPORTABLE:
+            self.skipTest(
+                "audio_receiver cannot be imported here (needs faster_whisper); "
+                f"the authoritative baseline is /opt/battlebuddy/venv. "
+                f"{_IMPORT_ERROR}"
+            )
+
+    def test_scrape_has_no_collector_error_and_is_not_blank(self):
+        result = _run(scrape_metrics=True)
+        m = result.get("metrics") or {}
+        self.assertEqual(200, m.get("status"))
         self.assertNotIn(
-            "collector error", payload["noise"],
-            "the metrics collector caught an error, so the body is partial and "
-            "every panel downstream is quietly wrong",
+            "collector error", m.get("noise", ""),
+            "the collector caught an error, so /metrics is partial and every "
+            "panel downstream is quietly wrong",
         )
         self.assertGreater(
-            payload["lines"], 20,
-            f"/metrics served only {payload['lines']} samples from a fresh "
-            "database; monitoring is effectively blank",
+            m.get("samples", 0), 20,
+            f"/metrics served only {m.get('samples')} samples from a fresh "
+            "database; monitoring would be effectively blank",
         )
-        self.assertTrue(payload["has_backlog"], "backlog gauges missing from a fresh DB")
+        self.assertTrue(m.get("has_backlog"), "backlog gauges missing on a fresh DB")
 
 
 if __name__ == "__main__":
