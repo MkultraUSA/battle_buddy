@@ -176,28 +176,49 @@ class TestInjectedRowsAreMarkedAsTest(_TestCallCase):
                        "token": TOKEN})
         self.assertEqual(200, r["status"])
         self.assertEqual(
-            0, r["incidents_from_test"],
-            "an incident created from a test call must be marked is_test; "
-            "every map and sitrep query excludes is_test=1",
+            0, r["incidents_visible_to_app"],
+            "an incident created from a test call must be invisible to the "
+            "map and sitrep, which filter on (is_test IS NULL OR is_test = 0)",
+        )
+        self.assertEqual(
+            1, r["incidents_marked_test"],
+            "the incident should exist but flagged is_test=1, so it is "
+            "excluded from every published query",
         )
 
 
 class TestTokenIsNotTheReceiveCredential(_TestCallCase):
-    """The recorder Pi must not be able to invent transcripts."""
+    """The recorder Pi must not be able to invent transcripts.
 
-    def test_receive_token_does_not_open_test_call(self):
+    Asserted behaviourally rather than by reading the source: an earlier version
+    grepped the gate's text for the token name and failed on its own docstring,
+    which names it on purpose.
+    """
+
+    def test_receive_token_alone_does_not_arm_the_route(self):
         """BB_RECEIVE_TOKEN is shared with every recorder; this one must not be.
 
         A compromised recorder can already inject audio. If it also held this
-        credential it could fabricate a transcript outright, which is a different
-        and much cheaper attack.
+        credential it could fabricate a transcript outright, which is a cheaper
+        and much more damaging attack.
         """
-        source = (_ROOT / "audio_receiver.py").read_text(encoding="utf-8")
-        self.assertIn('os.environ.get("BB_TEST_CALL_TOKEN"', source)
-        self.assertNotIn(
-            "BB_TEST_CALL_TOKEN", source.split("def _require_test_call_token")[1].split("def test_call")[0],
-            "the gate must read its own secret, never the receive token",
+        r = _run(enabled=True, token=None,
+                 body={"tgid": 1315, "transcript": INCIDENT_TRANSCRIPT})
+        self.assertEqual(
+            503, r["status"],
+            "armed but unconfigured must refuse; the receive credential is not "
+            "a substitute for BB_TEST_CALL_TOKEN",
         )
+        self.assertEqual(0, r["calls_rows"])
+
+    def test_a_token_from_another_route_is_rejected(self):
+        """Passing the receive token as the test-call token must not work."""
+        r = _run(enabled=True, token=TOKEN,
+                 body={"tgid": 1315, "token": "some-other-credential",
+                       "transcript": INCIDENT_TRANSCRIPT},
+                 headers={"Authorization": "Bearer some-other-credential"})
+        self.assertEqual(401, r["status"])
+        self.assertEqual(0, r["calls_rows"])
 
 
 if __name__ == "__main__":

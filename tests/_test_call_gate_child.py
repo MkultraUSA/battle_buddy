@@ -74,12 +74,19 @@ def main() -> None:
             test_rows = conn.execute(
                 "SELECT COUNT(*) FROM calls WHERE is_test = 1"
             ).fetchone()[0]
+            # Count what the APPLICATION can see. Every map, sitrep and public
+            # query filters on (is_test IS NULL OR is_test = 0), so this is the
+            # number that matters: a fabricated incident must not appear here.
             try:
                 incident_rows = conn.execute(
-                    "SELECT COUNT(*) FROM incidents WHERE (is_test IS NULL OR is_test = 1)"
+                    "SELECT COUNT(*) FROM incidents "
+                    "WHERE (is_test IS NULL OR is_test = 0)"
+                ).fetchone()[0]
+                marked = conn.execute(
+                    "SELECT COUNT(*) FROM incidents WHERE is_test = 1"
                 ).fetchone()[0]
             except sqlite3.Error:
-                incident_rows = -1
+                incident_rows, marked = -1, -1
 
         Path(result_path).write_text(
             json.dumps({
@@ -87,7 +94,8 @@ def main() -> None:
                 "body": response.get_json(silent=True),
                 "calls_rows": rows,
                 "test_rows": test_rows,
-                "incidents_from_test": incident_rows,
+                "incidents_visible_to_app": incident_rows,
+                "incidents_marked_test": marked,
             }),
             encoding="utf-8",
         )
