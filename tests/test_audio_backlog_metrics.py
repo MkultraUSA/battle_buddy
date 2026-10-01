@@ -332,6 +332,23 @@ class AudioBacklogMetricsTests(unittest.TestCase):
         self.assertEqual(payload["state"]["total_pending"], 0)
         self.assertEqual(metrics["battlebuddy_backlog_files_scan_error"]["value"], 1)
 
+    def test_scraping_metrics_does_not_create_the_queue_root(self):
+        """A metric must not create the directory it observes.
+
+        The oldest-age metric is produced by get_raw_audio_queue_stats, and that
+        function originally used the mkdir-ing helpers. Scraping /metrics would
+        then create a missing queue root, so `scan_error` would stop reporting
+        1 and the Hostinger watcher's "queue unreadable" alarm would go blind --
+        the metric would have repaired the very fault it exists to reveal.
+        """
+        payload = self._run(memory_depth=0)
+        self.assertFalse(
+            self.root.exists(),
+            "scraping /metrics created the queue root; scan_error can no longer "
+            "report an absent or unreadable queue",
+        )
+        self.assertEqual(1, payload["state"]["file_scan_error"])
+
     def test_unreadable_root_sets_scan_error(self):
         (self.root / "pending").mkdir(parents=True)
         (self.root / "failed").mkdir()

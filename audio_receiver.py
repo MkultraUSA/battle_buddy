@@ -84,6 +84,7 @@ from modules.raw_audio_queue import (  # noqa: E402
     claim_queued_audio,
     enqueue_raw_audio,
     get_raw_audio_queue_counts,
+    get_raw_audio_queue_stats,
     load_queued_audio_metadata,
     release_queued_audio_claim,
     remove_queued_audio,
@@ -1216,6 +1217,36 @@ try:
                     for (_reason, _node), _n in sorted(_INGEST_SHED.items()):
                         g_ingest.add_metric([_reason, _node], float(_n))
                 yield g_ingest
+
+                # Oldest-waiting and on-disk size. The alerting watcher on
+                # Hostinger has a gate for "queue has not drained in N seconds"
+                # and it had nothing to read: get_raw_audio_queue_stats computes
+                # exactly this and was never exported, so the gate could never
+                # fire even once its metric name was corrected.
+                #
+                # Age rather than depth is the honest stall signal, because claim
+                # takes a lease and leaves the item in pending: a worker that
+                # claims a clip and then dies leaves the depth unchanged while the
+                # wait grows without bound.
+                try:
+                    _stats = get_raw_audio_queue_stats()
+                except Exception:
+                    _stats = {"oldest_age_seconds": -1.0, "bytes": 0.0,
+                              "scan_error": 1}
+                g_age = GaugeMetricFamily(
+                    "battlebuddy_backlog_oldest_age_seconds",
+                    "Age of the oldest clip waiting in the durable backlog; -1 when the "
+                    "queue could not be scanned",
+                )
+                g_age.add_metric([], float(_stats.get("oldest_age_seconds", 0.0)))
+                yield g_age
+
+                g_bytes = GaugeMetricFamily(
+                    "battlebuddy_backlog_pending_bytes",
+                    "On-disk size of the durable backlog pending directory",
+                )
+                g_bytes.add_metric([], float(_stats.get("bytes", 0.0)))
+                yield g_bytes
 
                 g_backlog_done = CounterMetricFamily(
                     "battlebuddy_backlog_completed_total",
