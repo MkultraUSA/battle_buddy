@@ -25,6 +25,8 @@ logs `[ingest] ...` lines while the scenario runs.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import sqlite3
@@ -70,7 +72,12 @@ def main() -> None:
         # A syntactically valid but semantically empty call: enough to prove the
         # request got past authentication and reached body validation, with no
         # audio, no Whisper, no LLM call and no row written.
-        response = client.post("/receive", json=scenario.get("body") or {}, headers=headers)
+        #
+        # stdout is captured so a test can assert on what the AUTH FAIL log line
+        # actually reports.
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            response = client.post("/receive", json=scenario.get("body") or {}, headers=headers)
 
         rows = 0
         with sqlite3.connect(db_path) as conn:
@@ -80,6 +87,7 @@ def main() -> None:
             "status": response.status_code,
             "body": response.get_json(silent=True),
             "calls_rows": rows,
+            "stdout": captured.getvalue(),
         }), encoding="utf-8")
 
 

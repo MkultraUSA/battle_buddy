@@ -49,6 +49,7 @@ class Result:
         self.status: int = raw["status"]
         self.body = raw["body"]
         self.calls_rows: int = raw["calls_rows"]
+        self.stdout: str = raw.get("stdout", "")
 
 
 def run(*, token: str | None = None, headers: dict | None = None,
@@ -219,6 +220,27 @@ class TestNonAsciiCredentials(_ReceiveAuthCase):
         )
         bad = run(token=secret, headers={"Authorization": "Bearer wrong"})
         self.assertEqual(bad.status, 401)
+
+
+class TestAuthFailureLogging(_ReceiveAuthCase):
+    """The AUTH FAIL line must name an address the caller cannot choose.
+
+    `X-Real-IP` is set by the reverse proxy, but :9001 is reachable directly, so
+    anyone reaching it can send its own `X-Real-IP` and poison the one field an
+    investigator would use to trace a brute-force attempt.
+    """
+
+    def test_log_does_not_trust_a_client_supplied_x_real_ip(self):
+        forged = "forged-by-attacker"
+        r = run(token=TOKEN, headers={"Authorization": "Bearer wrong",
+                                      "X-Real-IP": forged})
+        self.assertEqual(r.status, 401)
+        self.assertIn("AUTH FAIL", r.stdout, f"expected an AUTH FAIL log line, got {r.stdout!r}")
+        self.assertNotIn(
+            forged, r.stdout,
+            "the AUTH FAIL line echoed a client-supplied X-Real-IP; an attacker "
+            "reaching the port directly can forge the address used to trace them",
+        )
 
 
 class TestGateRunsBeforeAnyWork(_ReceiveAuthCase):
