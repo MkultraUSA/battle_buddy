@@ -42,6 +42,7 @@ def _body(**overrides) -> str:
         'battlebuddy_transcription_completed{status="timeout",window="15m"} 0',
         'battlebuddy_transcription_completed{status="exception",window="15m"} 0',
         'battlebuddy_transcription_completed{status="empty",window="15m"} 0',
+        'battlebuddy_transcription_completed{status="success",window="15m"} 20',
         'battlebuddy_transcription_success_ratio{window="15m"} 1',
         "battlebuddy_transcription_latency_seconds_p95{window=\"15m\"} 5",
         "battlebuddy_process_rss_bytes 1503238553",
@@ -177,6 +178,59 @@ class TestQueueGates(unittest.TestCase):
         self.assertEqual(
             "critical", self._eval(**{"battlebuddy_backlog_files_failed|": 9})[0]
         )
+
+
+class TestRatioGatesNeedADenominator(unittest.TestCase):
+    """A ratio with no denominator is not a failure.
+
+    Traffic is ~1 call per 85 seconds, so a 15-minute window is frequently
+    empty. The application computes the success ratio as 0.0 for such a window,
+    which is indistinguishable from every transcription failing -- so an
+    unguarded gate pages continuously on a healthy quiet system.
+
+    Caught by a dry run against production: the live value was 1.0 moments after
+    the same read produced 0.00.
+    """
+
+    def _eval(self, **overrides):
+        reader = watch.MetricReader(watch.parse_metrics(_body(**overrides)))
+        st = watch.build_status(reader)
+        return st, *watch.evaluate(st, reader)
+
+    def test_empty_window_does_not_page(self):
+        # Reproduce what the application actually reports for an empty window:
+        # no attempts at all, and a success ratio of 0.0 because the denominator
+        # is zero.
+        body = _body(**{
+            'battlebuddy_transcription_completed|status="success",window="15m"': 0,
+            'battlebuddy_transcription_success_ratio|window="15m"': 0.0,
+        })
+        reader = watch.MetricReader(watch.parse_metrics(body))
+        st = watch.build_status(reader)
+        self.assertEqual(0, st.samples_15m)
+        self.assertEqual(0.0, st.success_ratio_15m,
+                         "this is the 0/0 reading that must not page")
+        level, reasons = watch.evaluate(st, reader)
+        self.assertEqual("ok", level, f"empty window paged: {reasons}")
+        self.assertTrue(any("skipped" in r for r in reasons), reasons)
+
+    def test_small_window_does_not_page(self):
+        _st, level, reasons = self._eval(
+            **{'battlebuddy_transcription_completed|status="success",window="15m"': 2}
+        )
+        self.assertEqual("ok", level, f"2 samples paged: {reasons}")
+
+    def test_real_failure_with_enough_samples_still_pages(self):
+        """The guard must not swallow genuine failures."""
+        _st, level, reasons = self._eval(
+            **{
+                'battlebuddy_transcription_completed|status="success",window="15m"': 5,
+                'battlebuddy_transcription_completed|status="exception",window="15m"': 40,
+                'battlebuddy_transcription_success_ratio|window="15m"': 0.11,
+            }
+        )
+        self.assertEqual("critical", level)
+        self.assertTrue(any("success ratio" in r for r in reasons), reasons)
 
 
 class TestIngestOutcomes(unittest.TestCase):

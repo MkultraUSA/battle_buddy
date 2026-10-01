@@ -67,6 +67,11 @@ SSH_OPTS = [
 ]
 REPEAT_SECS = 3600
 
+#: Minimum transcriptions in the 15m window before a ratio means anything.
+#: Traffic is currently ~1 call per 85s, so a 15m window holds roughly 11 calls
+#: at best and frequently none at all.
+MIN_RATIO_SAMPLES = 5
+
 
 # --------------------------------------------------------------------------
 # Metric names, in one place.
@@ -81,6 +86,7 @@ METRIC_IN_PROGRESS = "battlebuddy_transcription_in_progress"
 METRIC_COMPLETED = "battlebuddy_transcription_completed"
 METRIC_SUCCESS_RATIO = "battlebuddy_transcription_success_ratio"
 METRIC_LATENCY_P95 = "battlebuddy_transcription_latency_seconds_p95"
+METRIC_QUALITY_CALLS = "battlebuddy_transcript_quality_calls"
 METRIC_RSS = "battlebuddy_process_rss_bytes"
 
 METRIC_QUEUE_PENDING = "battlebuddy_backlog_files_pending"
@@ -170,6 +176,7 @@ class Status:
     exception_15m: float = 0.0
     empty_15m: float = 0.0
     success_ratio_15m: float = 0.0
+    samples_15m: float = 0.0
     latency_p95_15m: float = 0.0
     rss_gib: float = 0.0
     queue_pending: float = 0.0
@@ -201,6 +208,17 @@ def build_status(reader: MetricReader) -> Status:
         queue_scan_error=r(METRIC_QUEUE_SCAN_ERROR),
         queue_oldest_age_seconds=r(METRIC_QUEUE_OLDEST_AGE),
     )
+    # Sample base for the ratio gates. A ratio with no denominator reads 0.0,
+    # which is indistinguishable from total failure: with traffic at roughly one
+    # call every 85 seconds, a 15-minute window is often empty, and a 0/0 window
+    # would page "success ratio 0.00" on a perfectly healthy system. Found by a
+    # dry run against production, where the live value was 1.0 moments later.
+    st.samples_15m = (
+        st.lock_timeout_15m + st.timeout_15m + st.exception_15m
+        + st.empty_15m
+        + r(METRIC_COMPLETED, window="15m", status="success")
+    )
+
     # Ingest losses, summed across nodes. Uses the counter added with the
     # backlog work: shed audio is otherwise invisible, because it never reaches
     # the database.
@@ -245,10 +263,19 @@ def evaluate(st: Status, reader: MetricReader) -> tuple[str, list[str]]:
         raise_to("warning", f"model lock timeouts (15m) {st.lock_timeout_15m:.0f} >= 10")
     if st.latency_p95_15m >= 90 and level == "ok":
         raise_to("warning", f"p95 latency {st.latency_p95_15m:.0f}s >= 90s")
-    if st.success_ratio_15m <= 0.55 and level == "ok":
-        raise_to("critical", f"success ratio (15m) {st.success_ratio_15m:.2f} <= 0.55")
-    if st.coverage_15m <= 0.40 and level == "ok":
-        raise_to("critical", f"coverage (15m) {st.coverage_15m:.2f} <= 0.40")
+    # Ratio gates need a denominator. Below MIN_RATIO_SAMPLES the ratio is
+    # meaningless, so say so rather than alerting on noise.
+    if st.samples_15m < MIN_RATIO_SAMPLES:
+        if level == "ok":
+            reasons.append(
+                f"ratio gates skipped: only {st.samples_15m:.0f} transcriptions in "
+                f"15m (need {MIN_RATIO_SAMPLES})"
+            )
+    else:
+        if st.success_ratio_15m <= 0.55 and level == "ok":
+            raise_to("critical", f"success ratio (15m) {st.success_ratio_15m:.2f} <= 0.55")
+        if st.coverage_15m <= 0.40 and level == "ok":
+            raise_to("critical", f"coverage (15m) {st.coverage_15m:.2f} <= 0.40")
     if st.rss_gib >= 10:
         raise_to("warning", f"RSS {st.rss_gib:.1f}GiB >= 10GiB")
 
@@ -290,8 +317,8 @@ def summarize(level: str, reasons: list[str], st: Status, log_excerpt: str) -> s
         f"Battle Buddy transcription watch: {level.upper()}",
         f"coverage15={st.coverage_15m:.2f} reliability15={st.reliability_15m:.2f}",
         f"in_progress={st.in_progress:.0f} lock_timeout15={st.lock_timeout_15m:.0f}",
-        f"success_ratio15={st.success_ratio_15m:.2f} p95={st.latency_p95_15m:.0f}s "
-        f"rss={st.rss_gib:.1f}GiB",
+        f"success_ratio15={st.success_ratio_15m:.2f} n15={st.samples_15m:.0f} "
+        f"p95={st.latency_p95_15m:.0f}s rss={st.rss_gib:.1f}GiB",
         f"backlog pending={st.queue_pending:.0f} oldest={st.queue_oldest_age_seconds:.0f}s "
         f"failed={st.queue_failed:.0f}",
         f"ingest queued={st.ingest_backlogged:.0f} shed={st.ingest_shed:.0f}",
