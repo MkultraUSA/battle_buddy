@@ -28,6 +28,17 @@ _ROOT = pathlib.Path(__file__).parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+# Suite hygiene. Several modules here install stub `modules.*` entries into
+# sys.modules at COLLECTION time and never remove them; a stubbed
+# `modules.talkgroups` has no __file__ and makes this import fail with
+# "cannot import name 'CAT_COORDS' ... (unknown location)". Evict the stub so the
+# real module is loaded -- same pattern as the modules.config eviction in
+# test_premium_dead_routes_removed.py and four other suites.
+for _stubbed in ("modules.talkgroups", "modules.config"):
+    _mod = sys.modules.get(_stubbed)
+    if _mod is not None and getattr(_mod, "__file__", None) is None:
+        del sys.modules[_stubbed]
+
 from modules.talkgroups import (  # noqa: E402
     CAT_COORDS,
     _tag_is_ignored,
