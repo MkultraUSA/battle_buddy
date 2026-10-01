@@ -103,8 +103,10 @@ def main() -> None:
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
 
+        # _backlog_queue is a collections.deque (the handler uses popleft), not
+        # a queue.Queue, so depth is len().
         with audio_receiver._backlog_lock:
-            queued = audio_receiver._backlog_queue.qsize()
+            queued = len(audio_receiver._backlog_queue)
 
         Path(result_path).write_text(
             json.dumps(
