@@ -207,7 +207,11 @@ class TranscriptionWatchdog:
 _watchdog = TranscriptionWatchdog(timeout=TRANSCRIPTION_TIMEOUT)
 
 
-def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEOUT) -> str:
+def transcribe_with_timeout(
+    wav_bytes: bytes,
+    timeout: int = TRANSCRIPTION_TIMEOUT,
+    raise_on_error: bool = False,
+) -> tuple[str, float]:
     result_container: list[str] = []
     exception_container: list[Exception] = []
     status_container: list[str] = []
@@ -289,6 +293,8 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
         _reset_model_lock()
         _watchdog.reset()
         _record_transcription_done("timeout", metrics_started, audio_seconds)
+        if raise_on_error:
+            raise TranscriptionError(f"transcription hung after {timeout}s")
         return "", 0.0
 
     _watchdog.mark_done()
@@ -299,9 +305,39 @@ def transcribe_with_timeout(wav_bytes: bytes, timeout: int = TRANSCRIPTION_TIMEO
     _record_transcription_done(status, metrics_started, audio_seconds, len(transcript))
 
     if exception_container:
+        if raise_on_error:
+            raise TranscriptionError(f"transcription failed ({status}): {exception_container[0]}")
         return "", 0.0
+    if raise_on_error and status in _FAILURE_STATUSES:
+        raise TranscriptionError(f"transcription did not complete ({status})")
     return transcript, accuracy
 
 
-def transcribe(wav_bytes: bytes) -> tuple[str, float]:
-    return transcribe_with_timeout(wav_bytes, timeout=TRANSCRIPTION_TIMEOUT)
+class TranscriptionError(RuntimeError):
+    """The transcription failed, as opposed to yielding nothing.
+
+    This distinction matters and used to be lost. `transcribe()` returned
+    ("", 0.0) for BOTH genuine silence and a total failure -- a broken
+    decode, a model that would not load, a lock timeout. A caller that treats an
+    empty transcript as "nothing to report" therefore cannot tell "this clip is
+    quiet" from "this worker is broken", and will happily discard real audio.
+    That is exactly what the backlog worker does with an empty transcript, so a
+    faster_whisper regression would have silently destroyed every queued clip
+    while the metrics looked like a run of quiet radio.
+    """
+
+
+#: statuses that mean "we did not transcribe this", not "this was silent".
+_FAILURE_STATUSES = frozenset({"exception", "timeout", "lock_timeout"})
+
+
+def transcribe(wav_bytes: bytes, *, raise_on_error: bool = False) -> tuple[str, float]:
+    """Transcribe WAV bytes to (text, accuracy).
+
+    With raise_on_error=True a failure raises TranscriptionError instead of
+    returning empty, so the caller can retry rather than discard. Genuine
+    silence still returns ("", 0.0): that is a real result, not an error.
+    """
+    return transcribe_with_timeout(
+        wav_bytes, timeout=TRANSCRIPTION_TIMEOUT, raise_on_error=raise_on_error
+    )
