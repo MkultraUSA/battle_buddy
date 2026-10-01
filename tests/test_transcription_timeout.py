@@ -214,9 +214,35 @@ class TestTranscribeWithTimeout(unittest.TestCase):
         ) as mock_fn:
             transcript, accuracy = transcription_mod.transcribe(b"wav")
 
-        mock_fn.assert_called_once_with(b"wav", timeout=transcription_mod.TRANSCRIPTION_TIMEOUT)
+        # Assert the delegation property rather than an exact kwarg list: pinning
+        # `assert_called_once_with(b"wav", timeout=...)` broke the moment
+        # raise_on_error was threaded through, even though the delegation was
+        # still correct.
+        mock_fn.assert_called_once()
+        args, kwargs = mock_fn.call_args
+        self.assertEqual((b"wav",), args)
+        self.assertEqual(transcription_mod.TRANSCRIPTION_TIMEOUT, kwargs["timeout"])
         self.assertEqual(transcript, "delegated")
         self.assertEqual(accuracy, -0.8)
+
+    def test_transcribe_defaults_to_not_raising(self):
+        """/receive relies on the default: it keeps the clip either way.
+
+        Only the backlog worker asks for the failure to be raised, because an
+        empty transcript there means the clip is discarded.
+        """
+        with patch.object(
+            transcription_mod, "transcribe_with_timeout", return_value=("", 0.0)
+        ) as mock_fn:
+            transcription_mod.transcribe(b"wav")
+        self.assertFalse(mock_fn.call_args.kwargs.get("raise_on_error", False))
+
+    def test_transcribe_forwards_raise_on_error(self):
+        with patch.object(
+            transcription_mod, "transcribe_with_timeout", return_value=("x", 0.1)
+        ) as mock_fn:
+            transcription_mod.transcribe(b"wav", raise_on_error=True)
+        self.assertTrue(mock_fn.call_args.kwargs.get("raise_on_error"))
 
 
 if __name__ == "__main__":
