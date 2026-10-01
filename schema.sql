@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS calls (
     lat           REAL,
     lon           REAL,
     location      TEXT,
-    coords_approx INTEGER DEFAULT 0
+    coords_approx INTEGER DEFAULT 0,
+    is_test       INTEGER DEFAULT 0
 );
 
 -- Incidents: clustered events synthesized from one or more related calls,
