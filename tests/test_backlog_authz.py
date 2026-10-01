@@ -65,6 +65,36 @@ class TestBacklogTokenGuardExists(unittest.TestCase):
             "unset BB_BACKLOG_AGENT_TOKEN must refuse rather than admit"
         )
 
+    def test_guard_returns_none_on_success_not_the_request_body(self):
+        """Returning `data` makes Flask echo the caller's token in the response.
+
+        Observed live: POST with {"token": ...} came back as
+        {"token": "<the token>"}. The None return IS the success signal, exactly
+        as in _require_receive_token.
+        """
+        fn = _receive_free_functions()["_require_backlog_token"]
+        body = list(fn.body)
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+            body = body[1:]
+        returns = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
+        for ret in returns:
+            if isinstance(ret.value, ast.Name) and ret.value.id == "data":
+                self.fail(
+                    "_require_backlog_token returns `data` on success; Flask will "
+                    "jsonify the parsed request body and echo the caller's token "
+                    "back in the response"
+                )
+        # `return None` parses to Return(value=Constant(None)), NOT value=None.
+        def returns_none(r: ast.Return) -> bool:
+            return r.value is None or (
+                isinstance(r.value, ast.Constant) and r.value.value is None
+            )
+        self.assertTrue(
+            any(returns_none(r) for r in returns),
+            "the guard must `return None` on success so the caller can tell "
+            "authorised from refused",
+        )
+
     def test_guard_compares_encoded_bytes(self):
         fn = _receive_free_functions()["_require_backlog_token"]
         src = ast.unparse(fn)

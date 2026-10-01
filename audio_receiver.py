@@ -153,7 +153,10 @@ def _require_backlog_token():
     if not supplied or not hmac.compare_digest(supplied.encode("utf-8"),
                                               expected.encode("utf-8")):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
-    return data
+    # None means "authorised" -- the same contract as _require_receive_token.
+    # Returning `data` here would make Flask auto-jsonify the parsed request body
+    # and echo the caller's token straight back in the response.
+    return None
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _backlog_completed: int = 0   # total completions across all workers
 
