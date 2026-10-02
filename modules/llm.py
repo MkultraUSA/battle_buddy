@@ -23,14 +23,6 @@ from modules.config import (
     TALK_USER,
 )
 
-# Durable outcome counting. Was nothing at all: llm_analyze() returns None both
-# when it deliberately declines to spend money and when the provider call fails,
-# so there was no way to tell "we skipped this call" from "we paid for it and lost
-# it". A module-level dict would be the same mistake the ingest counters already
-# made and fixed -- it resets on every restart. bump_counter() never raises, so
-# this cannot become a new failure mode on the LLM path.
-from modules.database import bump_counter
-
 try:
     import anthropic as _anthropic_mod
 except ImportError:
@@ -547,6 +539,16 @@ def llm_analyze(call: dict, recent_calls_list: list):
     global _llm_backoff_until, _llm_call_times
 
     def _outcome(name: str) -> None:
+        # Imported lazily, not at module level. A top-level
+        # `from modules.database import bump_counter` drags modules.config and
+        # modules.talkgroups into this module's import graph, and several suites
+        # install file-less stubs for those at collection time -- so importing
+        # modules.llm started failing depending on suite order (6 errors and 5
+        # failures in the full run, none of them reproducible in isolation).
+        # Keeping the import inside the function also leaves modules.database
+        # free to import this module later without a cycle.
+        from modules.database import bump_counter
+
         bump_counter("llm_outcome", f"outcome={name}")
 
     if not OPENROUTER_ENABLED:
