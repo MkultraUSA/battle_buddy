@@ -452,6 +452,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .popup-custom .itype { font-weight: 700; color: #ef4444; font-size: 14px; margin-bottom: 4px; }
 .popup-custom .meta { color: #64748b; font-size: 11px; margin-bottom: 4px; }
 .popup-custom .transcript { color: #374151; font-size: 12px; line-height: 1.4; }
+/* The city's own published frame for the clicked camera. Block, full popup
+   width, and a background behind it so a slow or blocked image reads as a
+   placeholder rather than a broken-image glyph. */
+.popup-custom img.cam-frame { display: block; width: 100%; border-radius: 6px; border: 1px solid #1e3a5f; background: #0f172a; margin: 6px 0 4px; }
+.popup-custom .cam-frame-link a { color: #2563eb; text-decoration: none; }
+.popup-custom .cam-frame-link a:hover { text-decoration: underline; }
 #voice-btn { background: none; border: 1px solid #1e3a5f; color: #64748b; border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s; }
 #voice-btn:hover { border-color: #3b82f6; color: #3b82f6; }
 #voice-btn.on { border-color: #3b82f6; color: #3b82f6; background: rgba(59,130,246,0.1); }
