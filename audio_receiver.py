@@ -174,13 +174,24 @@ _BACKLOG_ENABLED = (os.environ.get("BB_BACKLOG_ENABLED") or "").strip().lower() 
 #   reason: throttled  -> adaptive throttle declined it (depth-based shedding)
 #           queue_full  -> durable queue was at BB_MAX_ITEMS
 #           backlogged  -> durably queued for a remote worker (not a loss)
-_INGEST_SHED: dict = {}
-
-
 def _record_ingest_outcome(reason: str, node: str) -> None:
-    """Count one ingest outcome. Cheap enough for the request path."""
-    key = (str(reason), str(node or "unknown"))
-    _INGEST_SHED[key] = _INGEST_SHED.get(key, 0) + 1
+    """Count one ingest outcome durably.
+
+    Was a module-level dict, so every restart reset it to zero. Overflow events
+    are rare -- often only a handful a day -- which is exactly why losing them on
+    the next deploy is so easy to miss: the counter read a plausible 0 and there
+    was nothing to notice.
+    """
+    bump_counter("ingest_outcome", f"reason={reason},node={node or 'unknown'}")
+
+
+def _ingest_outcome_counts() -> dict:
+    """Read the durable counters back as {(reason, node): value}."""
+    out = {}
+    for labels, value in read_counters("ingest_outcome").items():
+        parsed = dict(p.split("=", 1) for p in labels.split(",") if "=" in p)
+        out[(parsed.get("reason", "unknown"), parsed.get("node", "unknown"))] = value
+    return out
 
 
 def _require_backlog_token():
@@ -217,7 +228,8 @@ def _require_backlog_token():
     return None
 _backlog_token = os.environ.get("BB_BACKLOG_AGENT_TOKEN", "")
 _test_call_token = os.environ.get("BB_TEST_CALL_TOKEN", "")
-_backlog_completed: int = 0   # total completions across all workers
+# Completions are counted in the `counters` table, not in memory, so they survive
+# a restart. See _record_ingest_outcome for why that matters.
 
 
 def _require_receive_token():
@@ -746,6 +758,12 @@ def api_backlog_complete():
 
     data = request.get_json(force=True) or {}
 
+    # Which worker did the transcription. Supplied by the worker and therefore
+    # self-reported, which is fine: this endpoint is already token-gated and this
+    # is a diagnostic field, not an authorisation input. Used so the database can
+    # distinguish remotely transcribed calls from local ones.
+    worker_id = str(data.get("worker_id") or "")[:64]
+
     item_id = data.get("item_id", "")
     transcript = data.get("transcript", "")
     action = data.get("action", "complete")
@@ -832,7 +850,8 @@ def api_backlog_complete():
     print(f"[backlog] {tag}: {transcript[:80]}", flush=True)
     try:
         call_id = insert_call(ts, tgid, tag, category, node,
-                              duration, transcript, def_lat, def_lon, location, coords_approx, accuracy)
+                              duration, transcript, def_lat, def_lon, location,
+                              coords_approx, accuracy, worker=worker_id or None)
         # The category is threaded through to llm_analyze and analyze_for_incident,
         # so deriving it correctly above only matters if the call dict carries it.
         call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag,
@@ -842,7 +861,7 @@ def api_backlog_complete():
         call["llm"] = llm_analyze(call, recent)
         analyze_for_incident(call)
         post_to_talk(call)
-        _backlog_completed += 1
+        bump_counter("backlog_completed", worker_id or "unknown")
     except Exception as e:
         # Deliberately do NOT remove the clip: the lease will expire and it
         # becomes claimable again. Losing it here would silently drop audio that
@@ -1293,9 +1312,8 @@ try:
                     "backlogged is audio durably queued for a remote worker",
                     labels=["reason", "node"],
                 )
-                with _backlog_lock:
-                    for (_reason, _node), _n in sorted(_INGEST_SHED.items()):
-                        g_ingest.add_metric([_reason, _node], float(_n))
+                for (_reason, _node), _n in sorted(_ingest_outcome_counts().items()):
+                    g_ingest.add_metric([_reason, _node], float(_n))
                 yield g_ingest
 
                 # Oldest-waiting and on-disk size. The alerting watcher on
@@ -1330,9 +1348,18 @@ try:
 
                 g_backlog_done = CounterMetricFamily(
                     "battlebuddy_backlog_completed_total",
-                    "Total backlog items completed by remote workers (cumulative)",
+                    "Backlog items completed, by worker; cumulative and persisted, so "
+                    "it does not reset on restart",
+                    labels=["worker"],
                 )
-                g_backlog_done.add_metric([], float(_backlog_completed))
+                # Per worker now, so "did the remote worker ever run" is a
+                # question the metrics can answer rather than something you have
+                # to go read a systemd log for.
+                _done = read_counters("backlog_completed")
+                if not _done:
+                    g_backlog_done.add_metric(["unknown"], 0.0)
+                for _w, _v in sorted(_done.items()):
+                    g_backlog_done.add_metric([_w], float(_v))
                 yield g_backlog_done
 
                 for _name, _help, _val in _backlog_file_metric_specs(_backlog):

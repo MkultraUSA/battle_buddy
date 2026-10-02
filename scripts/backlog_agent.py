@@ -122,6 +122,10 @@ def complete_one(item: dict, transcript: str, accuracy: float = 0.0) -> None:
         "action": "complete",
         "transcript": transcript,
         "accuracy": accuracy,
+        # Identify ourselves so the stored call can be attributed to this worker
+        # rather than being indistinguishable from a local transcription, and so
+        # the completion counter can be broken down per worker.
+        "worker_id": WORKER_ID,
         # Echo the queue's metadata so the stored call is not filed as Unknown
         # at default coordinates.
         "tgid": item.get("tgid", 0),
