@@ -23,6 +23,14 @@ from modules.config import (
     TALK_USER,
 )
 
+# Durable outcome counting. Was nothing at all: llm_analyze() returns None both
+# when it deliberately declines to spend money and when the provider call fails,
+# so there was no way to tell "we skipped this call" from "we paid for it and lost
+# it". A module-level dict would be the same mistake the ingest counters already
+# made and fixed -- it resets on every restart. bump_counter() never raises, so
+# this cannot become a new failure mode on the LLM path.
+from modules.database import bump_counter
+
 try:
     import anthropic as _anthropic_mod
 except ImportError:
@@ -537,26 +545,39 @@ def llm_analyze(call: dict, recent_calls_list: list):
     escalation_stage, reasoning — or None if skipped/error.
     """
     global _llm_backoff_until, _llm_call_times
+
+    def _outcome(name: str) -> None:
+        bump_counter("llm_outcome", f"outcome={name}")
+
     if not OPENROUTER_ENABLED:
+        _outcome("disabled")
         return None
     if call.get("tgid", 0) == 0:
+        _outcome("no_tgid")
         return None
     transcript = call.get("transcript") or ""
     if not transcript or len(transcript) < _LLM_MIN_TRANSCRIPT:
+        _outcome("skipped_short")
         return None
     if _looks_like_nonspeech(transcript):
+        _outcome("skipped_nonspeech")
         return None                      # Whisper filler, not speech
     if call.get("duration", 99.0) < _LLM_MIN_DURATION:
+        _outcome("skipped_short_duration")
         return None
     tgid = call.get("tgid", 0)
     if not _LLM_SAFETY_RE.search(transcript):
         now_pre = time.time()
         tracker = _llm_routine_tracker.get(tgid)
         if tracker and now_pre < tracker.get("cooldown_until", 0):
+            # Only reachable WITHOUT a safety keyword: a keyword skips this
+            # branch entirely, so cooldown never throttles urgent traffic.
+            _outcome("skipped_cooldown")
             return None
     now = time.time()
     with _llm_rate_lock:
         if now < _llm_backoff_until:
+            _outcome("skipped_backoff")
             return None
         _llm_call_times[:] = [t for t in _llm_call_times if now - t < 60]
         _llm_call_times.append(now)
@@ -599,8 +620,10 @@ def llm_analyze(call: dict, recent_calls_list: list):
                 tr["streak"] = 0
         else:
             _llm_routine_tracker.pop(tgid, None)
+        _outcome("analyzed")
         return result
     except Exception as exc:
+        _outcome("error")
         print(f"[llm] error: {exc}", flush=True)
         if "429" in str(exc):
             _llm_backoff_until = time.time() + _LLM_BACKOFF_SECS
