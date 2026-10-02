@@ -84,6 +84,10 @@ _CHILD = textwrap.dedent(
             l for l in resp.get_data(as_text=True).splitlines()
             if l.startswith("# HELP battlebuddy_ingest_outcomes")
         ),
+        "llm_help": chr(10).join(
+            l for l in resp.get_data(as_text=True).splitlines()
+            if l.startswith("# HELP battlebuddy_llm")
+        ),
     }))
     """
 )
@@ -320,6 +324,22 @@ class AudioBacklogMetricsTests(unittest.TestCase):
         self.assertEqual(payload["state"]["file_scan_error"], 1)
         self.assertEqual(payload["state"]["total_pending"], 0)
         self.assertEqual(metrics["battlebuddy_backlog_files_scan_error"]["value"], 1)
+
+    def test_llm_outcomes_appear_in_a_scrape(self):
+        """The counter must actually reach the metrics endpoint.
+
+        Unit tests on llm_analyze can all pass while the metric family is never
+        emitted, or emitted under the wrong name. prometheus_client appends _total
+        to a CounterMetricFamily, so the wire name is battlebuddy_llm_total.
+        """
+        payload = self._run(memory_depth=0)
+        self.assertEqual(payload["scrape_status"], 200)
+        self.assertIn("battlebuddy_llm_total", payload["scraped"],
+                      "battlebuddy_llm_total is the emitted name; the family is "
+                      "declared as battlebuddy_llm")
+        self.assertIn("LLM", payload["llm_help"],
+                      "the help text should make the skip reasons legible "
+                      "without reading modules/llm.py")
 
     def test_scraping_metrics_does_not_create_the_queue_root(self):
         """A metric must not create the directory it observes.
