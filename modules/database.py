@@ -43,6 +43,25 @@ def init_db():
         conn.execute("ALTER TABLE calls ADD COLUMN accuracy REAL")
     except Exception:
         pass
+    # Which worker transcribed this call. Remote (Hostinger) completions arrive
+    # via /api/backlog/complete, local ones via the in-process path, and both
+    # were stored with the originating radio's node -- so the database could not
+    # tell them apart and overflow was invisible after the fact.
+    try:
+        conn.execute("ALTER TABLE calls ADD COLUMN worker TEXT")
+    except Exception:
+        pass
+    # Counters that must outlive the process. The backlog totals used to live in
+    # module-level dicts, which reset to zero on restart: the only evidence that
+    # overflow ever worked was destroyed by the first deploy after it happened.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS counters (
+            name   TEXT NOT NULL,
+            labels TEXT NOT NULL DEFAULT '',
+            value  REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (name, labels)
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS incidents (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -236,15 +255,63 @@ def remove_subscription(username: str, beat: str = "all"):
     conn.close()
 
 
+def bump_counter(name: str, labels: str = "", delta: float = 1.0) -> None:
+    """Increment a durable counter. Never raises.
+
+    Counter bookkeeping must not be able to break ingest or a completion, so
+    every failure here is swallowed. That means a counter can silently undercount
+    if the database is locked; the alternative -- propagating -- would turn a
+    metrics write into a dropped call.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=2.0)
+        conn.execute(
+            "INSERT INTO counters (name, labels, value) VALUES (?,?,?) "
+            "ON CONFLICT(name, labels) DO UPDATE SET value = value + excluded.value",
+            (name, labels, delta),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def read_counter(name: str, labels: str = "") -> float:
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=2.0)
+        row = conn.execute(
+            "SELECT value FROM counters WHERE name = ? AND labels = ?", (name, labels)
+        ).fetchone()
+        conn.close()
+        return float(row[0]) if row else 0.0
+    except Exception:
+        return 0.0
+
+
+def read_counters(name: str) -> dict:
+    """All label-sets for a counter, as {labels: value}."""
+    out = {}
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=2.0)
+        for labels, value in conn.execute(
+            "SELECT labels, value FROM counters WHERE name = ?", (name,)
+        ):
+            out[labels] = float(value)
+        conn.close()
+    except Exception:
+        return {}
+    return out
+
+
 def insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location,
-               coords_approx=0, accuracy=None, is_test=0) -> int:
+               coords_approx=0, accuracy=None, is_test=0, worker=None) -> int:
     conn = sqlite3.connect(DB_PATH, timeout=5.0)
     cur  = conn.execute(
         "INSERT INTO calls (ts,tgid,tag,category,node,duration,transcript,lat,lon,"
-        "location,coords_approx,accuracy,is_test) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "location,coords_approx,accuracy,is_test,worker) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ts, tgid, tag, category, node, duration, transcript, lat, lon, location,
-         coords_approx, accuracy, 1 if is_test else 0)
+         coords_approx, accuracy, 1 if is_test else 0, worker or None)
     )
     row_id = cur.lastrowid
     conn.commit()
