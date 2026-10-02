@@ -498,6 +498,8 @@ if (typeof document !== 'undefined') {
 // leaving the incident pins, counts and notices exactly as they were.
 var CAMERAS_URL = '/static/data/austin_cameras.json';
 var cameraLayer = null;
+var cameraDots = null;
+var cameraZoomBound = false;
 
 function cameraPopupHtml(props, generated) {
   var id = props.id || 'unknown';
@@ -510,6 +512,34 @@ function cameraPopupHtml(props, generated) {
     '<div class="meta">City of Austin Open Data' +
       (generated ? ' · snapshot ' + esc(generated) : '') + '</div>' +
     '</div>';
+}
+
+// ---------------------------------------------------------------------------
+// City of Austin traffic cameras — zoom-dependent weight
+// ---------------------------------------------------------------------------
+// Rendered all at once, 820 dots hazed the whole city and buried the single
+// active incident pin downtown, which is the opposite of the intent. Screenshot
+// review is the only thing that caught this: the metrics said 820 drawn.
+//
+// So the layer reads as texture when you are looking at the whole city and as
+// reference points when you are close enough to act on one. 820 of anything is
+// legible up close and noise from far away.
+var CAMERA_DOT_MIN_ZOOM = 12;   // below this: texture only
+var CAMERA_DOT_FULL_ZOOM = 15;  // at/above this: full weight
+
+function cameraOpacityForZoom(z) {
+  if (z >= CAMERA_DOT_FULL_ZOOM) return 1.0;
+  if (z <= CAMERA_DOT_MIN_ZOOM) return 0.16;
+  var span = CAMERA_DOT_FULL_ZOOM - CAMERA_DOT_MIN_ZOOM;
+  return 0.16 + 0.84 * ((z - CAMERA_DOT_MIN_ZOOM) / span);
+}
+
+function applyCameraZoom(z) {
+  if (!cameraDots || !cameraDots.length) return;
+  var o = cameraOpacityForZoom(z);
+  for (var i = 0; i < cameraDots.length; i++) {
+    cameraDots[i].setStyle({opacity: o, fillOpacity: Math.min(1, o + 0.25)});
+  }
 }
 
 async function loadCameras() {
@@ -534,6 +564,7 @@ async function loadCameras() {
     // renderer Leaflet falls back to SVG and the layer still draws.
     var renderer = L.canvas ? L.canvas({padding: 0.5}) : null;
     var group = L.layerGroup();
+    var dots = [];
     var drawn = 0;
     for (var k = 0; k < features.length; k++) {
       var f = features[k] || {};
@@ -548,6 +579,7 @@ async function loadCameras() {
       var dot = L.circleMarker([lat, lon], opts);
       dot.bindPopup(cameraPopupHtml(props, data.generated));
       dot.addTo(group);
+      dots.push(dot);
       drawn++;
     }
     if (!drawn) {
@@ -556,6 +588,12 @@ async function loadCameras() {
     }
     group.addTo(map);
     cameraLayer = group;
+    cameraDots = dots;
+    applyCameraZoom(map.getZoom());
+    if (!cameraZoomBound) {
+      cameraZoomBound = true;
+      map.on('zoomend', function () { applyCameraZoom(map.getZoom()); });
+    }
   } catch (e) {
     cameraLayer = null;
     console.warn('traffic-camera layer failed to draw:', e && e.message ? e.message : e);

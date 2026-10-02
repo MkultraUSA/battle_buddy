@@ -56,6 +56,24 @@ def main() -> None:
 
         init_db()
 
+        # Stub everything that makes outbound network calls.
+        #
+        # The route under test calls post_to_talk, and analyze_for_incident calls
+        # create_deck_card / post_banner / send_dm_alert. Those reach Nextcloud
+        # and Talk over the network, and DNS intermittently fails in this
+        # environment -- "[banner] failed: No address associated with hostname".
+        # That made this suite flaky at roughly 1 run in 20, which is worse than
+        # no test: a check that passes most of the time verifies nothing.
+        #
+        # The property under test is whether a fabricated incident is marked
+        # is_test. How the banner is delivered afterwards is irrelevant to it.
+        import modules.alerts as alerts_mod
+
+        audio_receiver.post_to_talk = lambda *_a, **_kw: None
+        for _name in ("create_deck_card", "post_banner", "send_dm_alert"):
+            if hasattr(alerts_mod, _name):
+                setattr(alerts_mod, _name, lambda *_a, **_kw: None)
+
         client = audio_receiver.app.test_client()
         headers = {}
         for name, value in (scenario.get("headers") or {}).items():
