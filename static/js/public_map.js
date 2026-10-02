@@ -483,9 +483,10 @@ if (typeof document !== 'undefined') {
 // It stays subordinate to incidents on purpose. Incidents are glowing red
 // triangles in markerPane; the cameras are 6px flat dots in the muted slate
 // already used for non-incident chrome (#94a3b8 / #475569), with no glow, no
-// animation and no colour shared with an incident. Leaflet paints overlayPane
-// beneath markerPane, so the layer order is a structural guarantee, not a
-// z-index race — the dots can never cover a pin.
+// animation and no colour shared with an incident. Leaflet stacks panes by
+// z-index — the camera pane sits at 450 and incident markers own markerPane at
+// 600 — so the layer order is a structural guarantee, not a z-index race: the
+// dots can never cover a pin.
 //
 // The data arrives by fetch because PUBLIC_MAP_HTML is a plain string constant
 // on a page whose CSP forbids inline script: there is no template to inject a
@@ -501,6 +502,18 @@ var CAMERAS_URL = '/static/data/austin_cameras.json';
 var cameraLayer = null;
 var cameraDots = null;
 var cameraZoomBound = false;
+
+// A pane of our own so the dots sit above the heatmap canvas and still below
+// the incident markers. See loadCameras() for why this is load-bearing.
+var CAMERA_PANE = 'cameraPane';
+
+function cameraPane() {
+  var pane = map.getPane(CAMERA_PANE);
+  if (pane) return pane;
+  pane = map.createPane(CAMERA_PANE);
+  pane.style.zIndex = 450;
+  return pane;
+}
 
 // The city's published image for one camera, vetted to the exact host and path
 // shape that serves them. The snapshot is our own committed file, but it is
@@ -605,7 +618,21 @@ async function loadCameras() {
     // 820 dots as individual SVG nodes make panning stutter; one canvas draws
     // them all. This is an optimisation, not a dependency — without a canvas
     // renderer Leaflet falls back to SVG and the layer still draws.
-    var renderer = L.canvas ? L.canvas({padding: 0.5}) : null;
+    //
+    // The canvas goes in its own pane, above the overlay pane, and that is not
+    // cosmetic. The ADS-B heatmap plugin also draws a full-map canvas into the
+    // overlay pane, and whichever canvas is later in the DOM swallows the
+    // click: elementFromPoint over a camera dot returned
+    // `canvas.leaflet-heatmap-layer`, so every click landed on the heatmap and
+    // no camera popup ever opened. Nothing looked wrong — 820 dots drew and the
+    // metrics said so. Only dispatching a real click found it.
+    //
+    // 450 sits above overlayPane (400) and below markerPane (600), so the
+    // camera canvas now wins the hit test against the heatmap while incident
+    // pins stay above the cameras. That ordering is still structural, not a
+    // z-index race.
+    cameraPane();
+    var renderer = L.canvas ? L.canvas({padding: 0.5, pane: CAMERA_PANE}) : null;
     var group = L.layerGroup();
     var dots = [];
     var drawn = 0;
