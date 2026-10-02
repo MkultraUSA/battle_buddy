@@ -186,7 +186,11 @@ var map = L.map('map', {
   maxBoundsViscosity: 1.0
 }).setView([30.32, -97.77], 11);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Tiles &copy; Esri — Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+  // The basemap credits are a preservation contract of their own
+  // (tests/test_aircraft_module.py::_assert_esri_basemap reads this exact
+  // string and requires every one of them), so anything added here is appended,
+  // never substituted.
+  attribution: 'Tiles &copy; Esri — Esri, HERE, Garmin, &copy; OpenStreetMap contributors · Cameras: City of Austin Open Data (public domain)',
   maxZoom: 18
 }).addTo(map);
 
@@ -466,6 +470,99 @@ if (typeof document !== 'undefined') {
 }
 
 // ---------------------------------------------------------------------------
+// City of Austin traffic cameras — a static snapshot overlay
+// ---------------------------------------------------------------------------
+// Reference context, not an incident feed. The file is a committed snapshot of
+// the city's public camera list (refreshed by hand with
+// scripts/fetch_austin_cameras.py, live cameras only), so the most it can
+// honestly claim is "a camera is published at roughly this point". There is no
+// video and no per-camera status, and the popup says so rather than implying
+// otherwise.
+//
+// It stays subordinate to incidents on purpose. Incidents are glowing red
+// triangles in markerPane; the cameras are 6px flat dots in the muted slate
+// already used for non-incident chrome (#94a3b8 / #475569), with no glow, no
+// animation and no colour shared with an incident. Leaflet paints overlayPane
+// beneath markerPane, so the layer order is a structural guarantee, not a
+// z-index race — the dots can never cover a pin.
+//
+// The data arrives by fetch because PUBLIC_MAP_HTML is a plain string constant
+// on a page whose CSP forbids inline script: there is no template to inject a
+// server variable into. /static is the served prefix (audio_receiver.py's Flask
+// app: static_folder=/opt/battlebuddy/static, static_url_path=/static), so the
+// committed snapshot is already reachable at a stable same-origin URL — one 304
+// per page load, not a third-party call.
+//
+// Failure mode is a missing layer, never a broken map: a 404, a bad parse, an
+// unexpected shape or an unexpected Leaflet build each log a warning and return,
+// leaving the incident pins, counts and notices exactly as they were.
+var CAMERAS_URL = '/static/data/austin_cameras.json';
+var cameraLayer = null;
+
+function cameraPopupHtml(props, generated) {
+  var id = props.id || 'unknown';
+  var name = props.name || ('Camera ' + id);
+  return '<div class="popup-custom">' +
+    '<div class="itype" style="color:#94a3b8">City traffic camera</div>' +
+    '<div class="meta">📍 ' + esc(name) + '</div>' +
+    '<div class="meta">Camera ID: ' + esc(id) + '</div>' +
+    '<div class="transcript">Position is approximate — the city publishes one point per camera, not a surveyed address. No live video or imagery is available here.</div>' +
+    '<div class="meta">City of Austin Open Data' +
+      (generated ? ' · snapshot ' + esc(generated) : '') + '</div>' +
+    '</div>';
+}
+
+async function loadCameras() {
+  var data;
+  try {
+    var resp = await fetch(CAMERAS_URL);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    data = await resp.json();
+  } catch (e) {
+    console.warn('traffic-camera layer not loaded:', e && e.message ? e.message : e);
+    return;
+  }
+  var features = data && Array.isArray(data.features) ? data.features : null;
+  if (!features || !features.length) {
+    console.warn('traffic-camera layer: snapshot carries no features, skipping');
+    return;
+  }
+  try {
+    if (cameraLayer) { map.removeLayer(cameraLayer); cameraLayer = null; }
+    // 820 dots as individual SVG nodes make panning stutter; one canvas draws
+    // them all. This is an optimisation, not a dependency — without a canvas
+    // renderer Leaflet falls back to SVG and the layer still draws.
+    var renderer = L.canvas ? L.canvas({padding: 0.5}) : null;
+    var group = L.layerGroup();
+    var drawn = 0;
+    for (var k = 0; k < features.length; k++) {
+      var f = features[k] || {};
+      var coords = (f.geometry && f.geometry.coordinates) || [];
+      var props = f.properties || {};
+      // GeoJSON is [lon, lat]; Leaflet wants [lat, lon].
+      var lon = coords[0], lat = coords[1];
+      if (typeof lon !== 'number' || typeof lat !== 'number') continue;
+      var opts = {radius: 3, color: '#94a3b8', weight: 1, opacity: 0.45,
+                  fillColor: '#475569', fillOpacity: 0.7};
+      if (renderer) opts.renderer = renderer;
+      var dot = L.circleMarker([lat, lon], opts);
+      dot.bindPopup(cameraPopupHtml(props, data.generated));
+      dot.addTo(group);
+      drawn++;
+    }
+    if (!drawn) {
+      console.warn('traffic-camera layer: snapshot had no drawable points');
+      return;
+    }
+    group.addTo(map);
+    cameraLayer = group;
+  } catch (e) {
+    cameraLayer = null;
+    console.warn('traffic-camera layer failed to draw:', e && e.message ? e.message : e);
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 async function loadMapStats() {
   try {
@@ -480,6 +577,8 @@ if (typeof document !== 'undefined') {
   loadHeatmap();
   loadIncidents();
   loadMapStats();
+  // A committed snapshot: fetched once per page load, never polled.
+  loadCameras();
   setInterval(loadHeatmap, 15000);
   setInterval(loadIncidents, 10000);
   setInterval(loadMapStats, 60000);

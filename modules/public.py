@@ -485,6 +485,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div><span>EMS</span></div>
   <div class="leg-item"><div class="leg-dot" style="background:#a855f7"></div><span>DPS / State</span></div>
   <div class="leg-item"><svg width="12" height="12" viewBox="0 0 12 12" style="filter:drop-shadow(0 0 4px #ef4444);flex-shrink:0"><polygon points="6,0 12,12 0,12" fill="#ef4444" stroke="#fca5a5" stroke-width="1.5"/></svg><span>Active Incident</span></div>
+  <h4 style="margin-top:10px">Reference</h4>
+  <div class="leg-item"><div class="leg-dot" style="background:#64748b"></div><span>City traffic camera (approx.)</span></div>
 </div>
 <div id="stats-bar">
   <h4>Last 48 Hours</h4>
