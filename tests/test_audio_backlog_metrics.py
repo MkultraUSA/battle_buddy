@@ -47,6 +47,13 @@ _CHILD = textwrap.dedent(
     # no samples emits only HELP/TYPE and no value line, so "starts at zero" is
     # not directly observable -- the counter has to actually be driven to be
     # visible. Counts live in this child process only, so nothing leaks.
+    # Seed one LLM outcome too. A Prometheus family with zero samples emits only
+    # HELP/TYPE and no value line, so asserting the scrape contains
+    # battlebuddy_llm_total means the counter has to have been driven.
+    from modules.database import bump_counter as _bump
+    _bump("llm_outcome", "outcome=analyzed")
+    _bump("llm_outcome", "outcome=skipped_nonspeech")
+
     _record_ingest = audio_receiver._record_ingest_outcome
     for _ in range(int(os.environ.get("TEST_SEED_INGEST", "0"))):
         _record_ingest("throttled", "pi5")
@@ -334,9 +341,16 @@ class AudioBacklogMetricsTests(unittest.TestCase):
         """
         payload = self._run(memory_depth=0)
         self.assertEqual(payload["scrape_status"], 200)
-        self.assertIn("battlebuddy_llm_total", payload["scraped"],
-                      "battlebuddy_llm_total is the emitted name; the family is "
-                      "declared as battlebuddy_llm")
+        self.assertEqual(
+            1.0, payload["scraped"].get('battlebuddy_llm_total{outcome="analyzed"}'),
+            "battlebuddy_llm_total is the emitted name (prometheus_client appends "
+            "_total to the family) and outcome is the label; a family with zero "
+            "samples emits no value line at all",
+        )
+        self.assertEqual(
+            1.0, payload["scraped"].get(
+                'battlebuddy_llm_total{outcome="skipped_nonspeech"}'),
+        )
         self.assertIn("LLM", payload["llm_help"],
                       "the help text should make the skip reasons legible "
                       "without reading modules/llm.py")
