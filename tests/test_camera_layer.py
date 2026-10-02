@@ -147,6 +147,51 @@ class TestIncidentsStayDominant(unittest.TestCase):
                              "a camera dot larger than 5px competes with incident pins")
 
 
+class TestCameraWeightTracksZoom(unittest.TestCase):
+    """820 dots at one weight hazed the city and buried the incident pin.
+
+    Found by screenshot review, not by any metric: the layer reported 820 drawn
+    and every test passed while the map was effectively unusable at city zoom.
+    """
+
+    def _block(self) -> str:
+        src = _js()
+        start = src.index("var CAMERAS_URL")
+        return src[start:src.index("async function loadMapStats")]
+
+    def test_opacity_is_a_function_of_zoom(self):
+        src = _js()
+        self.assertIn("function cameraOpacityForZoom", src)
+        self.assertIn("function applyCameraZoom", src)
+
+    def test_zoomend_listener_updates_the_weight(self):
+        self.assertIn("map.on('zoomend'", self._block(),
+                      "the weight must follow zoom, not be fixed at draw time")
+
+    def test_layer_is_faint_when_zoomed_out_and_full_when_close(self):
+        src = _js()
+        self.assertIn("CAMERA_DOT_MIN_ZOOM", src)
+        self.assertIn("CAMERA_DOT_FULL_ZOOM", src)
+        # The faded value must genuinely be faint, not a token reduction.
+        faint = re.search(r"CAMERA_DOT_MIN_ZOOM\)\s*return\s*([\d.]+)", src)
+        self.assertIsNotNone(faint, "expected an explicit faint opacity")
+        self.assertLessEqual(
+            float(faint.group(1)), 0.25,
+            "at city zoom the layer must read as texture, not compete with incidents",
+        )
+
+    def test_default_viewport_zoom_is_faded(self):
+        """The map opens at zoom 11, which must land in the faded band."""
+        src = _js()
+        min_zoom = int(re.search(r"CAMERA_DOT_MIN_ZOOM = (\d+)", src).group(1))
+        self.assertIn("setView([30.32, -97.77], 11)", src)
+        self.assertLessEqual(
+            11, min_zoom,
+            f"the map opens at zoom 11 but the fade only starts above {min_zoom}, "
+            "so the opening view is the hazed one this change exists to fix",
+        )
+
+
 class TestLayerIsHonestAboutWhatItIs(unittest.TestCase):
     def test_popup_disclaims_precision_and_live_video(self):
         src = _js().lower()
