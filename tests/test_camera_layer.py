@@ -250,6 +250,43 @@ class TestLayerIsHonestAboutWhatItIs(unittest.TestCase):
         )
 
 
+class TestCameraDotsAreActuallyClickable(unittest.TestCase):
+    """A dot you cannot click is not a marker.
+
+    The ADS-B heatmap plugin draws a second full-map canvas into the overlay
+    pane. Canvases are stacked in DOM order and the top one takes the click,
+    so `elementFromPoint` over a camera dot returned
+    `canvas.leaflet-heatmap-layer` and every click landed on the heatmap. The
+    layer drew 820 dots and reported no error the whole time; only dispatching
+    a real click found it.
+    """
+
+    def test_the_camera_canvas_gets_its_own_pane(self):
+        src = _js()
+        self.assertIn("var CAMERA_PANE = 'cameraPane';", src)
+        self.assertIn("pane.style.zIndex = 450;", src)
+
+    def test_the_renderer_is_created_in_that_pane(self):
+        self.assertIn("L.canvas({padding: 0.5, pane: CAMERA_PANE})", _js())
+
+    def test_the_camera_pane_clears_the_heatmap_but_stays_under_incidents(self):
+        z = int(re.search(r"pane\.style\.zIndex = (\d+);", _js()).group(1))
+        self.assertGreater(z, 400,
+                           "must clear overlayPane (400), which holds the "
+                           "heatmap canvas that was swallowing the clicks")
+        self.assertLess(z, 600,
+                        "incident markers live in markerPane (600) and must "
+                        "stay on top of the cameras")
+
+    def test_the_pane_is_created_once_and_reused(self):
+        src = _js()
+        pane = src[src.index("function cameraPane()"):]
+        pane = pane[:pane.index("\n}")]
+        self.assertIn("map.getPane(CAMERA_PANE)", pane,
+                      "re-creating the pane on every reload would stack panes")
+        self.assertIn("if (pane) return pane;", pane)
+
+
 class TestLayerFailsSoft(unittest.TestCase):
     def test_errors_are_caught_not_thrown(self):
         src = _js()
