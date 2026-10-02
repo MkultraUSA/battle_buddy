@@ -476,8 +476,9 @@ if (typeof document !== 'undefined') {
 // the city's public camera list (refreshed by hand with
 // scripts/fetch_austin_cameras.py, live cameras only), so the most it can
 // honestly claim is "a camera is published at roughly this point". There is no
-// video and no per-camera status, and the popup says so rather than implying
-// otherwise.
+// video stream and no per-camera status; a camera's popup carries the city's
+// own published still frame plus a link to it in full size, and says plainly
+// that it is a frame rather than a stream.
 //
 // It stays subordinate to incidents on purpose. Incidents are glowing red
 // triangles in markerPane; the cameras are 6px flat dots in the muted slate
@@ -501,15 +502,57 @@ var cameraLayer = null;
 var cameraDots = null;
 var cameraZoomBound = false;
 
+// The city's published image for one camera, vetted to the exact host and path
+// shape that serves them. The snapshot is our own committed file, but it is
+// built from an API response, so the browser re-checks: a value that is not
+// https on cctv.austinmobility.io with a plain /image/<id>.jpg path renders no
+// image at all rather than fetching whatever it was told to.
+//
+// There is no video stream to link. video/, stream/, hls/ and
+// video/<id>/playlist.m3u8 were each probed and all answer 403 with a 111-byte
+// application/xml body -- the bucket denying keys that do not exist. God's Eye
+// View tags these same cameras feedType: 'image' and points its url and
+// snapshotUrl at this identical jpg, so a frame is the whole of what Austin
+// publishes; its live HLS video is DelDOT's.
+var CAMERA_FRAME_HOST = 'cctv.austinmobility.io';
+
+function cameraFrameUrl(v) {
+  var s = safeUrl(v);
+  if (!s) return '';
+  var p;
+  try { p = new URL(s); } catch (e) { return ''; }
+  if (p.protocol !== 'https:' || p.hostname !== CAMERA_FRAME_HOST) return '';
+  if (p.port || p.username || p.password || p.search || p.hash) return '';
+  if (!/^\/image\/[A-Za-z0-9_-]+\.jpg$/.test(p.pathname)) return '';
+  return p.href;
+}
+
+// Exactly one image, and only once the popup is opened: Leaflet builds popup
+// content on click, so this string is inert until then. Eager <img> tags for
+// all 820 cameras would be 820 requests to a third party on page load.
+function cameraFrameHtml(props) {
+  var url = cameraFrameUrl(props.image);
+  if (!url) return '';
+  return '<img class="cam-frame" src="' + esc(url) + '" alt="City traffic camera image"' +
+         ' loading="lazy" referrerpolicy="no-referrer" decoding="async">' +
+         '<div class="meta cam-frame-link"><a href="' + esc(url) + '"' +
+         ' target="_blank" rel="noopener noreferrer">Open the city&rsquo;s full-size image ' +
+         '&#8599;</a></div>';
+}
+
 function cameraPopupHtml(props, generated) {
   var id = props.id || 'unknown';
   var name = props.name || ('Camera ' + id);
+  var note = cameraFrameUrl(props.image)
+    ? 'The picture is the city&rsquo;s own published frame for this camera &mdash; a still image it refreshes, not a live video stream.'
+    : 'The city publishes no image for this camera.';
   return '<div class="popup-custom">' +
     '<div class="itype" style="color:#94a3b8">City traffic camera</div>' +
     '<div class="meta">📍 ' + esc(name) + '</div>' +
     '<div class="meta">Camera ID: ' + esc(id) + '</div>' +
-    '<div class="transcript">Position is approximate — the city publishes one point per camera, not a surveyed address. No live video or imagery is available here.</div>' +
-    '<div class="meta">City of Austin Open Data' +
+    cameraFrameHtml(props) +
+    '<div class="transcript">Position is approximate — the city publishes one point per camera, not a surveyed address. ' + note + '</div>' +
+    '<div class="meta">City of Austin Open Data · frames via cctv.austinmobility.io' +
       (generated ? ' · snapshot ' + esc(generated) : '') + '</div>' +
     '</div>';
 }

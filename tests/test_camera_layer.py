@@ -11,8 +11,12 @@ Three things are pinned deliberately:
   * **no XSS.** A camera name containing markup must not reach the DOM as markup.
   * **incidents stay dominant.** The layer may not restyle, reorder or otherwise
     disturb the incident markers it sits behind.
-  * **honesty.** The popup must not imply live video or a surveyed position --
-    there is neither, and the city's data is explicitly approximate.
+  * **honesty.** The popup must not imply a surveyed position -- the city's point
+    is approximate -- nor a live video stream. Austin publishes a still frame per
+    camera, which is what the popup shows and links to.
+  * **a camera earns its marker.** Only cameras the city publishes a frame for
+    ship in the snapshot. There is no point plotting a location with nothing to
+    look at behind it.
 """
 
 from __future__ import annotations
@@ -32,6 +36,24 @@ _PUBLIC_PY = _ROOT / "modules" / "public.py"
 
 def _js() -> str:
     return _JS.read_text(encoding="utf-8")
+
+
+def _popup_js() -> str:
+    """The camera popup builder, including the frame gate it depends on."""
+    src = _js()
+    return src[src.index("function cameraFrameUrl"):src.index("async function loadCameras")]
+
+
+def _fetcher():
+    """Import the fetcher so the frame gate is tested by behavior, not text."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_fetch_austin_cameras", _ROOT / "scripts" / "fetch_austin_cameras.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestSnapshotIsWellFormed(unittest.TestCase):
@@ -193,15 +215,22 @@ class TestCameraWeightTracksZoom(unittest.TestCase):
 
 
 class TestLayerIsHonestAboutWhatItIs(unittest.TestCase):
-    def test_popup_disclaims_precision_and_live_video(self):
-        src = _js().lower()
-        popup = src[src.index("function camera popup") if "function camera popup" in src
-                    else src.index("function camerapopuphtml"):]
-        popup = popup[:popup.index("async function loadcameras")]
+    def test_popup_disclaims_precision_and_labels_the_frame_a_still(self):
+        popup = _popup_js().lower()
         self.assertIn("approximate", popup)
-        self.assertIn("no live video", popup,
-                      "the city publishes no imagery; implying otherwise would "
-                      "mislead anyone who clicks a camera")
+        self.assertIn("published frame", popup)
+        self.assertIn("not a live video stream", popup,
+                      "Austin publishes a frame, not a stream; a popup that "
+                      "read as live video would overclaim what you can see")
+
+    def test_popup_offers_the_frame_and_a_full_size_link(self):
+        popup = _popup_js()
+        self.assertIn('class="cam-frame"', popup)
+        self.assertIn('loading="lazy"', popup,
+                      "one image, fetched when the popup opens -- never 820 "
+                      "eager requests on page load")
+        self.assertIn('target="_blank"', popup)
+        self.assertIn('rel="noopener noreferrer"', popup)
 
     def test_legend_entry_present_and_labelled_as_approximate(self):
         html = _PUBLIC_PY.read_text(encoding="utf-8")
@@ -214,8 +243,11 @@ class TestLayerIsHonestAboutWhatItIs(unittest.TestCase):
         """Decision for now: the layer is unlinked from the nav."""
         html = _PUBLIC_PY.read_text(encoding="utf-8")
         nav = html[:html.index('<div id="map">')]
-        self.assertNotIn("camera", nav.lower(),
-                         "no nav link was supposed to be added yet")
+        links = re.findall(r"<a\b[^>]*>[^<]*</a>", nav, re.IGNORECASE)
+        self.assertEqual(
+            [], [a for a in links if "camera" in a.lower()],
+            "no nav link was supposed to be added yet",
+        )
 
 
 class TestLayerFailsSoft(unittest.TestCase):
@@ -238,6 +270,123 @@ class TestLayerFailsSoft(unittest.TestCase):
         self.assertIn("/static/data/austin_cameras.json", _js())
         self.assertTrue(_SNAPSHOT.exists(),
                         f"snapshot missing at {_SNAPSHOT}")
+
+
+class TestCamerasEarnTheirMarkerByPublishingAPicture(unittest.TestCase):
+    """No published picture, no marker.
+
+    The city's active list carries a point for every camera whether or not it
+    publishes an image. A dot with nothing behind it is a dead end for whoever
+    clicks it, so the snapshot only carries cameras the city actually
+    publishes a frame for.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.data = json.loads(_SNAPSHOT.read_text(encoding="utf-8"))
+
+    def test_every_camera_in_the_snapshot_has_a_published_frame(self):
+        missing = [f["properties"].get("id") for f in self.data["features"]
+                   if not f["properties"].get("image")]
+        self.assertEqual([], missing,
+                         "a camera with no published picture must be dropped "
+                         "from the snapshot, not plotted as a bare location")
+
+    def test_frames_are_https_on_the_citys_own_host(self):
+        for feature in self.data["features"]:
+            self.assertRegex(
+                feature["properties"]["image"],
+                r"^https://cctv\.austinmobility\.io/image/[A-Za-z0-9_-]+\.jpg$",
+            )
+
+    def test_the_frame_url_names_the_same_camera(self):
+        for feature in self.data["features"]:
+            props = feature["properties"]
+            self.assertTrue(
+                props["image"].endswith(f"/image/{props['id']}.jpg"),
+                "frame id and camera id must agree or a popup shows someone "
+                "else's camera",
+            )
+
+    def test_the_browser_rechecks_the_host(self):
+        """A committed snapshot is still data; the popup gate is the last line."""
+        src = _js()
+        self.assertIn("var CAMERA_FRAME_HOST = 'cctv.austinmobility.io';", src)
+        gate = src[src.index("function cameraFrameUrl"):]
+        gate = gate[:gate.index("function cameraFrameHtml")]
+        self.assertIn("p.hostname !== CAMERA_FRAME_HOST", gate)
+        self.assertIn("p.protocol !== 'https:'", gate)
+        self.assertIn(r"\/image\/", gate,
+                      "the gate pins the path shape, not just the host")
+
+
+class TestFrameGateRejectsAnythingButTheCitysOwnUrl(unittest.TestCase):
+    """Behavioral test of the fetcher's gate: feed it hostile values."""
+
+    @classmethod
+    def setUpClass(cls):
+        # staticmethod, or attribute lookup would bind this as a method and
+        # pass the TestCase as the first argument.
+        cls.gate = staticmethod(_fetcher().frame_url)
+
+    def test_the_citys_own_https_frame_is_kept(self):
+        self.assertEqual(
+            "https://cctv.austinmobility.io/image/674.jpg",
+            self.gate("https://cctv.austinmobility.io/image/674.jpg"),
+        )
+
+    def test_rejected(self):
+        for bad in (
+            "http://cctv.austinmobility.io/image/674.jpg",       # not https
+            "https://evil.example/image/674.jpg",                # other host
+            "https://cctv.austinmobility.io.evil.example/1.jpg",  # suffix host
+            "https://cctv.austinmobility.io/image/674.php",      # wrong path
+            "https://cctv.austinmobility.io/other/674.jpg",      # wrong dir
+            "https://cctv.austinmobility.io/image/674.jpg?x=1",  # query
+            "https://user:pw@cctv.austinmobility.io/image/1.jpg",  # credentials
+            "https://cctv.austinmobility.io:8443/image/1.jpg",   # odd port
+            "javascript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "",
+            None,
+            42,
+        ):
+            with self.subTest(bad=bad):
+                self.assertIsNone(self.gate(bad))
+
+
+class TestBuildDropsCamerasWithoutAPicture(unittest.TestCase):
+    def test_a_camera_with_no_usable_frame_never_reaches_the_snapshot(self):
+        build = _fetcher().build
+        good = {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [-97.735786, 30.260996]},
+            "properties": {
+                "camera_id": "674",
+                "location_name": " CESAR CHAVEZ ST / 35 SVRD",
+                "screenshot_address": "https://cctv.austinmobility.io/image/674.jpg",
+            },
+        }
+        hostile = {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [-97.7, 30.2]},
+            "properties": {
+                "camera_id": "999",
+                "location_name": "SOMEWHERE",
+                "screenshot_address": "https://evil.example/image/999.jpg",
+            },
+        }
+        frameless = {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [-97.6, 30.1]},
+            "properties": {"camera_id": "1000", "location_name": "NO IMAGE"},
+        }
+        out = build([good, hostile, frameless])
+        self.assertEqual(["674"], [f["properties"]["id"] for f in out["features"]])
+        kept = out["features"][0]["properties"]
+        self.assertEqual("CESAR CHAVEZ ST / 35 SVRD", kept["name"],
+                         "the leading space the city adds is still trimmed")
+        self.assertEqual("https://cctv.austinmobility.io/image/674.jpg", kept["image"])
 
 
 if __name__ == "__main__":

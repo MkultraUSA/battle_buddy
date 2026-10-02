@@ -28,6 +28,7 @@ makes the layer look unreliable.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -48,10 +49,51 @@ ACTIVE_STATUS = "TURNED_ON"
 #: ~1 m. More precision than a web map can render, and it keeps the file small.
 COORD_PRECISION = 5
 
+#: Where the city's published camera images live. Every `TURNED_ON` record
+#: carries `screenshot_address` pointing at `{FRAME_HOST}/image/{camera_id}.jpg`
+#: -- verified live: HTTP 200, `image/jpeg`, ~330 KB, ~0.2 s, keyless.
+#:
+#: There is no video stream to link. `video/`, `stream/`, `hls/` and
+#: `video/<id>/playlist.m3u8` were each probed and all answer `403` with an
+#: 111-byte `application/xml` body -- the bucket denying keys that do not
+#: exist, not a stream behind a check. The host root is an
+#: "CCTV Image not found" page. So the frame is the whole of what the city
+#: publishes, and it is what God's Eye View uses for Austin too: its
+#: `server/providers/cctv/sources.js` sets this same jpg as both `url` and
+#: `snapshotUrl`. Its *live video* is DelDOT and the other sources that
+#: publish real HLS playlists.
+#:
+#: Treated as untrusted input even though it comes from the city's own API:
+#: only an https URL on exactly this host with a plain `/image/<id>.jpg` path
+#: is kept, and anything else is dropped rather than rendered.
+FRAME_HOST = "cctv.austinmobility.io"
+
+FRAME_PATH_RE = re.compile(r"^/image/[A-Za-z0-9_-]+\.jpg$")
+
+
+def frame_url(raw: object) -> str | None:
+    """Return a vetted city frame URL, or None if it is not one."""
+    if not isinstance(raw, str):
+        return None
+    url = raw.strip()
+    if not url:
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return None
+    if parsed.scheme != "https" or parsed.hostname != FRAME_HOST:
+        return None
+    if parsed.query or parsed.fragment or not FRAME_PATH_RE.match(parsed.path):
+        return None
+    if parsed.username or parsed.password or parsed.port:
+        return None
+    return url
+
 
 def _fetch(offset: int) -> dict:
     query = urllib.parse.urlencode({
-        "$select": "camera_id,location_name,camera_status,location",
+        "$select": "camera_id,location_name,camera_status,location,screenshot_address",
         "$where": f"upper(camera_status)='{ACTIVE_STATUS}'",
         "$order": "camera_id",
         "$limit": PAGE,
@@ -79,6 +121,8 @@ def build(features: list[dict]) -> dict:
     Drops `camera_status` because the fetch already filters it, so it is a
     constant across every feature and pure weight. Trims the leading space the
     city puts on many `location_name` values. Rounds coordinates to ~1 m.
+    Carries `screenshot_address` through `frame_url()`, which drops anything
+    that is not the city's own frame URL.
     """
     out = []
     seen = set()
@@ -93,13 +137,23 @@ def build(features: list[dict]) -> dict:
             continue
         seen.add(cam_id)
         lon, lat = coords[0], coords[1]
+        props_out = {
+            "id": cam_id,
+            # Many values carry a leading space; strip so popups read cleanly.
+            "name": (props.get("location_name") or "").strip() or f"Camera {cam_id}",
+        }
+        # A camera earns a marker only if the city publishes a picture of it.
+        # The city's live frames are the whole reason this layer exists -- a dot
+        # with nothing behind it is a dead end for whoever clicks it -- so an
+        # active camera with no usable frame is dropped from the snapshot
+        # entirely rather than plotted as a location-only pin.
+        frame = frame_url(props.get("screenshot_address"))
+        if not frame:
+            continue
+        props_out["image"] = frame
         out.append({
             "type": "Feature",
-            "properties": {
-                "id": cam_id,
-                # Many values carry a leading space; strip so popups read cleanly.
-                "name": (props.get("location_name") or "").strip() or f"Camera {cam_id}",
-            },
+            "properties": props_out,
             "geometry": {
                 "type": "Point",
                 "coordinates": [round(float(lon), COORD_PRECISION),
@@ -125,6 +179,17 @@ def main() -> int:
 
     snapshot = build(features)
 
+    # Only cameras with a published frame reach the snapshot. If the city ever
+    # stops publishing images -- a renamed column, a portal move -- nearly every
+    # camera drops out and the layer would quietly empty itself. Refuse to
+    # overwrite a good snapshot rather than ship that.
+    kept = len(snapshot["features"])
+    if kept * 2 < len(features):
+        print(f"only {kept} of {len(features)} active cameras published a "
+              f"usable image; refusing to overwrite a good snapshot",
+              file=sys.stderr)
+        return 1
+
     # Sanity-check the bounds. A fetch that silently returned something else
     # (wrong dataset, bad filter) would otherwise be committed and shipped.
     lons = [f["geometry"]["coordinates"][0] for f in snapshot["features"]]
@@ -143,8 +208,8 @@ def main() -> int:
     OUT_PATH.write_text(
         json.dumps(snapshot, separators=(",", ":")), encoding="utf-8"
     )
-    print(f"wrote {OUT_PATH} -- {len(snapshot['features'])} cameras, "
-          f"{OUT_PATH.stat().st_size} bytes")
+    print(f"wrote {OUT_PATH} -- {kept} cameras with published frames "
+          f"of {len(features)} active ({OUT_PATH.stat().st_size} bytes)")
     return 0
 
 
