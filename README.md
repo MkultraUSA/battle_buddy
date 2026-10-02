@@ -218,7 +218,7 @@ python -m ruff check .
 python -m pytest
 ```
 
-The test suite should avoid live radio streams, real API keys, real Nextcloud credentials, or production databases.
+
 
 ---
 
