@@ -47,6 +47,13 @@ _CHILD = textwrap.dedent(
     # no samples emits only HELP/TYPE and no value line, so "starts at zero" is
     # not directly observable -- the counter has to actually be driven to be
     # visible. Counts live in this child process only, so nothing leaks.
+    # Seed one LLM outcome too. A Prometheus family with zero samples emits only
+    # HELP/TYPE and no value line, so asserting the scrape contains
+    # battlebuddy_llm_total means the counter has to have been driven.
+    from modules.database import bump_counter as _bump
+    _bump("llm_outcome", "outcome=analyzed")
+    _bump("llm_outcome", "outcome=skipped_nonspeech")
+
     _record_ingest = audio_receiver._record_ingest_outcome
     for _ in range(int(os.environ.get("TEST_SEED_INGEST", "0"))):
         _record_ingest("throttled", "pi5")
@@ -71,7 +78,8 @@ _CHILD = textwrap.dedent(
     resp = audio_receiver.app.test_client().get("/metrics")
     scraped = {}
     for line in resp.get_data(as_text=True).splitlines():
-        if line.startswith("battlebuddy_backlog_") or line.startswith("battlebuddy_ingest_"):
+        if line.startswith(("battlebuddy_backlog_", "battlebuddy_ingest_",
+                             "battlebuddy_llm_")):
             # Labelled samples keep their labels in the first field, so key on
             # name+labels rather than the bare metric name.
             scraped[line.split(" ")[0]] = float(line.rsplit(" ", 1)[1])
@@ -83,6 +91,10 @@ _CHILD = textwrap.dedent(
         "ingest_help": chr(10).join(
             l for l in resp.get_data(as_text=True).splitlines()
             if l.startswith("# HELP battlebuddy_ingest_outcomes")
+        ),
+        "llm_help": chr(10).join(
+            l for l in resp.get_data(as_text=True).splitlines()
+            if l.startswith("# HELP battlebuddy_llm")
         ),
     }))
     """
@@ -320,6 +332,34 @@ class AudioBacklogMetricsTests(unittest.TestCase):
         self.assertEqual(payload["state"]["file_scan_error"], 1)
         self.assertEqual(payload["state"]["total_pending"], 0)
         self.assertEqual(metrics["battlebuddy_backlog_files_scan_error"]["value"], 1)
+
+    def test_llm_outcomes_appear_in_a_scrape(self):
+        """The counter must actually reach the metrics endpoint.
+
+        Unit tests on llm_analyze can all pass while the metric family is never
+        emitted, or emitted under the wrong name. prometheus_client appends _total
+        to a CounterMetricFamily, so the wire name is battlebuddy_llm_total.
+        """
+        payload = self._run(memory_depth=0)
+        self.assertEqual(payload["scrape_status"], 200)
+        self.assertGreater(
+            len(payload["scraped"]), 10,
+            "the scrape filter is hiding samples; a near-empty dict would make "
+            "every 'not in scraped' assertion pass for the wrong reason",
+        )
+        self.assertEqual(
+            1.0, payload["scraped"].get('battlebuddy_llm_total{outcome="analyzed"}'),
+            "battlebuddy_llm_total is the emitted name (prometheus_client appends "
+            "_total to the family) and outcome is the label; a family with zero "
+            "samples emits no value line at all",
+        )
+        self.assertEqual(
+            1.0, payload["scraped"].get(
+                'battlebuddy_llm_total{outcome="skipped_nonspeech"}'),
+        )
+        self.assertIn("LLM", payload["llm_help"],
+                      "the help text should make the skip reasons legible "
+                      "without reading modules/llm.py")
 
     def test_scraping_metrics_does_not_create_the_queue_root(self):
         """A metric must not create the directory it observes.

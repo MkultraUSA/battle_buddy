@@ -194,6 +194,15 @@ def _ingest_outcome_counts() -> dict:
     return out
 
 
+def _llm_outcome_counts() -> dict:
+    """Read the durable LLM counters back as {outcome: value}."""
+    out = {}
+    for labels, value in read_counters("llm_outcome").items():
+        parsed = dict(p.split("=", 1) for p in labels.split(",") if "=" in p)
+        out[parsed.get("outcome", "unknown")] = value
+    return out
+
+
 def _require_backlog_token():
     """Gate /api/backlog/claim and /api/backlog/complete. Fail closed.
 
@@ -1315,6 +1324,22 @@ try:
                 for (_reason, _node), _n in sorted(_ingest_outcome_counts().items()):
                     g_ingest.add_metric([_reason, _node], float(_n))
                 yield g_ingest
+
+                # One entry per llm_analyze() outcome. There was no counter for
+                # LLM calls at all, so the 703/day figure could only come from
+                # hand and could never be checked -- and `analyzed` alone cannot
+                # be inferred from `error`, because every deliberate early
+                # return was also a None.
+                g_llm = CounterMetricFamily(
+                    "battlebuddy_llm",
+                    "LLM analysis outcomes: analyzed = provider call returned, "
+                    "error = provider call raised; every skipped_* / disabled / "
+                    "no_tgid is money deliberately not spent",
+                    labels=["outcome"],
+                )
+                for _oc, _n in sorted(_llm_outcome_counts().items()):
+                    g_llm.add_metric([_oc], float(_n))
+                yield g_llm
 
                 # Oldest-waiting and on-disk size. The alerting watcher on
                 # Hostinger has a gate for "queue has not drained in N seconds"
