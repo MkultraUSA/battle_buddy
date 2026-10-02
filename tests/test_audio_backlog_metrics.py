@@ -78,7 +78,8 @@ _CHILD = textwrap.dedent(
     resp = audio_receiver.app.test_client().get("/metrics")
     scraped = {}
     for line in resp.get_data(as_text=True).splitlines():
-        if line.startswith("battlebuddy_backlog_") or line.startswith("battlebuddy_ingest_"):
+        if line.startswith(("battlebuddy_backlog_", "battlebuddy_ingest_",
+                             "battlebuddy_llm_")):
             # Labelled samples keep their labels in the first field, so key on
             # name+labels rather than the bare metric name.
             scraped[line.split(" ")[0]] = float(line.rsplit(" ", 1)[1])
@@ -341,6 +342,11 @@ class AudioBacklogMetricsTests(unittest.TestCase):
         """
         payload = self._run(memory_depth=0)
         self.assertEqual(payload["scrape_status"], 200)
+        self.assertGreater(
+            len(payload["scraped"]), 10,
+            "the scrape filter is hiding samples; a near-empty dict would make "
+            "every 'not in scraped' assertion pass for the wrong reason",
+        )
         self.assertEqual(
             1.0, payload["scraped"].get('battlebuddy_llm_total{outcome="analyzed"}'),
             "battlebuddy_llm_total is the emitted name (prometheus_client appends "
