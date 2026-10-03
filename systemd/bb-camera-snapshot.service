@@ -1,0 +1,28 @@
+[Unit]
+Description=Refresh the Austin traffic-camera snapshot from City Open Data
+Documentation=https://data.austintexas.gov/Resource/Traffic-Cameras/b4k4-adkb
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The fetcher writes static/data/austin_cameras.json, which Flask serves to
+# every map load straight off disk. It refuses to overwrite a good snapshot if
+# the city returns nothing, if under half the active cameras still publish a
+# frame, or if the coordinates fall outside Austin -- so a bad fetch leaves the
+# previous good file in place rather than emptying the map layer.
+#
+# It is stdlib-only, so it deliberately does not use the app venv: it must keep
+# working when a dependency upgrade breaks /opt/battlebuddy/venv, and it reads
+# no environment file and holds no credentials.
+User=root
+WorkingDirectory=/opt/battlebuddy
+ExecStart=/usr/bin/python3 /opt/battlebuddy/scripts/fetch_austin_cameras.py
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+# `full` leaves /opt writable, which is where the snapshot goes.
+ProtectSystem=full
+# AF_UNIX is needed for DNS through the systemd resolver socket.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

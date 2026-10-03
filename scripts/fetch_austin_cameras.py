@@ -170,6 +170,51 @@ def build(features: list[dict]) -> dict:
     }
 
 
+def write_snapshot(snapshot: dict) -> None:
+    """Replace the snapshot in one step, so a reader never sees a half file.
+
+    This runs unattended on a timer, and Flask serves the snapshot to every
+    map load straight off disk. A plain `write_text` truncates first and then
+    writes, so a browser that asks for the file during the write gets invalid
+    JSON and the whole camera layer silently disappears -- the map still draws,
+    the legend still claims cameras, and the only symptom is an empty layer.
+
+    Write to a temporary file in the same directory, fsync it, then
+    `os.replace`, which is atomic on POSIX: a reader gets either the whole old
+    file or the whole new one. The temp name starts with a dot so a partially
+    written file is never itself served as a camera snapshot.
+    """
+    import os
+    import tempfile
+
+    payload = json.dumps(snapshot, separators=(",", ":"))
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(OUT_PATH.parent), prefix=".austin_cameras.", suffix=".tmp"
+    )
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+            fh.flush()
+            # Durability before the rename, so a crash cannot leave the renamed
+            # file pointing at unwritten blocks.
+            os.fsync(fh.fileno())
+        # mkstemp is 0600; the snapshot is public static data and is served to
+        # everyone, so match the mode the file had before.
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, OUT_PATH)
+    except BaseException:
+        # Never leave a stray temp file behind for the next run to trip over.
+        tmp.unlink(missing_ok=True)
+        raise
+    # Make the rename itself durable, not just the contents.
+    dir_fd = os.open(str(OUT_PATH.parent), os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
 def main() -> int:
     features = fetch_all()
     if not features:
@@ -205,9 +250,7 @@ def main() -> int:
     snapshot["generated"] = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(
-        json.dumps(snapshot, separators=(",", ":")), encoding="utf-8"
-    )
+    write_snapshot(snapshot)
     print(f"wrote {OUT_PATH} -- {kept} cameras with published frames "
           f"of {len(features)} active ({OUT_PATH.stat().st_size} bytes)")
     return 0

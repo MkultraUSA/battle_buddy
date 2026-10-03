@@ -14,6 +14,7 @@ Usage: ./venv/bin/python scripts/ops_verify.py [--json]
 Exit codes: 0 all gates pass, 1+ count of failed gates (capped at 10).
 """
 
+import datetime
 import json
 import os
 import sqlite3
@@ -142,6 +143,69 @@ def journal_tracebacks(minutes=15):
         return [f"journal unreadable: {e}"]
 
 
+# ---------------------------------------------------------------------------
+# Austin traffic-camera snapshot
+# ---------------------------------------------------------------------------
+# The camera layer is a static file regenerated on a timer by
+# bb-camera-snapshot.timer. Nothing else on the box notices if that timer stops:
+# the file keeps serving, the map keeps drawing dots, and the popup keeps
+# showing a `generated` date that just quietly stops moving. That is the same
+# shape as the two failures the project has already been bitten by -- a gauge
+# nobody reads, and an /metrics that returned 200 while serving nothing -- so
+# the snapshot gets read here, by a gate that fails.
+#
+# These gates do not trust the file's own mtime: `generated` is the timestamp
+# the fetcher stamped into the payload, which is also what the popup shows a
+# user, so the gate and the popup agree by construction.
+
+CAMERA_SNAPSHOT_MAX_AGE_S = 30 * 3600
+#: Below this the city's live camera set cannot plausibly have collapsed. The
+#: test suite uses the same floor. 820 today; this is a "did the fetch silently
+#: stop working" tripwire, not a count anyone expects to hit.
+CAMERA_MIN_COUNT = 500
+
+
+def camera_snapshot():
+    """Return the parsed snapshot, or (None, reason) if it is not usable."""
+    for rel in ("static/data/austin_cameras.json",
+                "static/austin_cameras.json"):
+        path = os.path.join(_REPO_ROOT, rel)
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError) as e:
+            return None, f"unreadable: {e}"
+        features = data.get("features")
+        if not isinstance(features, list):
+            return None, "no features array"
+        return data, ""
+    return None, ("missing -- the snapshot is generated, not committed; "
+                  "run scripts/fetch_austin_cameras.py or start "
+                  "bb-camera-snapshot.timer")
+
+
+def camera_frame_ok(url: str) -> str:
+    """HEAD a city frame. Returns '' on success, else why it failed.
+
+    HEAD, not GET: the frames are ~250 KB each and this runs on every ops
+    verification. The city serves HEAD correctly, so the status and content
+    type are still real evidence without pulling the image.
+    """
+    try:
+        req = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            ctype = (resp.headers.get("Content-Type") or "").split(";")[0]
+            if resp.status != 200:
+                return f"HTTP {resp.status}"
+            if not ctype.startswith("image/"):
+                return f"content-type {ctype or 'missing'}"
+            return ""
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+
+
 def main():
     now = time.time()
 
@@ -200,6 +264,62 @@ def main():
     # 4. No fresh tracebacks in service logs
     tbs = journal_tracebacks()
     gate("no tracebacks (15m)", not tbs, f"{len(tbs)} found")
+
+    # 5. Austin traffic-camera snapshot -- generated data nobody else reads
+    data, why = camera_snapshot()
+    if data is None:
+        gate("camera snapshot present", False, why)
+    else:
+        gate("camera snapshot present", True, "ok")
+
+        features = data.get("features") or []
+        gate("camera count sane (>%d)" % CAMERA_MIN_COUNT,
+             len(features) > CAMERA_MIN_COUNT,
+             f"{len(features)} cameras")
+
+        # Freshness, from the stamp the fetcher wrote and the popup shows.
+        generated = data.get("generated") or ""
+        age_s = None
+        try:
+            stamp = datetime.datetime.strptime(generated, "%Y-%m-%dT%H:%M:%SZ")
+            age_s = time.time() - stamp.replace(
+                tzinfo=datetime.timezone.utc).timestamp()
+        except (TypeError, ValueError):
+            generated = f"unparseable {generated!r}"
+        gate(f"camera snapshot fresh (<{CAMERA_SNAPSHOT_MAX_AGE_S // 3600}h)",
+             age_s is not None and age_s < CAMERA_SNAPSHOT_MAX_AGE_S,
+             f"generated={generated} age="
+             f"{age_s / 3600:.1f}h" if age_s is not None
+             else f"generated={generated}")
+
+        # Kevin's rule: a camera is only on the map if the city publishes a
+        # picture of it. Check the snapshot still honours it, and that the host
+        # is really serving. Three evenly spread cameras, not all 820 -- a full
+        # sweep would be 820 third-party requests on every verification, which
+        # is the thing the browser layer is careful never to do either.
+        # `(f.get(...) or {})` rather than `.get(k, {})`: a snapshot with an
+        # explicit JSON null would otherwise take this gate out with a
+        # TypeError instead of reporting the malformed file it found.
+        frames = [(f.get("properties") or {}).get("image") for f in features
+                  if isinstance(f, dict)]
+        missing = [(f.get("properties") or {}).get("id") for f in features
+                   if isinstance(f, dict)
+                   and not (f.get("properties") or {}).get("image")]
+        gate("every plotted camera has a published frame",
+             not missing,
+             "ok" if not missing else f"{len(missing)} frameless: {missing[:5]}")
+
+        probes = []
+        if frames:
+            for i in (0, len(frames) // 2, len(frames) - 1):
+                url = frames[i]
+                if url:
+                    probes.append((url, camera_frame_ok(url)))
+        bad = [(u, e) for u, e in probes if e]
+        gate(f"camera frames reachable (sample of {len(probes)})",
+             bool(probes) and not bad,
+             "ok" if probes and not bad
+             else "; ".join(f"{u.rsplit('/', 1)[-1]}: {e}" for u, e in bad)[:160])
 
     failed = [r for r in RESULTS if not r["pass"]]
     if "--json" in sys.argv:
