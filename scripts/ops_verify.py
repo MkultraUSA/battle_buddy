@@ -26,6 +26,11 @@ import urllib.request
 BASE = "http://127.0.0.1:9001"
 RESULTS = []
 
+#: Two missed hourly runs before the battery is declared dead rather than green.
+REGRESSION_MAX_AGE_S = 2 * 3600
+REGRESSION_RESULTS_PATH = os.environ.get("BB_REGRESSION_RESULTS_PATH") or \
+    "/opt/battlebuddy-data/regression/latest.json"
+
 # ---------------------------------------------------------------------------
 # Runtime configuration
 # ---------------------------------------------------------------------------
@@ -97,6 +102,20 @@ try:
 except Exception as _exc:  # pragma: no cover - surfaced by the db gate
     DB = ""
     _DB_IMPORT_ERROR = str(_exc)
+
+
+def regression_results():
+    """Read the regression battery's results file, or say why it could not."""
+    try:
+        with open(REGRESSION_RESULTS_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        return None, f"no results at {REGRESSION_RESULTS_PATH}"
+    except Exception as exc:
+        return None, f"unreadable: {str(exc)[:120]}"
+    if not isinstance(data, dict) or "checks" not in data:
+        return None, "results file has no checks key"
+    return data, "ok"
 
 
 def gate(name, ok, detail=""):
@@ -260,6 +279,42 @@ def main():
         con.close()
     except Exception as e:
         gate("db checks", False, str(e)[:120])
+
+    # 3b. Hourly regression battery -- the check that says whether the *checks*
+    # are still working. Two failure modes, and they are different problems:
+    #
+    #   * the battery ran and something failed  -> a regression
+    #   * the battery did not run at all       -> the alarm is broken, which is
+    #     worse, because a broken alarm and a healthy system look identical from
+    #     the outside. This is the project's own defect #2: the Telegram watcher
+    #     queried three metrics the app never emitted and `get(key, 0.0)` turned
+    #     each miss into a healthy zero.
+    #
+    # So freshness is gated separately from outcome. The timer is hourly with a
+    # 30 min jitter, and this allows two missed hours before calling it dead.
+    reg, why = regression_results()
+    if reg is None:
+        gate("regression battery has run", False, why)
+    else:
+        generated = reg.get("generated") or ""
+        age_s = None
+        try:
+            stamp = datetime.datetime.strptime(generated, "%Y-%m-%dT%H:%M:%SZ")
+            age_s = time.time() - stamp.replace(
+                tzinfo=datetime.timezone.utc).timestamp()
+        except (TypeError, ValueError):
+            generated = f"unparseable {generated!r}"
+        fresh = age_s is not None and 0 <= age_s < REGRESSION_MAX_AGE_S
+        gate(f"regression battery fresh (<{REGRESSION_MAX_AGE_S // 3600}h)",
+             fresh,
+             f"age={age_s:.0f}s" if fresh else f"generated={generated} age={age_s}")
+        gate("regression battery has run", True,
+             f"{reg.get('ran')} checks at {generated}")
+        failed_checks = [c for c in (reg.get("checks") or [])
+                         if not c.get("ok") and not c.get("skipped")]
+        gate("regression battery all green", not failed_checks,
+             "ok" if not failed_checks
+             else "; ".join(c.get("check", "?") for c in failed_checks)[:160])
 
     # 4. No fresh tracebacks in service logs
     tbs = journal_tracebacks()

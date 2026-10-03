@@ -523,6 +523,74 @@ def _homicide_seed_metrics() -> tuple[int, int, float]:
     return victims, len(seed), newest_ts
 
 
+def _regression_metric_specs() -> tuple:
+    """Gauge specs for the hourly read-only regression battery.
+
+    The battery runs on the host as `bb-prod-regression.timer` and writes its
+    results to a JSON file; this reads that file on every scrape. So a regression
+    shows up in Grafana and can page, through the same path as everything else,
+    without a pushgateway or an agent.
+
+    Three shapes of answer, and the third is the one that matters:
+
+      * **per check** -- ``battlebuddy_regression_check{check="..."}`` 1 or 0
+      * **the tally** -- ``battlebuddy_regression_failed`` and ``..._ran``
+      * **the freshness** -- ``..._last_run_age_seconds``
+
+    A stale results file must NOT read as healthy. That is the whole reason the
+    age gauge exists: a battery that stops running looks identical to a battery
+    that passes, unless something measures how long ago it last said anything.
+    Same reasoning as ``battlebuddy_homicides_seed_error`` above, and as defect
+    #2 in this repo's own list -- a metric that quietly stops being emitted must
+    fail a gate rather than print a reassuring zero.
+    """
+    path = os.environ.get("BB_REGRESSION_RESULTS_PATH") or \
+        "/opt/battlebuddy-data/regression/latest.json"
+    specs: list = []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+        ran = int(payload.get("ran") or 0)
+        failed = int(payload.get("failed") or 0)
+        # `generated` is written by the battery in UTC; fall back to the file's
+        # own mtime so a hand-edited or truncated file cannot claim freshness.
+        try:
+            stamp = datetime.strptime(
+                str(payload.get("generated")), "%Y-%m-%dT%H:%M:%SZ"
+            ).replace(tzinfo=timezone.utc).timestamp()
+        except (TypeError, ValueError):
+            stamp = os.path.getmtime(path)
+        age = max(0.0, time.time() - stamp)
+    except FileNotFoundError:
+        ran, failed = 0, 0
+        age = -1.0                      # -1 means "never run", per the poller gauge
+        specs.append((
+            "battlebuddy_regression_error",
+            "1 when no regression results file could be read at all",
+            1.0,
+        ))
+    except Exception as exc:
+        print(f"[metrics] regression results unreadable: {exc}", flush=True)
+        ran, failed = 0, 0
+        age = -1.0
+        specs.append((
+            "battlebuddy_regression_error",
+            "1 when no regression results file could be read at all",
+            1.0,
+        ))
+
+    specs.extend((
+        ("battlebuddy_regression_ran",
+         "Checks executed by the last regression battery run", float(ran)),
+        ("battlebuddy_regression_failed",
+         "Checks that failed in the last regression battery run", float(failed)),
+        ("battlebuddy_regression_last_run_age_seconds",
+         "Seconds since the last regression battery run wrote its results; "
+         "-1 means it has never run", age),
+    ))
+    return tuple(specs)
+
+
 def _homicide_seed_metric_specs() -> tuple[tuple[str, str, float], ...]:
     """Gauge specs for the curated homicide seed.
 
@@ -1190,6 +1258,35 @@ try:
                     _g = GaugeMetricFamily(_name, _help)
                     _g.add_metric([], float(_val))
                     yield _g
+
+                # --- hourly regression battery ---
+                # One gauge per check, labelled, plus the tally and the age. The
+                # age is the important one: a battery that stops running must not
+                # be indistinguishable from a battery that passes.
+                for _name, _help, _val in _regression_metric_specs():
+                    _g = GaugeMetricFamily(_name, _help)
+                    _g.add_metric([], float(_val))
+                    yield _g
+
+                _g_check = GaugeMetricFamily(
+                    "battlebuddy_regression_check",
+                    "1 when a regression battery check passed in its last run, 0 when it failed",
+                    labels=["check"],
+                )
+                _checks = []
+                try:
+                    _path = os.environ.get("BB_REGRESSION_RESULTS_PATH") or \
+                        "/opt/battlebuddy-data/regression/latest.json"
+                    with open(_path, encoding="utf-8") as _fh:
+                        _checks = (json.load(_fh).get("checks") or [])
+                except Exception:
+                    _checks = []
+                for _c in _checks:
+                    if _c.get("skipped"):
+                        continue          # a skip is not a pass and not a failure
+                    _g_check.add_metric([str(_c.get("check", "?"))[:120]],
+                                        1.0 if _c.get("ok") else 0.0)
+                yield _g_check
 
                 # --- map/investigation health gauges (added 2026-09-23) ---
                 import time as _mtime

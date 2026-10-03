@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import ast
 import io
+import json
 import re
 import subprocess
 import sys
@@ -101,7 +102,22 @@ def http_get(url: str, timeout: int = 20) -> tuple[int, str]:
 
 
 def ssh(host: str, command: str, timeout: int = 60) -> str:
-    """Run a read-only command. Raises Unreachable when the host cannot be reached."""
+    """Run a read-only command. Raises Unreachable when the host cannot be reached.
+
+    `host` may be the literal string "local", which runs the command here with no
+    SSH at all. That is what the systemd timer uses: the battery is checking the
+    host it is running on, and shelling out to ssh to localhost would be a
+    pointless round trip through the authentication stack.
+    """
+    if host == "local":
+        try:
+            proc = subprocess.run(["bash", "-c", command], capture_output=True,
+                                  text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise Unreachable("local command timed out") from exc
+        if proc.returncode != 0:
+            raise Unreachable(f"local command exited {proc.returncode}: {proc.stderr.strip()[:200]}")
+        return proc.stdout
     try:
         proc = subprocess.run(
             ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", host, command],
@@ -248,8 +264,12 @@ def check_remote(b: Battery, host: str) -> None:
     try:
         out = ssh(host, "python3 /opt/battlebuddy/scripts/ops_verify.py 2>&1 | tail -1",
                   timeout=180)
-        ok = "19/19" in out
-        b.record(f"{host}: ops_verify 19/19", ok, out.strip()[:160])
+        # Parsed, not compared to a literal. An earlier version hardcoded "19/19"
+        # and would have reported a false regression the moment a gate was added --
+        # the same brittleness that let a notifier claim "13 gates" for months.
+        m = re.search(r"(\d+)/(\d+) gates pass", out)
+        ok = bool(m) and m.group(1) == m.group(2)
+        b.record(f"{host}: ops_verify all green", ok, out.strip()[:160])
     except Unreachable as exc:
         b.skip(f"{host}: ops_verify", str(exc))
 
@@ -283,6 +303,51 @@ def check_remote(b: Battery, host: str) -> None:
 
 # ---------------------------------------------------------------------------
 
+def _write_results(path: str, b: Battery) -> None:
+    """Persist results for the app's Prometheus collector.
+
+    Atomic, because the collector reads this file on every scrape. `write_text`
+    truncates before it writes, so a reader arriving mid-write would parse a
+    half-written file and either crash the collector or report zero checks -- and
+    zero checks is exactly what "no data" looks like, which would read as a
+    healthy silence. Temp file, fsync, os.replace, fsync the directory: the same
+    treatment `write_snapshot()` gives the camera snapshot, for the same reason.
+    """
+    import os
+    import tempfile
+
+    payload = {
+        "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "ran": b.ran,
+        "failed": len(b.failures),
+        "checks": [
+            {"check": r.check, "ok": r.ok, "skipped": r.skipped, "detail": r.detail[:400]}
+            for r in b.results
+        ],
+    }
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(target.parent), prefix=".regression-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    dir_fd = os.open(str(target.parent), os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
 GROUPS = {"http": lambda b, hosts: check_http(b), "remote": lambda b, hosts: [check_remote(b, h) for h in hosts]}
 
 
@@ -293,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", choices=sorted(GROUPS), action="append")
     ap.add_argument("--base", default=PUBLIC, help="public base URL")
     ap.add_argument("--list", action="store_true", help="list checks and exit")
+    ap.add_argument("--write-json", metavar="PATH",
+                    help="write the results for the Prometheus collector to read")
     args = ap.parse_args(argv)
     hosts = tuple(args.hosts or DEFAULT_HOSTS)
     chosen = args.only or sorted(GROUPS)
@@ -312,6 +379,9 @@ def main(argv: list[str] | None = None) -> int:
         except Unreachable as exc:
             unreachable += 1
             b.record(f"group {group}", False, f"could not run: {exc}")
+
+    if args.write_json:
+        _write_results(args.write_json, b)
 
     width = max((len(r.check) for r in b.results), default=10)
     for r in b.results:

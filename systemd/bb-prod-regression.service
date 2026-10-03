@@ -1,0 +1,48 @@
+[Unit]
+Description=Read-only regression battery against the live Battle Buddy deployment
+Documentation=file:/opt/battlebuddy/scripts/prod_regression.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+#
+# Runs ON the host it checks, not from CI. That is the whole point of the design:
+#
+#   * **No credential in GitHub Actions.** The alternative -- running this from a
+#     workflow -- means putting VPS_SSH_KEY where every pull request can reach
+#     it, so any PR could run commands as root on production. This repo has form
+#     for exactly that shape: PR #57 caught a hardcoded Telegram token, PR #81
+#     caught the reviewer auth itself being broken.
+#   * **The results arrive through the path that already exists.** The app already
+#     exposes a Prometheus registry on loopback and Grafana Cloud already scrapes
+#     it. Writing a results file the collector reads means no pushgateway, no
+#     agent, and nothing new to pay for.
+#
+# Everything the battery does is a read: GET over HTTP, and `sqlite3 -readonly`.
+# `tests/test_prod_regression.py` asserts both facts, because "read-only" is a
+# property of the code rather than of the privilege -- and this unit runs as root.
+#
+# stdlib-only on purpose, like the camera fetcher beside it: it must keep working
+# when a dependency upgrade breaks /opt/battlebuddy/venv, and it reads no
+# environment file and holds no credentials of its own.
+User=root
+WorkingDirectory=/opt/battlebuddy
+ExecStart=/usr/bin/python3 /opt/battlebuddy/scripts/prod_regression.py \
+    --host local \
+    --write-json /opt/battlebuddy-data/regression/latest.json
+
+# A failing battery must not be able to take the service down with it. Exit 1
+# (a regression) is recorded by systemd and surfaces in the metrics; exit 2
+# (could not run) is deliberately not treated as success either.
+SuccessExitStatus=0
+TimeoutStartSec=300
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

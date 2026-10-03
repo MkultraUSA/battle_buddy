@@ -1,0 +1,17 @@
+[Unit]
+Description=Run the Battle Buddy regression battery against production
+Documentation=file:/opt/battlebuddy/scripts/prod_regression.py
+
+[Timer]
+# Hourly, off the hour, because every other scheduled thing here already lands
+# near it: the transcription watcher runs every 5 min and the camera snapshot at
+# 04:17. An exact hour is fine -- jitter would only make the Grafana history
+# harder to read, and this makes no request to a third party.
+OnCalendar=*-*-* *:17:00 UTC
+# A rebuilt host should not show a stale "all green" strip for long.
+OnBootSec=6min
+# A run missed while the host was down is not evidence of health.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

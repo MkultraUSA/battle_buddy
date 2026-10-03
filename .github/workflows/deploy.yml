@@ -173,7 +173,7 @@ jobs:
           if [ "${#COMMIT_MESSAGE}" -gt 3600 ]; then MSG="${MSG}... (truncated)"; fi
           RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=✅ Post-deploy SLOs green (19 gates)
+            --data-urlencode "text=✅ Post-deploy SLOs green — every ops_verify gate passed
           ${MSG}")
           case "$RESPONSE" in
             *'"ok":true'*) ;;
