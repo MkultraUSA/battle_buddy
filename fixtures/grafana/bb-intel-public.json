@@ -1,0 +1,2617 @@
+{
+ "__meta__": {
+  "fetched_from": "https://kevinwatkins.grafana.net",
+  "uid": "bb-intel-public",
+  "updated": "2026-08-12T00:30:07Z",
+  "version": 5
+ },
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "editable": true,
+ "fiscalYearStartMonth": 0,
+ "graphTooltip": 0,
+ "id": 364618797576192,
+ "liveNow": false,
+ "panels": [
+  {
+   "gridPos": {
+    "h": 4,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "id": 100,
+   "options": {
+    "code": {
+     "language": "plaintext",
+     "showLineNumbers": false,
+     "showMiniMap": false
+    },
+    "content": "\n<div style=\"background:linear-gradient(135deg,#0a0f1e 0%,#0d1b2a 60%,#111827 100%);border:2px solid #f90;border-radius:6px;padding:20px 28px;font-family:'Courier New',monospace;text-align:center\">\n  <div style=\"color:#f90;font-size:10px;letter-spacing:5px;margin-bottom:6px\">\u25fc UNCLASSIFIED // FOR PUBLIC RELEASE \u25fc</div>\n  <div style=\"color:#ffffff;font-size:26px;font-weight:700;letter-spacing:3px;text-shadow:0 0 20px rgba(255,153,0,0.4)\">\u26a1 BATTLE BUDDY INTELLIGENCE SYSTEM</div>\n  <div style=\"color:#94a3b8;font-size:14px;margin-top:6px;letter-spacing:1px\">AUSTIN METROPOLITAN AREA \u00b7 REAL-TIME P25 RADIO PUBLIC SAFETY MONITOR</div>\n  <div style=\"display:flex;justify-content:center;gap:32px;margin-top:12px;padding-top:10px;border-top:1px solid #1e3a5f\">\n    <span style=\"color:#64d97b;font-size:11px\">\u25cf SYSTEM ONLINE</span>\n    <span style=\"color:#f90;font-size:11px\">\u23f1 ~30 SEC LAG</span>\n    <span style=\"color:#5794F2;font-size:11px\">\ud83d\udce1 P25 PHASE II TRUNKED</span>\n    <span style=\"color:#aaa;font-size:11px\">\ud83d\udd13 OPEN SOURCE</span>\n  </div>\n</div>\n",
+    "mode": "html"
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [],
+   "title": "",
+   "transparent": true,
+   "type": "text"
+  },
+  {
+   "gridPos": {
+    "h": 5,
+    "w": 24,
+    "x": 0,
+    "y": 4
+   },
+   "id": 101,
+   "options": {
+    "code": {
+     "language": "plaintext",
+     "showLineNumbers": false,
+     "showMiniMap": false
+    },
+    "content": "\n<div style=\"font-family:'Courier New',monospace;font-size:12px;line-height:1.9;padding:14px 20px;color:#94a3b8;background:#0d1117;border:1px solid #1e3a5f;border-left:4px solid #f90;border-radius:4px\">\n  <div style=\"color:#f90;font-size:10px;letter-spacing:3px;margin-bottom:10px\">\u258c HOW THIS WORKS \u2014 FOR THE TECHNICALLY CURIOUS</div>\n\n  <div style=\"margin-bottom:10px\">\n    <span style=\"color:#fff;letter-spacing:1px\">SIGNAL CHAIN:</span>\n    <span style=\"color:#f90\">P25 RADIO TOWER</span>\n    <span style=\"color:#555\"> \u2500\u2500\u25b6 </span>\n    <span style=\"color:#f90\">OP25 DECODER</span><span style=\"color:#555\"> (Raspberry Pi 5 \u00b7 GNU Radio SDR \u00b7 GATRRS Phase II trunk tracker) </span>\n    <span style=\"color:#555\">\u2500\u2500\u25b6 </span>\n    <span style=\"color:#f90\">WHISPER ASR</span><span style=\"color:#555\"> (VPS \u00b7 faster-whisper large-v3-turbo INT8 \u00b7 ~200ms per call) </span>\n    <span style=\"color:#555\">\u2500\u2500\u25b6 </span>\n    <span style=\"color:#f90\">INCIDENT ENGINE</span><span style=\"color:#555\"> (rule-based + LLM clustering \u00b7 30+ event types) </span>\n    <span style=\"color:#555\">\u2500\u2500\u25b6 </span>\n    <span style=\"color:#f90\">PROMETHEUS METRICS</span>\n    <span style=\"color:#555\"> \u2500\u2500\u25b6 </span>\n    <span style=\"color:#f90\">GRAFANA CLOUD</span>\n  </div>\n\n  <div style=\"margin-bottom:10px\">\n    <span style=\"color:#fff\">TALKGROUPS MONITORED:</span>\n    <span> Austin Police Dept (APD) \u00b7 Austin Fire Dept (AFD) \u00b7 Travis County EMS (TCEMS) \u00b7 Travis County Sheriff (TCSO) \u00b7 DPS Capitol \u00b7 Multiple LE tactical channels</span>\n  </div>\n\n  <div>\n    <span style=\"color:#fff\">CONFIDENCE MODEL:</span>\n    <span style=\"color:#ff6b6b\"> \u25a0 CONFIRMED</span><span> = multi-agency radio corroboration (e.g. AFD &amp; TCEMS staged at scene \u2192 shooting is real) &nbsp;\u00b7&nbsp; </span>\n    <span style=\"color:#ffa94d\"> \u25a0 SIGNAL</span><span> = single-agency detection, not yet corroborated &nbsp;\u00b7&nbsp; </span>\n    <span style=\"color:#aaa\"> \u25a0 PRESS RELEASE</span><span> = official APD report (typically 1\u20133 weeks delayed) &nbsp;\u00b7&nbsp; </span>\n    <span style=\"color:#94a3b8\"> \u25a0 RADIO ONLY</span><span> = algorithmic detection from transcript keywords, ~85% precision</span>\n  </div>\n</div>\n",
+    "mode": "html"
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [],
+   "title": "",
+   "transparent": true,
+   "type": "text"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 9
+   },
+   "id": 901,
+   "title": "\u25fc LIVE SITREP",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Incidents currently open and active (not cleared)",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#333",
+        "value": 0
+       },
+       {
+        "color": "#f90",
+        "value": 1
+       },
+       {
+        "color": "#FF4444",
+        "value": 3
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 0,
+    "y": 10
+   },
+   "id": 201,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_active_incidents",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "ACTIVE INCIDENTS NOW",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Radio transmissions transcribed in the last 24 hours",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#5794F2",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 4,
+    "y": 10
+   },
+   "id": 202,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_calls_24h",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "CALLS MONITORED \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Distinct public safety incidents classified in the last 24 hours",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#F9A825",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 8,
+    "y": 10
+   },
+   "id": 203,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "sum(battlebuddy_incidents_24h)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "INCIDENTS DETECTED \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Total radio calls ever captured and transcribed by Battle Buddy",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#4a9d6f",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 12,
+    "y": 10
+   },
+   "id": 204,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_calls_total",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "TOTAL CALLS ALL-TIME",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "What percentage of radio calls result in a detected incident",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#9b59b6",
+      "mode": "fixed"
+     },
+     "max": 100,
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "percent"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 16,
+    "y": 10
+   },
+   "id": 205,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "sum(battlebuddy_incidents_24h) / (battlebuddy_calls_24h > 0) * 100",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "DETECTION RATIO",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Manually verified Austin homicide victims, year-to-date 2026. Curated from radio + news.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#FF4444",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 20,
+    "y": 10
+   },
+   "id": 206,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_homicides_ytd_victims",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "HOMICIDES YTD \u2014 CONFIRMED",
+   "type": "stat"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 14
+   },
+   "id": 902,
+   "title": "\u25fc VIOLENT CRIMES INTELLIGENCE",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Confirmed Austin homicide incidents, year-to-date 2026. Manually curated. Victims \u2265 incidents (some incidents have multiple victims).",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#8B0000",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 0,
+    "y": 15
+   },
+   "id": 220,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_homicides_ytd",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "HOMICIDE INCIDENTS YTD",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Total homicide victims YTD. Higher than incident count when multiple victims per event.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#FF4444",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 4,
+    "y": 15
+   },
+   "id": 221,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_homicides_ytd_victims",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "HOMICIDE VICTIMS YTD",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Shootings in the last 30 days with multi-agency radio corroboration. Highest confidence.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#FF6B35",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 8,
+    "y": 15
+   },
+   "id": 222,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_shootings_confirmed_30d",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "SHOOTINGS CONFIRMED \u2014 30D",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Additional shooting detections on known agency talkgroups, not yet corroborated. Medium confidence.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#F9A825",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 12,
+    "y": 15
+   },
+   "id": 223,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_shootings_signal_30d",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "SHOOTINGS SIGNAL \u2014 30D",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Stabbing incidents detected via radio transcript keywords in last 24 hours.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#FF8C00",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 16,
+    "y": 15
+   },
+   "id": 224,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"STABBING\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "STABBINGS \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Death investigation calls (may precede homicide classification).",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#7B0D1E",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 20,
+    "y": 15
+   },
+   "id": 225,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"DEATH INVESTIGATION\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "DEATH INVESTIGATIONS \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Multi-agency corroborated shootings. AFD or TCEMS radio confirms staging at scene. This is the most reliable real-time shooting count available.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#1a4731",
+        "value": 0
+       },
+       {
+        "color": "#2d6a4f",
+        "value": 5
+       },
+       {
+        "color": "#f90",
+        "value": 10
+       },
+       {
+        "color": "#FF4444",
+        "value": 20
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 0,
+    "y": 19
+   },
+   "id": 230,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_shootings_confirmed_30d",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "SHOOTING INTEL \u2014 CONFIRMED (30D)",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Shooting keyword detected on known LE talkgroup but not yet corroborated by EMS/Fire radio. May or may not be real.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#1a3a1a",
+        "value": 0
+       },
+       {
+        "color": "#f90",
+        "value": 2
+       },
+       {
+        "color": "#FF4444",
+        "value": 8
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 8,
+    "y": 19
+   },
+   "id": 231,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_shootings_signal_30d",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "SHOOTING INTEL \u2014 SIGNAL (30D)",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Shooting incidents sourced from official APD press releases in the past 30 days. These are confirmed but publicly reported 1\u20133 weeks after the event.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#555",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 16,
+    "y": 19
+   },
+   "id": 232,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_shootings_press_release_30d",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "OFFICIAL PRESS RELEASES \u2014 30D",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Blue bars = new shooting detections per day from radio. Orange/yellow lines = rolling 30-day confirmed and signal counts. A gap between radio detections and official reports shows events captured before public records.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "barWidthFactor": 0.6,
+      "drawStyle": "line",
+      "fillOpacity": 12,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "auto",
+      "showValues": false,
+      "spanNulls": true,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 23
+   },
+   "id": 240,
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "increase(battlebuddy_incidents_total{itype=\"SHOOTING\"}[24h])",
+     "legendFormat": "Radio Detected (new/24h)",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_shootings_confirmed_30d",
+     "legendFormat": "Confirmed (30d rolling)",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_shootings_signal_30d",
+     "legendFormat": "Signal (30d rolling)",
+     "refId": "C"
+    }
+   ],
+   "title": "SHOOTING DETECTIONS OVER TIME \u2014 RADIO vs OFFICIAL RECORD",
+   "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 31
+   },
+   "id": 903,
+   "title": "\u25fc STRUCTURAL FIRES & HAZMAT",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Confirmed structure fire incidents detected via AFD radio dispatch.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#FF6B00",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 0,
+    "y": 32
+   },
+   "id": 301,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"STRUCTURE FIRE\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "STRUCTURE FIRES \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "All fire dispatch calls, includes structure, grass, vehicle and working fires.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#F9A825",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 6,
+    "y": 32
+   },
+   "id": 302,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"FIRE DISPATCH\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "FIRE DISPATCH \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Vehicle fire incidents in last 24 hours.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#e67e22",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 12,
+    "y": 32
+   },
+   "id": 303,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"VEHICLE FIRE\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "VEHICLE FIRES \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Hazardous materials incidents detected via radio \u2014 chemical spills, gas leaks, etc.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#c0392b",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 18,
+    "y": 32
+   },
+   "id": 304,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"HAZMAT\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "HAZMAT INCIDENTS \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "24-hour rolling counts for fire-related incidents. Spikes indicate active events or multi-alarm fires.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "barWidthFactor": 0.6,
+      "drawStyle": "line",
+      "fillOpacity": 12,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "auto",
+      "showValues": false,
+      "spanNulls": true,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 24,
+    "x": 0,
+    "y": 36
+   },
+   "id": 310,
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"STRUCTURE FIRE\"} or vector(0)",
+     "legendFormat": "Structure Fires",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"FIRE DISPATCH\"} or vector(0)",
+     "legendFormat": "Fire Dispatch",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"VEHICLE FIRE\"} or vector(0)",
+     "legendFormat": "Vehicle Fires",
+     "refId": "C"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"HAZMAT\"} or vector(0)",
+     "legendFormat": "Hazmat",
+     "refId": "D"
+    }
+   ],
+   "title": "FIRE & HAZMAT TREND \u2014 ROLLING 24H COUNT",
+   "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 43
+   },
+   "id": 904,
+   "title": "\u25fc EMS & MEDICAL RESPONSE",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Travis County EMS dispatch calls. Each represents a medical emergency requiring ambulance response.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#5794F2",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 0,
+    "y": 44
+   },
+   "id": 401,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"EMS DISPATCH\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "EMS DISPATCH \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "General medical emergency incidents detected via radio.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#3d85c8",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 6,
+    "y": 44
+   },
+   "id": 402,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"MEDICAL EMERGENCY\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "MEDICAL EMERGENCIES \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Mass casualty incidents \u2014 multiple victims requiring mass response. Any non-zero value is significant.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#1a3a1a",
+        "value": 0
+       },
+       {
+        "color": "#f90",
+        "value": 1
+       },
+       {
+        "color": "#FF4444",
+        "value": 2
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 12,
+    "y": 44
+   },
+   "id": 403,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"MASS CASUALTY\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "MASS CASUALTY \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Vehicle crash and collision incidents. Includes everything from minor to fatal.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#8e7cc3",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 18,
+    "y": 44
+   },
+   "id": 404,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"CRASH/COLLISION\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "CRASH / COLLISION \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 48
+   },
+   "id": 905,
+   "title": "\u25fc HIGH-SEVERITY & CRITICAL EVENTS",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Officer down calls detected via radio. Any non-zero value indicates a law enforcement emergency.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#111",
+        "value": 0
+       },
+       {
+        "color": "#8B0000",
+        "value": 1
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 0,
+    "y": 49
+   },
+   "id": 501,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"OFFICER DOWN\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "OFFICER DOWN \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Active hostage situation or barricaded subject. High resource response. Any detection is significant.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#111",
+        "value": 0
+       },
+       {
+        "color": "#8B0000",
+        "value": 1
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 6,
+    "y": 49
+   },
+   "id": 502,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"HOSTAGE/BARRICADE\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "HOSTAGE / BARRICADE \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Events drawing simultaneous response from multiple agencies \u2014 indicates serious or complex incidents.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#e74c3c",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 12,
+    "y": 49
+   },
+   "id": 503,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"MULTI-AGENCY RESPONSE\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "MULTI-AGENCY RESPONSE \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "APD or DPS helicopter entering orbit pattern. Usually indicates active pursuit or search.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "#1abc9c",
+      "mode": "fixed"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 18,
+    "y": 49
+   },
+   "id": 504,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_24h{itype=\"AIR ASSET ORBIT\"} or vector(0)",
+     "instant": true,
+     "refId": "A"
+    }
+   ],
+   "title": "AIR ASSET ORBIT \u2014 24H",
+   "type": "stat"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 53
+   },
+   "id": 906,
+   "title": "\u25fc ALL INCIDENT TYPES \u2014 24H BREAKDOWN",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "All detected incident types in the last 24 hours, sorted by count. This is the raw incident workload across Austin Metro.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "fillOpacity": 80,
+      "gradientMode": "none",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "lineWidth": 1,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 24,
+    "x": 0,
+    "y": 54
+   },
+   "id": 601,
+   "options": {
+    "barRadius": 0,
+    "barWidth": 0.97,
+    "fullHighlight": false,
+    "groupWidth": 0.7,
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "orientation": "horizontal",
+    "showValue": "auto",
+    "stacking": "none",
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "single",
+     "sort": "none"
+    },
+    "xTickLabelRotation": 0,
+    "xTickLabelSpacing": 0
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "sort_desc(battlebuddy_incidents_24h > 0)",
+     "instant": true,
+     "legendFormat": "{{itype}}",
+     "refId": "A"
+    }
+   ],
+   "title": "INCIDENTS BY TYPE \u2014 LAST 24 HOURS",
+   "type": "barchart"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 63
+   },
+   "id": 907,
+   "title": "\u25fc RADIO MONITORING \u2014 CALLS vs DETECTIONS",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Calls (blue) = raw radio volume. Incidents (orange) = distinct classified events. The ratio shows detection efficiency. A spike in calls without a spike in incidents means high radio activity with no major event.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "barWidthFactor": 0.6,
+      "drawStyle": "line",
+      "fillOpacity": 12,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "auto",
+      "showValues": false,
+      "spanNulls": true,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 64
+   },
+   "id": 701,
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_calls_24h",
+     "legendFormat": "Calls Transcribed (24h)",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "sum(battlebuddy_incidents_24h)",
+     "legendFormat": "Incidents Detected (24h)",
+     "refId": "B"
+    }
+   ],
+   "title": "RADIO CALLS MONITORED vs INCIDENTS DETECTED \u2014 ROLLING 24H",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Calls per hour by agency. Shows radio traffic volume over time per agency. Scanner Gateway = Broadcastify supplemental feed. Spikes indicate active events.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "barWidthFactor": 0.6,
+      "drawStyle": "line",
+      "fillOpacity": 12,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "auto",
+      "showValues": false,
+      "spanNulls": true,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 72
+   },
+   "id": 702,
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "sum by (agency) (rate(battlebuddy_calls_by_agency_total[1h])) * 3600",
+     "legendFormat": "{{agency}}",
+     "refId": "A"
+    }
+   ],
+   "title": "CALLS BY AGENCY \u2014 ALL-TIME RATE (per hour)",
+   "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 80
+   },
+   "id": 908,
+   "title": "\u25fc ABOUT THIS DATA \u2014 CONFIDENCE & METHODOLOGY",
+   "type": "row"
+  },
+  {
+   "gridPos": {
+    "h": 10,
+    "w": 24,
+    "x": 0,
+    "y": 81
+   },
+   "id": 801,
+   "options": {
+    "code": {
+     "language": "plaintext",
+     "showLineNumbers": false,
+     "showMiniMap": false
+    },
+    "content": "\n<div style=\"font-family:'Courier New',monospace;font-size:12px;line-height:1.8;padding:16px 20px;color:#94a3b8;background:#0d1117;border:1px solid #1e3a5f;border-radius:4px\">\n  <div style=\"color:#f90;font-size:10px;letter-spacing:3px;margin-bottom:12px\">\u258c DATA CONFIDENCE REFERENCE \u2014 READ BEFORE CITING</div>\n  <table style=\"width:100%;border-collapse:collapse\">\n    <tr style=\"color:#f90;font-size:10px;letter-spacing:2px;border-bottom:1px solid #1e3a5f\">\n      <td style=\"padding:4px 12px 4px 0\">DATA SOURCE</td>\n      <td style=\"padding:4px 12px\">CONFIDENCE</td>\n      <td style=\"padding:4px 12px\">TYPICAL LAG</td>\n      <td style=\"padding:4px 12px\">METHOD</td>\n    </tr>\n    <tr style=\"border-bottom:1px solid #111\">\n      <td style=\"padding:5px 12px 5px 0;color:#fff\">Homicides YTD</td>\n      <td style=\"padding:5px 12px;color:#64d97b\">\u2605\u2605\u2605\u2605\u2605 VERIFIED</td>\n      <td style=\"padding:5px 12px\">1\u201314 days</td>\n      <td style=\"padding:5px 12px\">Manual curation: radio + press releases + news corroboration</td>\n    </tr>\n    <tr style=\"border-bottom:1px solid #111\">\n      <td style=\"padding:5px 12px 5px 0;color:#fff\">Shootings \u2014 CONFIRMED</td>\n      <td style=\"padding:5px 12px;color:#64d97b\">\u2605\u2605\u2605\u2605\u2606 HIGH</td>\n      <td style=\"padding:5px 12px\">~30 seconds</td>\n      <td style=\"padding:5px 12px\">Multi-agency radio: AFD/TCEMS staged on scene corroborates shooting</td>\n    </tr>\n    <tr style=\"border-bottom:1px solid #111\">\n      <td style=\"padding:5px 12px 5px 0;color:#fff\">Shootings \u2014 SIGNAL</td>\n      <td style=\"padding:5px 12px;color:#ffa94d\">\u2605\u2605\u2605\u2606\u2606 MEDIUM</td>\n      <td style=\"padding:5px 12px\">~30 seconds</td>\n      <td style=\"padding:5px 12px\">Single-agency radio detection; may be training, false positive, or real</td>\n    </tr>\n    <tr style=\"border-bottom:1px solid #111\">\n      <td style=\"padding:5px 12px 5px 0;color:#fff\">Structure Fires</td>\n      <td style=\"padding:5px 12px;color:#64d97b\">\u2605\u2605\u2605\u2605\u2606 HIGH</td>\n      <td style=\"padding:5px 12px\">~30 seconds</td>\n      <td style=\"padding:5px 12px\">AFD direct radio dispatch; fire responses are reliably broadcast</td>\n    </tr>\n    <tr style=\"border-bottom:1px solid #111\">\n      <td style=\"padding:5px 12px 5px 0;color:#fff\">EMS Callouts</td>\n      <td style=\"padding:5px 12px;color:#ffa94d\">\u2605\u2605\u2605\u2606\u2606 MEDIUM</td>\n      <td style=\"padding:5px 12px\">~30 seconds</td>\n      <td style=\"padding:5px 12px\">TCEMS radio dispatch; many calls are minor; counts represent workload, not severity</td>\n    </tr>\n    <tr style=\"border-bottom:1px solid #111\">\n      <td style=\"padding:5px 12px 5px 0;color:#fff\">Crashes / Collisions</td>\n      <td style=\"padding:5px 12px;color:#ffa94d\">\u2605\u2605\u2605\u2606\u2606 MEDIUM</td>\n      <td style=\"padding:5px 12px\">~30 seconds</td>\n      <td style=\"padding:5px 12px\">APD + TCSO radio; includes minor fender-benders through fatals</td>\n    </tr>\n    <tr>\n      <td style=\"padding:5px 12px 5px 0;color:#fff\">Shootings \u2014 PRESS RELEASE</td>\n      <td style=\"padding:5px 12px;color:#aaa\">\u2605\u2605\u2606\u2606\u2606 REFERENCE</td>\n      <td style=\"padding:5px 12px\">1\u20133 weeks</td>\n      <td style=\"padding:5px 12px\">Official APD public affairs release; confirmed but significantly delayed</td>\n    </tr>\n  </table>\n  <div style=\"margin-top:12px;color:#555;font-size:11px\">\n    DISCLAIMER: This dashboard is derived from automated analysis of public radio transmissions. It is raw intelligence, not a legal record. Incident counts may include duplicates, false positives, or misclassifications. Do not use for emergency response decisions. For official records contact Austin PD, Travis County, or Texas DPS.\n  </div>\n</div>\n",
+    "mode": "html"
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [],
+   "title": "",
+   "transparent": true,
+   "type": "text"
+  },
+  {
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 91
+   },
+   "id": 900,
+   "options": {
+    "code": {
+     "language": "plaintext",
+     "showLineNumbers": false,
+     "showMiniMap": false
+    },
+    "content": "\n<div style=\"font-family:'Courier New',monospace;font-size:12px;line-height:1.9;padding:16px 20px;background:#0d1117;border:1px solid #1e3a5f;border-radius:4px;color:#94a3b8\">\n  <div style=\"display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px\">\n    <div style=\"flex:2;min-width:280px\">\n      <div style=\"color:#f90;font-size:10px;letter-spacing:3px;margin-bottom:8px\">\u258c ABOUT THIS PROJECT</div>\n      <div>This dashboard is maintained by a single developer monitoring Austin public safety radio 24/7 via software-defined radio and open-source tools. The data is free and public. If you find it useful, share it \u2014 more eyes on Austin public safety data means better-informed neighbors.</div>\n      <div style=\"margin-top:10px;color:#64748b;font-size:11px\">Built with: OP25 \u00b7 GNU Radio \u00b7 faster-whisper \u00b7 Flask \u00b7 Prometheus \u00b7 Grafana \u00b7 Raspberry Pi 5 \u00b7 Running on a $7/mo VPS</div>\n    </div>\n    <div style=\"flex:1;min-width:200px;border-left:1px solid #1e3a5f;padding-left:20px\">\n      <div style=\"color:#f90;font-size:10px;letter-spacing:3px;margin-bottom:10px\">\u258c FREE TOOLS</div>\n      <div style=\"margin-bottom:8px\">\n        <a href=\"https://battlebuddy.news/public\" target=\"_blank\" style=\"color:#5794F2;text-decoration:none\">\ud83d\uddfa\ufe0f Live Incident Map</a>\n        <div style=\"color:#64748b;font-size:11px\">Real-time incidents, heatmap, radio feed</div>\n      </div>\n      <div style=\"margin-bottom:8px\">\n        <a href=\"https://battlebuddy.news/public\" target=\"_blank\" style=\"color:#5794F2;text-decoration:none\">\ud83d\udd0a Free Audio Sitrep</a>\n        <div style=\"color:#64748b;font-size:11px\">60-minute spoken situation report \u2014 updated live, no login required</div>\n      </div>\n      <div style=\"margin-top:12px;padding-top:10px;border-top:1px solid #1e3a5f\">\n        <div style=\"color:#aaa;font-size:10px;letter-spacing:2px;margin-bottom:6px\">WANT REAL-TIME ALERTS?</div>\n        <a href=\"https://libertas.mobi/battle-buddy-level-up/\" target=\"_blank\" style=\"color:#f90;text-decoration:none;font-size:12px\">\u2192 Premium access details</a>\n        <div style=\"color:#64748b;font-size:11px;margin-top:3px\">Incident alerts \u00b7 route monitoring \u00b7 full transcript access</div>\n      </div>\n    </div>\n  </div>\n</div>\n",
+    "mode": "html"
+   },
+   "pluginVersion": "13.2.0-30986922018",
+   "targets": [],
+   "title": "",
+   "transparent": true,
+   "type": "text"
+  }
+ ],
+ "preload": false,
+ "refresh": "1m",
+ "schemaVersion": 42,
+ "tags": [
+  "battle-buddy",
+  "public",
+  "intel"
+ ],
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "timepicker": {
+  "refresh_intervals": [
+   "5s",
+   "10s",
+   "30s",
+   "1m",
+   "5m",
+   "15m",
+   "30m",
+   "1h",
+   "2h",
+   "1d"
+  ]
+ },
+ "timezone": "America/Chicago",
+ "title": "Battle Buddy \u2014 Austin Public Safety Intelligence",
+ "uid": "bb-intel-public",
+ "version": 5
+}
