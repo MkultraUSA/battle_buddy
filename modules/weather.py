@@ -4,15 +4,25 @@ import pytz
 import requests
 
 
-def _get_nws_weather(lat, lon):
+def get_nws_weather(lat, lon):
     """
     Fetch weather from NWS API. Returns a dict of current conditions and a 5-day
     forecast, or None on error.
+
+    Public, and deliberately not underscore-prefixed: audio_receiver.py calls it
+    as `weather_mod.get_nws_weather(...)`. It used to be `_get_nws_weather`, so
+    the call site raised AttributeError on every request and
+    /api/premium/weather returned 500 for every premium user -- the Weather
+    panel on /premium/display never rendered, which is why only Space WX looked
+    alive. Nothing caught it: no test touched the route, and the import
+    resolution guard only analyses bare names (NameError), not attribute access
+    on a module alias (AttributeError). Same failure shape as the three
+    NameErrors it was written for, one indirection further out.
     """
     try:
         # NWS requires a two-stage request: first get the gridpoint URL for the lat/lon
         # then use that to get the actual forecast.
-        headers = {"User-Agent": "BattleBuddy/1.0 (battlebuddy.com, battlebuddystatus@gmail.com)"}
+        headers = {"User-Agent": "BattleBuddy/1.0 (ops@battlebuddy.news, battlebuddystatus@gmail.com)"}
         
         # 1. Get gridpoint URL and cache it
         grid_url = None
