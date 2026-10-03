@@ -139,6 +139,39 @@ class TestMetricNamesComeFromTheShippedSource(unittest.TestCase):
         names = mod.watched_metric_names()
         self.assertGreater(len(names), 10, "implausibly few gated names found")
 
+    def test_it_ignores_names_that_appear_only_in_a_docstring(self):
+        """A guard that scrapes prose reports dead gates that do not exist.
+
+        The watcher's own module docstring lists the three names it used to read
+        and never emitted -- the record of the bug #185 fixed. Collecting those
+        made this battery report three dead gates against a watcher that has none,
+        on its first run against production. A check that reports a false failure
+        is worse than no check: the response is to go and look, find nothing, and
+        then distrust the thing that was right.
+        """
+        names = _load().watched_metric_names()
+        for ghost in ("battlebuddy_raw_audio_queue_pending",
+                      "battlebuddy_raw_audio_queue_failed",
+                      "battlebuddy_raw_audio_queue_oldest_age_seconds"):
+            self.assertNotIn(
+                ghost, names,
+                f"{ghost} is documented as never having existed; reading it as a "
+                "live dependency fabricates a regression",
+            )
+
+    def test_it_keeps_names_that_appear_only_in_a_comment(self):
+        """Same class of mistake, different syntax. There are none today, so this
+        asserts the stripping works rather than that it currently matters."""
+        self.assertNotIn("battlebuddy_definitely_not_a_real_metric",
+                         _load().watched_metric_names())
+
+    def test_a_name_ending_in_a_digit_is_captured_whole(self):
+        """`..._latency_seconds_p95` truncated to `..._p` reads as a different,
+        also-unemitted metric. That produced a fourth phantom dead gate."""
+        names = _load().watched_metric_names()
+        self.assertIn("battlebuddy_transcription_latency_seconds_p95", names)
+        self.assertNotIn("battlebuddy_transcription_latency_seconds_p", names)
+
     def test_it_finds_the_names_the_watcher_actually_gates_on(self):
         mod = _load()
         names = mod.watched_metric_names()

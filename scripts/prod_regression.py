@@ -27,10 +27,13 @@ for the database. There is no code path here that can mutate production.
 from __future__ import annotations
 
 import argparse
+import ast
+import io
 import re
 import subprocess
 import sys
 import time
+import tokenize
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -118,15 +121,49 @@ def ssh(host: str, command: str, timeout: int = 60) -> str:
 # ---------------------------------------------------------------------------
 
 def watched_metric_names() -> set[str]:
-    """Every metric name `bb_transcription_watch.py` gates on.
+    """Every metric name `bb_transcription_watch.py` actually reads.
 
-    Parsed out of the file rather than listed here. A hand-copied list is how
-    `REQUIRED_METRICS` came to cover 7 of 13 names: two files each holding a list,
-    neither checking the other. Reading the shipped source means a gate added
-    there is covered here automatically, and a gate removed stops being claimed.
+    Parsed out of the shipped source rather than listed here, because a
+    hand-copied list is how `REQUIRED_METRICS` came to cover 7 of 13 names: two
+    files each holding a list, neither checking the other. Reading the shipped
+    source means a gate added there is covered automatically.
+
+    **Comments and docstrings are stripped first, and that is not a detail.** The
+    watcher's module docstring documents the names that *used* to be read and
+    never existed — `raw_audio_queue_pending` and friends — as the record of the
+    bug #185 fixed. A scraper that takes every `battlebuddy_*` token out of the
+    file collects that history as if it were live, and reports three dead gates
+    against a watcher that has none.
+
+    This battery did exactly that on its first run. A check that reports a false
+    failure is worse than no check, because the response is to go and look, find
+    nothing, and then distrust the thing that was right.
     """
-    src = (ROOT / "scripts" / "bb_transcription_watch.py").read_text(encoding="utf-8")
-    return set(re.findall(r"battlebuddy_[a-z_0-9]+", src))
+    src_path = ROOT / "scripts" / "bb_transcription_watch.py"
+    tree = ast.parse(src_path.read_text(encoding="utf-8"))
+
+    # Docstrings, at every scope, are documentation rather than lookups.
+    docstrings: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, "body", None)
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                docstrings.add(id(body[0].value))
+
+    # `#` comments never reach the AST, so tokenizing is the only way to see them.
+    code_lines: set[int] = set()
+    for tok in tokenize.generate_tokens(io.StringIO(src_path.read_text(encoding="utf-8")).readline):
+        if tok.type == tokenize.COMMENT:
+            code_lines.add(tok.start[0])
+
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in docstrings or node.lineno in code_lines:
+                continue
+            names.update(re.findall(r"battlebuddy_[a-z_0-9]+", node.value))
+    return names
 
 
 # ---------------------------------------------------------------------------
