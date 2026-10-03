@@ -174,23 +174,51 @@ def _unresolvable_calls(source: str | None = None) -> set[str]:
     For each function, collect what is in scope (parameters, assignments, nested
     defs, imports) and treat a call as resolvable if the name is a builtin, a
     module-level global, or local to that function.
+
+    Imports are read from the module body only, never from the whole tree. That
+    distinction is the whole point: an earlier version walked the entire AST for
+    imports, so `from flask import redirect` inside one function made `redirect`
+    look available everywhere in the file. `premium_commute` calls it and was
+    returning 500 in production with a clean suite, because the only place it was
+    ever imported was inside `premium_welcome`. A function-local import belongs
+    to that function's scope, which `locals_in` already handles.
     """
     tree = ast.parse(source if source is not None
                     else _APP.read_text(encoding="utf-8"))
 
-    module_globals: set[str] = set(dir(builtins))
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            module_globals.add(node.name)
-        elif isinstance(node, ast.Import):
+    def add_import(node, into: set[str]) -> None:
+        if isinstance(node, ast.Import):
             for a in node.names:
-                module_globals.add((a.asname or a.name).split(".")[0])
+                into.add((a.asname or a.name).split(".")[0])
         elif isinstance(node, ast.ImportFrom):
             for a in node.names:
                 if a.name == "*":
-                    module_globals |= _star_import_names(node.module or "")
+                    into |= _star_import_names(node.module or "")
                 else:
-                    module_globals.add(a.asname or a.name)
+                    into.add(a.asname or a.name)
+
+    def module_scope_imports(node, into: set[str]) -> None:
+        """Imports visible at module scope: anywhere except inside a def/class.
+
+        Not just the module body. `audio_receiver` imports prometheus_client
+        inside a module-level `try:` for its optional-dependency handling, and
+        those names are genuinely global. The distinction that matters is
+        scope, not nesting depth.
+        """
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.ClassDef, ast.Lambda)):
+                continue  # its imports belong to its own scope
+            if isinstance(child, (ast.Import, ast.ImportFrom)):
+                add_import(child, into)
+            module_scope_imports(child, into)
+
+    module_globals: set[str] = set(dir(builtins))
+    module_scope_imports(tree, module_globals)
+    # Definitions and names, which may legitimately be nested.
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            module_globals.add(node.name)
         elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
             module_globals.add(node.id)
         elif isinstance(node, ast.arg):
@@ -395,6 +423,43 @@ class TestScopeAnalysisNeedsNoDependencies(unittest.TestCase):
             any("get_nws_wx" in e for e in found),
             f"the attribute check no longer detects a misspelt module call; "
             f"it found only {found}",
+        )
+
+    def test_a_function_local_import_does_not_count_as_global(self):
+        """Regression witness for the redirect NameError, live in production.
+
+        `redirect` was imported inside premium_welcome and called by
+        premium_commute, which returned 500 for every visitor. The guard walked
+        the whole AST for imports, so the function-local import made the name
+        look global and the check passed. Feeds the analyser the old arrangement
+        and requires it to report the name.
+        """
+        app = _APP.read_text(encoding="utf-8")
+        if "redirect" not in app:
+            self.skipTest("no redirect usage left to model; update this witness")
+        broken = app.replace(
+            "from flask import Flask, jsonify, redirect, "
+            "render_template_string, request",
+            "from flask import Flask, jsonify, render_template_string, request",
+        )
+        if broken == app:
+            broken = app.replace(
+                "from flask import Flask, jsonify, redirect, "
+                "render_template_string, request  # noqa: E402, I001",
+                "from flask import Flask, jsonify, render_template_string, "
+                "request  # noqa: E402, I001",
+            )
+        if broken == app:
+            broken = app.replace(
+                "    # `redirect` used to be imported here and nowhere else, so",
+                "    from flask import redirect\n"
+                "    # `redirect` used to be imported here and nowhere else, so",
+            )
+        found = _unresolvable_calls(broken)
+        self.assertIn(
+            "redirect", found,
+            f"a function-local import is being treated as module scope again; "
+            f"the analyser found only {found}",
         )
 
     def test_the_attribute_check_finds_nothing_in_the_real_source(self):
