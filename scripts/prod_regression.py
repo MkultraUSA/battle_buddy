@@ -260,18 +260,19 @@ def check_remote(b: Battery, host: str) -> None:
     except Unreachable as exc:
         b.skip(f"{host}: tracebacks", str(exc))
 
-    # ops_verify is the existing 19-gate authority. Run it; do not reimplement it.
-    try:
-        out = ssh(host, "python3 /opt/battlebuddy/scripts/ops_verify.py 2>&1 | tail -1",
-                  timeout=180)
-        # Parsed, not compared to a literal. An earlier version hardcoded "19/19"
-        # and would have reported a false regression the moment a gate was added --
-        # the same brittleness that let a notifier claim "13 gates" for months.
-        m = re.search(r"(\d+)/(\d+) gates pass", out)
-        ok = bool(m) and m.group(1) == m.group(2)
-        b.record(f"{host}: ops_verify all green", ok, out.strip()[:160])
-    except Unreachable as exc:
-        b.skip(f"{host}: ops_verify", str(exc))
+    # NOTE: ops_verify is deliberately NOT run from here.
+    #
+    # It was, and that was a circular dependency I introduced: ops_verify gained a
+    # gate asserting this battery has run, and the battery ran ops_verify. On a
+    # cold start -- timer not yet installed, or the results file absent -- the two
+    # could never both pass, and the first run always reported a failure. Found
+    # within an hour of deploying, because the gate I added is exactly the gate
+    # that noticed.
+    #
+    # Nothing is lost by dropping it. ops_verify runs its own gates on every
+    # deploy and is the authority on them; what it does not do is assert on HTTP
+    # bodies, carry an XSS payload, or check the metrics contract. Those are the
+    # checks below, and they are the reason this battery exists.
 
     # The metrics contract. /metrics is loopback-only and nginx does not proxy it,
     # so a public fetch returns 404 and would look like a total outage rather than
@@ -366,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         print("http:    /public, /api/incidents, camera snapshot, XSS payload")
-        print("remote:  service active, HEAD, tracebacks, ops_verify, metrics contract, calls.worker")
+        print("remote:  service active, HEAD, tracebacks, metrics contract, calls.worker")
         return 0
 
     b = Battery("prod")

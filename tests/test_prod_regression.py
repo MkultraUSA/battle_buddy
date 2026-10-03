@@ -53,6 +53,22 @@ def _load():
 
 
 class TestTheBatteryIsImportableAndHonest(unittest.TestCase):
+    def test_it_does_not_run_ops_verify(self):
+        """A cycle, found the hard way.
+
+        `ops_verify` gained a gate asserting this battery has run. The battery
+        also ran `ops_verify`. On a cold start neither could ever pass: the
+        battery reported a failure because ops_verify failed, and ops_verify
+        failed because the battery had not yet written its results.
+
+        `ops_verify` remains the authority on its own gates and runs on every
+        deploy. The battery covers what it does not: HTTP bodies, the XSS payload,
+        and the metrics contract.
+        """
+        src = _SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn("ops_verify.py", src,
+                         "the battery runs ops_verify, which gates on the battery")
+
     def test_it_exists_where_this_test_expects(self):
         self.assertTrue(_SCRIPT.is_file(), f"{_SCRIPT} is missing")
 
