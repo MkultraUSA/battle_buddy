@@ -151,3 +151,17 @@ graphify-out/
 # Runtime poller state
 austin_events_state.json
 reviews/
+
+# Generated data, refreshed on a timer by bb-camera-snapshot.timer.
+#
+# Not source: scripts/fetch_austin_cameras.py rewrites this file on a schedule
+# and it is machine-generated from the City of Austin Open Data API. It has to
+# stay out of git because every deploy path refuses a dirty tree -- deploy.yml
+# checks before and after, scripts/deploy.sh gates on guard_drift_check.sh, and
+# the nightly drift check does the same -- so a tracked file the timer rewrites
+# would block the next deploy and page Kevin with a false "deploy FAILED".
+#
+# A fresh checkout therefore has no cameras until the timer first runs; that is
+# what OnBootSec=10min in the unit is for, and the "camera snapshot present"
+# gate in ops_verify.py is what notices if it has not.
+static/data/austin_cameras.json

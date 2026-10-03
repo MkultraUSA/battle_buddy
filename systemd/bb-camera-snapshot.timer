@@ -1,0 +1,18 @@
+[Unit]
+Description=Refresh the Austin traffic-camera snapshot daily
+
+[Timer]
+# UTC is explicit because this host runs Europe/Berlin; without it the refresh
+# would move an hour twice a year and quietly drift.
+OnCalendar=*-*-* 04:17:00 UTC
+# Jitter, so the city's portal does not take the same request from every
+# deployment of this service on the same minute.
+RandomizedDelaySec=30min
+# Boot shortly after startup so a rebuilt host repopulates the layer instead of
+# showing an empty map until the next scheduled run.
+OnBootSec=10min
+# Fire a run that was missed while the host was down.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
