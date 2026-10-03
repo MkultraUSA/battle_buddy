@@ -81,8 +81,15 @@ def _materialise(script: str, canary: Path, smoke_results: Path) -> str:
             .replace(EXPR_RUN_URL, "https://example.invalid/run/1"))
 
 
-def _stub_curl(tmp_path: Path) -> Path:
-    """A curl that records its arguments and sends nothing anywhere."""
+def _stub_curl(tmp_path: Path, reply: str = '{"ok":true}') -> Path:
+    """A curl that records its arguments, replies like the Telegram API, sends
+    nothing anywhere.
+
+    The reply is parameterised because the notifiers now inspect it. Telegram
+    answers `{"ok":false,"error_code":400,...}` and still returns HTTP 200, so
+    curl's exit code cannot tell you the alert was dropped -- that is the whole
+    reason the scripts check the body.
+    """
     record = tmp_path / "sent.txt"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -90,6 +97,7 @@ def _stub_curl(tmp_path: Path) -> Path:
     stub.write_text(
         "#!/usr/bin/env bash\n"
         f'printf "%s\\n" "$@" > "{record}"\n'
+        f"printf '%s' '{reply}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -196,14 +204,107 @@ class TestTheSmokeTestPointsAtTheRealSite:
         )
 
 
+class TestALongCommitMessageStillGetsThrough:
+    """Telegram caps a message at 4096 characters and answers 400 beyond it.
+
+    Discovered the hard way: the first deploy after the notifier was fixed sent
+    `{"ok":false,"error_code":400,"description":"Bad Request: message is too
+    long"}` for a long commit body. Telegram returns HTTP 200 for that, so curl
+    exited 0, the step passed, CI stayed green, and the SLO alert simply never
+    arrived. The cap is now applied before sending, and a rejected send fails
+    the step so a lost alert cannot be mistaken for a delivered one.
+    """
+
+    LIMIT = 4096
+
+    def _run_with_message(self, tmp_path, script, message):
+        canary = tmp_path / "pwned"
+        smoke_results = tmp_path / "smoke_results.txt"
+        smoke_results.write_text("x\n")
+        record = _stub_curl(tmp_path)
+        body = _materialise(script, canary, smoke_results)
+        proc = subprocess.run(
+            ["bash", "-e", "-c", body], capture_output=True, text=True, timeout=30,
+            env={
+                "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
+                "TELEGRAM_BOT_TOKEN": "TESTTOKEN",
+                "TELEGRAM_CHAT_ID": "TESTCHAT",
+                "COMMIT_MESSAGE": message,
+                "RUN_URL": "https://example.invalid/run/1",
+            },
+        )
+        return proc, record.read_text(encoding="utf-8") if record.exists() else ""
+
+    @pytest.mark.parametrize("name,script", _notifiers(),
+                             ids=[n for n, _ in _notifiers()])
+    def test_a_long_body_is_truncated_rather_than_rejected(self, tmp_path, name,
+                                                           script):
+        huge = "subject line\n\n" + ("x" * 9000)
+        proc, sent = self._run_with_message(tmp_path, script, huge)
+
+        assert proc.returncode == 0, f"{name} failed on a long commit:\n{proc.stderr}"
+        assert "(truncated)" in sent, (
+            f"{name} sent a {len(huge)}-character body with no cap; Telegram "
+            "answers 400 above 4096 and the alert would be dropped silently"
+        )
+        # The subject has to survive, because that is what identifies the deploy.
+        assert "subject line" in sent
+        assert len(huge) > self.LIMIT
+
+    @pytest.mark.parametrize("name,script", _notifiers(),
+                             ids=[n for n, _ in _notifiers()])
+    def test_a_short_body_is_not_truncated(self, tmp_path, name, script):
+        proc, sent = self._run_with_message(tmp_path, script, "fix: something\n\nbody")
+        assert proc.returncode == 0, proc.stderr
+        assert "(truncated)" not in sent, f"{name} truncated a message that fits"
+
+    @pytest.mark.parametrize("name,script", _notifiers(),
+                             ids=[n for n, _ in _notifiers()])
+    def test_a_rejected_send_fails_the_step(self, tmp_path, name, script):
+        """A dropped alert must be a red check, not a green one.
+
+        Telegram returns HTTP 200 with ok:false, so only inspecting the body
+        catches it.
+        """
+        canary = tmp_path / "pwned"
+        smoke_results = tmp_path / "smoke_results.txt"
+        smoke_results.write_text("x\n")
+        _stub_curl(tmp_path, '{"ok":false,"error_code":400,'
+                             '"description":"Bad Request: message is too long"}')
+        body = _materialise(script, canary, smoke_results)
+        proc = subprocess.run(
+            ["bash", "-e", "-c", body], capture_output=True, text=True, timeout=30,
+            env={
+                "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
+                "TELEGRAM_BOT_TOKEN": "TESTTOKEN",
+                "TELEGRAM_CHAT_ID": "TESTCHAT",
+                "COMMIT_MESSAGE": "short body",
+                "RUN_URL": "https://example.invalid/run/1",
+            },
+        )
+        assert proc.returncode != 0, (
+            f"{name} exited 0 even though Telegram rejected the message, so a "
+            "lost alert would show as a successful deploy"
+        )
+        assert "telegram_send FAILED" in proc.stderr, proc.stderr
+
+    def test_the_ok_check_is_not_a_substring_of_a_false_positive(self):
+        """ok:false must not satisfy a check written as a loose grep."""
+        source = DEPLOY.read_text(encoding="utf-8")
+        assert "*'\"ok\":true'*)" in source, (
+            "the notifier must match the exact ok:true field, not a substring "
+            "that ok:false would also satisfy"
+        )
+
+
 class TestAHostileCommitMessageCannotExecuteAnything:
     """Behaviour, not intention: run the real scripts and see what happens."""
 
-    def _run(self, tmp_path, script):
+    def _run(self, tmp_path, script, reply='{"ok":true}'):
         canary = tmp_path / "pwned"
         smoke_results = tmp_path / "smoke_results.txt"
         smoke_results.write_text("FAILED tests/test_smoke.py::something\n")
-        record = _stub_curl(tmp_path)
+        record = _stub_curl(tmp_path, reply)
         body = _materialise(script, canary, smoke_results)
 
         # GitHub runs `run:` blocks under `bash -e`, so match that.

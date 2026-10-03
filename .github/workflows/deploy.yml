@@ -48,10 +48,22 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          # Telegram caps a message at 4096 characters and answers 400 beyond
+          # it. Now that the whole commit body survives quoting intact, a long
+          # body silently dropped the alert -- and curl still exits 0, so the
+          # step passed and CI stayed green while no page ever arrived. Cap the
+          # body, and fail the step if Telegram rejects the send, so a lost
+          # alert is visible instead of invisible.
+          MSG="${COMMIT_MESSAGE:0:3600}"
+          if [ "${#COMMIT_MESSAGE}" -gt 3600 ]; then MSG="${MSG}... (truncated)"; fi
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=✅ Battle Buddy deployed successfully
-          ${COMMIT_MESSAGE}"
+          ${MSG}")
+          case "$RESPONSE" in
+            *'"ok":true'*) ;;
+            *) echo "telegram_send FAILED: $RESPONSE" >&2; exit 1 ;;
+          esac
 
       - name: Notify Telegram — failure
         if: failure()
@@ -60,11 +72,17 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          MSG="${COMMIT_MESSAGE:0:3600}"
+          if [ "${#COMMIT_MESSAGE}" -gt 3600 ]; then MSG="${MSG}... (truncated)"; fi
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=❌ Battle Buddy deploy FAILED
-          ${COMMIT_MESSAGE}
-          See: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ${MSG}
+          See: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          case "$RESPONSE" in
+            *'"ok":true'*) ;;
+            *) echo "telegram_send FAILED: $RESPONSE" >&2; exit 1 ;;
+          esac
 
   smoke-test:
     name: post-deploy smoke test
@@ -95,10 +113,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          MSG="${COMMIT_MESSAGE:0:3600}"
+          if [ "${#COMMIT_MESSAGE}" -gt 3600 ]; then MSG="${MSG}... (truncated)"; fi
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=✅ Smoke tests passed after deploy
-          ${COMMIT_MESSAGE}"
+          ${MSG}")
+          case "$RESPONSE" in
+            *'"ok":true'*) ;;
+            *) echo "telegram_send FAILED: $RESPONSE" >&2; exit 1 ;;
+          esac
 
       - name: Notify Telegram — smoke tests FAILED
         if: steps.smoke.outputs.exit_code != 0
@@ -108,12 +132,18 @@ jobs:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           RESULTS=$(tail -20 /tmp/smoke_results.txt)
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          MSG="${COMMIT_MESSAGE:0:3000}"
+          if [ "${#COMMIT_MESSAGE}" -gt 3000 ]; then MSG="${MSG}... (truncated)"; fi
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=❌ Smoke tests FAILED after deploy
-          ${COMMIT_MESSAGE}
+          ${MSG}
 
-          ${RESULTS}"
+          ${RESULTS}")
+          case "$RESPONSE" in
+            *'"ok":true'*) ;;
+            *) echo "telegram_send FAILED: $RESPONSE" >&2; exit 1 ;;
+          esac
 
   ops-verify:
     name: post-deploy SLO verification
@@ -139,10 +169,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          MSG="${COMMIT_MESSAGE:0:3600}"
+          if [ "${#COMMIT_MESSAGE}" -gt 3600 ]; then MSG="${MSG}... (truncated)"; fi
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=✅ Post-deploy SLOs green (19 gates)
-          ${COMMIT_MESSAGE}"
+          ${MSG}")
+          case "$RESPONSE" in
+            *'"ok":true'*) ;;
+            *) echo "telegram_send FAILED: $RESPONSE" >&2; exit 1 ;;
+          esac
 
       - name: Notify Telegram — SLO BREACH
         if: failure()
@@ -152,8 +188,16 @@ jobs:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MSG="${COMMIT_MESSAGE:0:3600}"
+          if [ "${#COMMIT_MESSAGE}" -gt 3600 ]; then MSG="${MSG}... (truncated)"; fi
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=🚨 Post-deploy SLO BREACH — check Grafana Ops board
-          ${COMMIT_MESSAGE}
-          See: ${RUN_URL}"
+          ${MSG}
+
+          See: ${RUN_URL}")
+          case "$RESPONSE" in
+            *'"ok":true'*) ;;
+            *) echo "telegram_send FAILED: $RESPONSE" >&2; exit 1 ;;
+          esac

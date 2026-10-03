@@ -50,15 +50,14 @@ KNOWN_PRIVATE_HELPERS = (
 )
 
 
-def _star_import_names(module: str) -> set[str]:
-    """Public names a `from <module> import *` brings into scope.
+def _module_names(module: str) -> set[str]:
+    """Every top-level name a module defines, underscore names included.
 
-    audio_receiver leans on star imports heavily, so ignoring them would report
-    every helper it legitimately gets that way -- insert_call, calls_since,
-    llm_analyze and friends -- as unresolvable.
-
-    Only public names, because that is exactly the star-import rule: underscore
-    names are excluded. That exclusion is the bug this file exists to catch.
+    `_star_import_names` filters the private ones out on purpose, because that
+    exclusion is the star-import rule this file is about. For resolving
+    `module_alias.attr` the opposite is true: `weather_mod._helper()` is legal
+    Python and works fine, so private names must be counted here or every
+    legitimate private call reads as missing.
     """
     if not module:
         return set()
@@ -85,10 +84,85 @@ def _star_import_names(module: str) -> set[str]:
         elif isinstance(node, ast.ImportFrom):
             for a in node.names:
                 names.add(a.asname or a.name)
-    return {n for n in names if not n.startswith("_")}
+    return names
 
 
-def _unresolvable_calls() -> set[str]:
+def _star_import_names(module: str) -> set[str]:
+    """Public names a `from <module> import *` brings into scope.
+
+    audio_receiver leans on star imports heavily, so ignoring them would report
+    every helper it legitimately gets that way -- insert_call, calls_since,
+    llm_analyze and friends -- as unresolvable.
+
+    Only public names, because that is exactly the star-import rule: underscore
+    names are excluded. That exclusion is the bug this file exists to catch.
+    """
+    return {n for n in _module_names(module) if not n.startswith("_")}
+
+
+def _module_aliases(tree: ast.Module) -> dict[str, str]:
+    """Map `import modules.weather as weather_mod` to the module path."""
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.asname:
+                    aliases[a.asname] = a.name
+    return aliases
+
+
+def _unresolvable_attributes(source: str | None = None) -> set[str]:
+    """`<alias>.<attr>` where the real module defines no such attribute.
+
+    The sibling of `_unresolvable_calls`, and it covers the error the sibling
+    cannot see. A bare name that is not in scope raises NameError; an attribute
+    that does not exist on a module raises AttributeError. Both are crashes
+    rather than wrong answers, so neither can be found by asserting on
+    behaviour -- they have to be resolved statically.
+
+    This is not hypothetical: audio_receiver called
+    `weather_mod.get_nws_weather(...)` against a module defining only
+    `_get_nws_weather`, and /api/premium/weather 500'd for every premium user
+    while the suite stayed green.
+    """
+    tree = ast.parse(source if source is not None
+                    else _APP.read_text(encoding="utf-8"))
+    aliases = _module_aliases(tree)
+    # Only aliases that resolve to a file in this repo. `import numpy as np`
+    # and friends must be ignored, not reported as unresolvable.
+    repo_aliases = {
+        alias: module for alias, module in aliases.items()
+        if (_ROOT / (module.replace(".", "/") + ".py")).exists()
+    }
+
+    cache: dict[str, set[str]] = {}
+
+    def names_for(module: str) -> set[str]:
+        if module not in cache:
+            cache[module] = _module_names(module)
+        return cache[module]
+
+    missing: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute):
+            continue
+        if not isinstance(func.value, ast.Name):
+            continue
+        alias = func.value.id
+        module = repo_aliases.get(alias)
+        if module is None:
+            continue
+        if func.attr.startswith("__"):
+            continue
+        if func.attr not in names_for(module):
+            missing.add(f"{alias}.{func.attr} (in {module})")
+    return missing
+
+
+def _unresolvable_calls(source: str | None = None) -> set[str]:
     """Names called but not resolvable in their own scope.
 
     A NameError has no behaviour to assert on, so this is the only way to see it
@@ -101,7 +175,8 @@ def _unresolvable_calls() -> set[str]:
     defs, imports) and treat a call as resolvable if the name is a builtin, a
     module-level global, or local to that function.
     """
-    tree = ast.parse(_APP.read_text(encoding="utf-8"))
+    tree = ast.parse(source if source is not None
+                    else _APP.read_text(encoding="utf-8"))
 
     module_globals: set[str] = set(dir(builtins))
     for node in ast.walk(tree):
@@ -271,6 +346,60 @@ class TestScopeAnalysisNeedsNoDependencies(unittest.TestCase):
             "Each is a NameError at runtime, i.e. a 500 from whichever handler "
             "reaches it.",
         )
+
+    def test_scope_analysis_finds_no_missing_module_attributes(self):
+        """The AttributeError twin of the check above.
+
+        A bare name that is not in scope raises NameError. An attribute that
+        does not exist on a module raises AttributeError. The check above only
+        looked at bare names, which is how
+        `weather_mod.get_nws_weather(...)` survived against a module defining
+        only `_get_nws_weather`, 500ing /api/premium/weather for every premium
+        user with a fully green suite.
+        """
+        missing = sorted(_unresolvable_attributes())
+        self.assertEqual(
+            [], missing,
+            f"audio_receiver calls attributes its module does not define: "
+            f"{missing}. Each is an AttributeError at runtime, i.e. a 500 from "
+            "whichever handler reaches it.",
+        )
+
+    def test_the_attribute_check_ignores_third_party_modules(self):
+        """Only repo modules are resolved, or every library call is reported."""
+        missing = _unresolvable_attributes()
+        for entry in missing:
+            self.assertNotIn("numpy", entry)
+            self.assertNotIn("requests", entry)
+
+    def test_the_attribute_check_catches_the_weather_typo(self):
+        """Regression witness: reintroduce the bug and prove it is seen.
+
+        A guard that cannot be shown to fail is a guard that might quietly stop
+        guarding, which is how the OnBootSec assertion in the camera work went
+        wrong in the first place.
+
+        The analysers take source text, so this never writes to
+        audio_receiver.py. An earlier version of this witness did mutate the
+        file, and when the assertion failed mid-way the restore never ran --
+        leaving a typo in the working tree, which is the same way a deploy gets
+        blocked by drift that has nothing to do with code.
+        """
+        app = _APP.read_text(encoding="utf-8")
+        broken = app.replace("weather_mod.get_nws_weather",
+                             "weather_mod.get_nws_wx")
+        if broken == app:
+            self.skipTest("the call site no longer matches; update this witness")
+        found = _unresolvable_attributes(broken)
+        self.assertTrue(
+            any("get_nws_wx" in e for e in found),
+            f"the attribute check no longer detects a misspelt module call; "
+            f"it found only {found}",
+        )
+
+    def test_the_attribute_check_finds_nothing_in_the_real_source(self):
+        """The same call against the untouched file must come back clean."""
+        self.assertEqual([], sorted(_unresolvable_attributes()))
 
 
 if __name__ == "__main__":
