@@ -1,0 +1,1051 @@
+{
+ "__meta__": {
+  "fetched_from": "https://kevinwatkins.grafana.net",
+  "uid": "bb-github-activity",
+  "updated": "2026-09-25T14:58:20Z",
+  "version": 5
+ },
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "description": "GitHub and Hermes delivery activity for Battle Buddy. Open-PR state, CI outcomes, pass rate, failures, alert score, and collector freshness are separated so missing telemetry is not mistaken for a healthy system.",
+ "editable": true,
+ "fiscalYearStartMonth": 0,
+ "graphTooltip": 0,
+ "id": 4169944606371840,
+ "liveNow": false,
+ "panels": [
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "id": 27,
+   "title": "Pull Request Status",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "PRs currently open against battle_buddy",
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 3
+       },
+       {
+        "color": "red",
+        "value": 6
+       }
+      ]
+     },
+     "unit": "none"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 0,
+    "y": 1
+   },
+   "id": 2,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_prs_open{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "open",
+     "refId": "A"
+    }
+   ],
+   "title": "Open PRs",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 4,
+    "y": 1
+   },
+   "id": 3,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_ci_passing{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "passing",
+     "refId": "A"
+    }
+   ],
+   "title": "CI Passing",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "unit": "none"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 8,
+    "y": 1
+   },
+   "id": 4,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_ci_failing{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "failing",
+     "refId": "A"
+    }
+   ],
+   "title": "CI Failing",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       }
+      ]
+     },
+     "unit": "none"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 12,
+    "y": 1
+   },
+   "id": 5,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_ci_pending{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "pending",
+     "refId": "A"
+    }
+   ],
+   "title": "CI Pending",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "open PRs + 3x failing CI. Higher = more attention needed.",
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 5
+       },
+       {
+        "color": "red",
+        "value": 10
+       }
+      ]
+     },
+     "unit": "none"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 16,
+    "y": 1
+   },
+   "id": 6,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_alert_score{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "score",
+     "refId": "A"
+    }
+   ],
+   "title": "Alert Score",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "lineWidth": 2
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 12,
+    "x": 0,
+    "y": 5
+   },
+   "id": 7,
+   "options": {},
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_prs_open{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "open PRs",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_ci_failing{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "CI failing",
+     "refId": "B"
+    }
+   ],
+   "title": "Open PRs Over Time",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Age and branch for each open PR. Refresh every 5 min.",
+   "fieldConfig": {
+    "defaults": {
+     "unit": "h"
+    }
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 12,
+    "x": 12,
+    "y": 5
+   },
+   "id": 8,
+   "options": {
+    "footer": {
+     "show": false
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_pr_age_hours{repo=\"MkultraUSA/battle_buddy\"}",
+     "format": "table",
+     "instant": true,
+     "legendFormat": "PR #{{pr}} {{branch}} ({{author}})",
+     "refId": "A"
+    }
+   ],
+   "title": "Open PRs \u2014 Detail",
+   "type": "table"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 11
+   },
+   "id": 28,
+   "title": "Live Activity Feed",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "description": "Open PRs polled every 5 min \u2014 shows branch, author, age",
+   "gridPos": {
+    "h": 10,
+    "w": 12,
+    "x": 0,
+    "y": 12
+   },
+   "id": 11,
+   "options": {
+    "enableLogDetails": true,
+    "showLabels": true,
+    "showTime": true,
+    "sortOrder": "Descending",
+    "wrapLogMessage": true
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "{job=\"github-poller\",event=\"open_pr\"}",
+     "refId": "A"
+    }
+   ],
+   "title": "PR Events",
+   "type": "logs"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "description": "Every workflow run \u2014 secrets-scan, python-syntax, etc.",
+   "gridPos": {
+    "h": 10,
+    "w": 12,
+    "x": 12,
+    "y": 12
+   },
+   "id": 12,
+   "options": {
+    "enableLogDetails": true,
+    "showLabels": true,
+    "showTime": true,
+    "sortOrder": "Descending",
+    "wrapLogMessage": true
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "{job=\"github-poller\",event=\"ci_run\"}",
+     "refId": "A"
+    }
+   ],
+   "title": "CI Run Results",
+   "type": "logs"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "description": "Recent commits to any branch \u2014 what Hermes is actually writing",
+   "gridPos": {
+    "h": 10,
+    "w": 24,
+    "x": 0,
+    "y": 22
+   },
+   "id": 13,
+   "options": {
+    "enableLogDetails": true,
+    "showLabels": false,
+    "showTime": true,
+    "sortOrder": "Descending",
+    "wrapLogMessage": true
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "{job=\"github-poller\",event=\"commit\"}",
+     "refId": "A"
+    }
+   ],
+   "title": "Commit Feed",
+   "type": "logs"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 32
+   },
+   "id": 29,
+   "title": "CI Failure Alerts",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "description": "Any run that failed \u2014 red flag for broken Hermes PRs",
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 33
+   },
+   "id": 15,
+   "options": {
+    "enableLogDetails": true,
+    "showLabels": true,
+    "showTime": true,
+    "sortOrder": "Descending",
+    "wrapLogMessage": true
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "{job=\"github-poller\",event=\"ci_run\",status=\"failure\"}",
+     "refId": "A"
+    }
+   ],
+   "title": "CI Failures Only",
+   "type": "logs"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 41
+   },
+   "id": 30,
+   "title": "CI Trend & Signal Freshness",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Collector-reported counts of passing, failing, and pending GitHub CI runs. A persistent failing or pending count needs investigation.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "lineWidth": 2,
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 3
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "id": 21,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_ci_passing{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "passing",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_ci_failing{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "failing",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_ci_pending{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "pending",
+     "refId": "C"
+    }
+   ],
+   "title": "CI Outcomes \u2014 24h",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Passing runs divided by all collector-reported CI states. A missing series is treated as zero only for the denominator guard; inspect the logs when this panel is blank.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "lineWidth": 2,
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 3,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 0.9
+       },
+       {
+        "color": "green",
+        "value": 0.95
+       }
+      ]
+     },
+     "unit": "percentunit"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   },
+   "id": 22,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_ci_passing{repo=\"MkultraUSA/battle_buddy\"} / clamp_min(gh_ci_passing{repo=\"MkultraUSA/battle_buddy\"} + gh_ci_failing{repo=\"MkultraUSA/battle_buddy\"} + gh_ci_pending{repo=\"MkultraUSA/battle_buddy\"}, 1)",
+     "legendFormat": "pass rate",
+     "refId": "A"
+    }
+   ],
+   "title": "CI Pass Rate",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Current collector-reported failing CI count. Lower is better; correlate with the CI Failures Only log panel.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 3
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 0,
+    "y": 0
+   },
+   "id": 23,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "sum(gh_ci_failing{repo=\"MkultraUSA/battle_buddy\"})",
+     "legendFormat": "CI Failure Count",
+     "refId": "A"
+    }
+   ],
+   "title": "CI Failure Count",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Seconds since the latest alert-score sample. A blank panel indicates the collector is stale or absent; do not interpret blank as healthy.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 300
+       },
+       {
+        "color": "red",
+        "value": 900
+       }
+      ]
+     },
+     "unit": "s"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 8,
+    "y": 0
+   },
+   "id": 24,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "time() - timestamp(gh_alert_score{repo=\"MkultraUSA/battle_buddy\"})",
+     "legendFormat": "CI Signal Age",
+     "refId": "A"
+    }
+   ],
+   "title": "CI Signal Age",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Maximum age of collector-reported open pull requests. Blank means no open PR data is available.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 24
+       },
+       {
+        "color": "red",
+        "value": 72
+       }
+      ]
+     },
+     "unit": "h"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 16,
+    "y": 0
+   },
+   "id": 25,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "max(gh_pr_age_hours{repo=\"MkultraUSA/battle_buddy\"})",
+     "legendFormat": "Oldest Open PR Age",
+     "refId": "A"
+    }
+   ],
+   "title": "Oldest Open PR Age",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Collector-reported alert score for the repository. Treat the score as a triage signal and inspect its exporter definition before setting an SLO.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "lineWidth": 2,
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 3
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 24,
+    "x": 0,
+    "y": 7
+   },
+   "id": 26,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "gh_alert_score{repo=\"MkultraUSA/battle_buddy\"}",
+     "legendFormat": "alert score",
+     "refId": "A"
+    }
+   ],
+   "title": "Alert Score Over Time",
+   "type": "timeseries"
+  }
+ ],
+ "preload": false,
+ "refresh": "5m",
+ "schemaVersion": 42,
+ "tags": [
+  "battlebuddy",
+  "ci",
+  "delivery",
+  "github",
+  "hermes",
+  "private"
+ ],
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "timepicker": {
+  "refresh_intervals": [
+   "5s",
+   "10s",
+   "30s",
+   "1m",
+   "5m",
+   "15m",
+   "30m",
+   "1h",
+   "2h",
+   "1d"
+  ]
+ },
+ "timezone": "America/Chicago",
+ "title": "Battle Buddy \u2014 GitHub / Hermes Agent Activity",
+ "uid": "bb-github-activity",
+ "version": 5
+}

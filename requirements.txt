@@ -8,6 +8,14 @@ networkx==3.6.1
 numpy==2.4.4
 openai-whisper==20250625
 prometheus-client==0.25.0
+# Not optional: three Grafana panels read battlebuddy_process_rss_bytes,
+# battlebuddy_process_threads and battlebuddy_process_vms_bytes, and the collector
+# emits those three ONLY when psutil imports. It was installed in the production
+# venv and declared nowhere, so a rebuild from this file would have silently
+# emptied three panels with no error anywhere -- the same shape as the init_db
+# defect, where /metrics returned an empty body under HTTP 200.
+# Found by tests/test_grafana_contract.py.
+psutil==7.2.2
 pytz
 requests==2.33.1
 stripe==15.0.1

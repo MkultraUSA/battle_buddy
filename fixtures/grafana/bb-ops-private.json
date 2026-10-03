@@ -1,0 +1,2231 @@
+{
+ "__meta__": {
+  "fetched_from": "https://kevinwatkins.grafana.net",
+  "uid": "bb-ops-private",
+  "updated": "2026-09-25T05:20:16Z",
+  "version": 9
+ },
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "description": "Private operational dashboard for Battle Buddy. Host health, log-derived error rates, transcription reliability, data quality, backlog, and throughput are shown as time series with explicit window semantics for AI and human review.",
+ "editable": true,
+ "fiscalYearStartMonth": 0,
+ "graphTooltip": 0,
+ "id": 4158879984185344,
+ "liveNow": false,
+ "panels": [
+  {
+   "collapsed": false,
+   "id": 63,
+   "title": "System Health \u2014 All Hosts",
+   "type": "row"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "id": 64,
+   "title": "Map & Investigation Health",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 1,
+     "unit": "d"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 0,
+    "y": 0
+   },
+   "id": 42,
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "(time() - battlebuddy_homicides_seed_newest_ts) / 86400",
+     "refId": "A"
+    }
+   ],
+   "title": "Homicide File Age (days)",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 0,
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 6,
+    "y": 0
+   },
+   "id": 43,
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_created_1h",
+     "refId": "A"
+    }
+   ],
+   "title": "Incidents Created 1h",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 0,
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 12,
+    "y": 0
+   },
+   "id": 44,
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_merged_1h",
+     "refId": "A"
+    }
+   ],
+   "title": "Merged Follow-ups 1h",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 0,
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 18,
+    "y": 0
+   },
+   "id": 45,
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_apd_articles_24h",
+     "refId": "A"
+    }
+   ],
+   "title": "APD Articles Seen 24h",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 0,
+    "y": 0
+   },
+   "id": 46,
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_backlog_files_pending",
+     "refId": "A"
+    }
+   ],
+   "title": "File Backlog Pending",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 6,
+    "y": 0
+   },
+   "id": 47,
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_backlog_files_failed",
+     "refId": "A"
+    }
+   ],
+   "title": "File Backlog Failed",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "5-minute average across all three hosts",
+   "fieldConfig": {
+    "defaults": {
+     "max": 100,
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 60
+       },
+       {
+        "color": "red",
+        "value": 85
+       }
+      ]
+     },
+     "unit": "percent"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 0,
+    "y": 1
+   },
+   "id": 2,
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\",instance=\"vmi3198174\"}[5m])) * 100)",
+     "legendFormat": "kevcloud",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\",instance=\"radiodesk\"}[5m])) * 100)",
+     "legendFormat": "radiodesk-pi5",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\",instance=\"hostinger\"}[5m])) * 100)",
+     "legendFormat": "hostinger",
+     "refId": "C"
+    }
+   ],
+   "title": "CPU Usage %",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "max": 100,
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 70
+       },
+       {
+        "color": "red",
+        "value": 90
+       }
+      ]
+     },
+     "unit": "percent"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 12,
+    "y": 1
+   },
+   "id": 3,
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "100 * (1 - node_memory_MemAvailable_bytes{instance=\"vmi3198174\"} / node_memory_MemTotal_bytes{instance=\"vmi3198174\"})",
+     "legendFormat": "kevcloud",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "100 * (1 - node_memory_MemAvailable_bytes{instance=\"radiodesk\"} / node_memory_MemTotal_bytes{instance=\"radiodesk\"})",
+     "legendFormat": "radiodesk-pi5",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "100 * (1 - node_memory_MemAvailable_bytes{instance=\"hostinger\"} / node_memory_MemTotal_bytes{instance=\"hostinger\"})",
+     "legendFormat": "hostinger",
+     "refId": "C"
+    }
+   ],
+   "title": "Memory Usage %",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 70
+       },
+       {
+        "color": "red",
+        "value": 90
+       }
+      ]
+     },
+     "unit": "percent"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 0,
+    "y": 8
+   },
+   "id": 4,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "max(100 * (1 - node_filesystem_avail_bytes{instance=\"vmi3198174\",mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{instance=\"vmi3198174\",mountpoint=\"/\",fstype!=\"tmpfs\"}))",
+     "legendFormat": "kevcloud /",
+     "refId": "A"
+    }
+   ],
+   "title": "Disk Used \u2014 kevcloud",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 70
+       },
+       {
+        "color": "red",
+        "value": 90
+       }
+      ]
+     },
+     "unit": "percent"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 4,
+    "y": 8
+   },
+   "id": 5,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "100 * (1 - node_filesystem_avail_bytes{instance=\"radiodesk\",mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{instance=\"radiodesk\",mountpoint=\"/\",fstype!=\"tmpfs\"})",
+     "legendFormat": "radiodesk /",
+     "refId": "A"
+    }
+   ],
+   "title": "Disk Used \u2014 radiodesk",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 70
+       },
+       {
+        "color": "red",
+        "value": 90
+       }
+      ]
+     },
+     "unit": "percent"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 8,
+    "y": 8
+   },
+   "id": 6,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "100 * (1 - node_filesystem_avail_bytes{instance=\"hostinger\",mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{instance=\"hostinger\",mountpoint=\"/\",fstype!=\"tmpfs\"})",
+     "legendFormat": "hostinger /",
+     "refId": "A"
+    }
+   ],
+   "title": "Disk Used \u2014 hostinger",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   },
+   "id": 7,
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "node_load1{instance=\"vmi3198174\"}",
+     "legendFormat": "kevcloud",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "node_load1{instance=\"radiodesk\"}",
+     "legendFormat": "radiodesk-pi5",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "node_load1{instance=\"hostinger\"}",
+     "legendFormat": "hostinger",
+     "refId": "C"
+    }
+   ],
+   "title": "System Load (1-min avg)",
+   "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 12
+   },
+   "id": 65,
+   "title": "Error Rates \u2014 Refactor Health Gauge",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "description": "Key refactor metric. This line should trend DOWN after a successful refactor. Spike = something broke.",
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "lineWidth": 2
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 5
+       },
+       {
+        "color": "red",
+        "value": 20
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 13
+   },
+   "id": 11,
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "sum(rate({host=\"kevcloud\", job=\"battlebuddy.service\"} |~ \"(?i)(error|exception|traceback|FAIL)\" [5m])) * 60",
+     "legendFormat": "BB errors/min",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "sum(rate({host=\"radiodesk\"} |~ \"(?i)(error|exception|traceback|FAIL)\" [5m])) * 60",
+     "legendFormat": "Pi errors/min",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "sum(rate({host=\"hostinger\"} |~ \"(?i)(error|exception|traceback|FAIL)\" [5m])) * 60",
+     "legendFormat": "Hostinger errors/min",
+     "refId": "C"
+    }
+   ],
+   "title": "Errors per Minute \u2014 All Hosts",
+   "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 21
+   },
+   "id": 66,
+   "title": "Live Error Logs",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 22
+   },
+   "id": 21,
+   "options": {
+    "enableLogDetails": true,
+    "showLabels": false,
+    "showTime": true,
+    "sortOrder": "Descending",
+    "wrapLogMessage": true
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "{host=\"kevcloud\", job=\"battlebuddy.service\"} |~ \"(?i)(error|exception|traceback|FAIL|critical)\"",
+     "refId": "A"
+    }
+   ],
+   "title": "Battle Buddy Errors (kevcloud)",
+   "type": "logs"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 22
+   },
+   "id": 22,
+   "options": {
+    "enableLogDetails": true,
+    "showLabels": true,
+    "showTime": true,
+    "sortOrder": "Descending",
+    "wrapLogMessage": true
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "{host=\"radiodesk\"} |~ \"(?i)(error|exception|traceback|FAIL|critical)\"",
+     "refId": "A"
+    }
+   ],
+   "title": "Pi Errors \u2014 OP25 + all services (radiodesk)",
+   "type": "logs"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "description": "No output for 15+ minutes means the agent is stalled or finished.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 30
+   },
+   "id": 23,
+   "options": {
+    "enableLogDetails": true,
+    "showLabels": false,
+    "showTime": true,
+    "sortOrder": "Descending",
+    "wrapLogMessage": true
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "{host=\"hostinger\", job=\"hermes\"}",
+     "refId": "A"
+    }
+   ],
+   "title": "Hermes Activity (hostinger) \u2014 silence = stalled",
+   "type": "logs"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 30
+   },
+   "id": 24,
+   "options": {
+    "enableLogDetails": true,
+    "showLabels": true,
+    "showTime": true,
+    "sortOrder": "Descending",
+    "wrapLogMessage": true
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "{host=\"hostinger\"} |~ \"(?i)(error|exception|traceback|FAIL|critical)\"",
+     "refId": "A"
+    }
+   ],
+   "title": "Hostinger Container Errors (all)",
+   "type": "logs"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 38
+   },
+   "id": 67,
+   "title": "Battle Buddy \u2014 Operations",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 3
+       }
+      ]
+     },
+     "unit": "none"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 0,
+    "y": 39
+   },
+   "id": 31,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_active_incidents",
+     "legendFormat": "active",
+     "refId": "A"
+    }
+   ],
+   "title": "Active Incidents",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "orange",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 3,
+    "y": 39
+   },
+   "id": 32,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_homicides_ytd_victims",
+     "legendFormat": "victims",
+     "refId": "A"
+    }
+   ],
+   "title": "Homicides YTD",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 5
+       },
+       {
+        "color": "red",
+        "value": 15
+       }
+      ]
+     },
+     "unit": "none"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 6,
+    "y": 39
+   },
+   "id": 33,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_shootings_confirmed_30d",
+     "legendFormat": "confirmed",
+     "refId": "A"
+    }
+   ],
+   "title": "Shootings Confirmed (30d)",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 3,
+    "x": 9,
+    "y": 39
+   },
+   "id": 34,
+   "options": {
+    "graphMode": "none",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_calls_total",
+     "legendFormat": "total",
+     "refId": "A"
+    }
+   ],
+   "title": "Total Calls Processed",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 39
+   },
+   "id": 35,
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_incidents_total{itype=\"SHOOTING\"}[1h]) * 3600",
+     "legendFormat": "SHOOTING",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_incidents_total{itype=\"STRUCTURE FIRE\"}[1h]) * 3600",
+     "legendFormat": "STRUCTURE FIRE",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_incidents_total{itype=\"CRASH/COLLISION\"}[1h]) * 3600",
+     "legendFormat": "CRASH",
+     "refId": "C"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_incidents_total{itype=\"OFFICER DOWN\"}[1h]) * 3600",
+     "legendFormat": "OFFICER DOWN",
+     "refId": "D"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_incidents_total{itype=\"HOSTAGE/BARRICADE\"}[1h]) * 3600",
+     "legendFormat": "HOSTAGE/BARRICADE",
+     "refId": "E"
+    }
+   ],
+   "title": "Incidents by Type (rate/hr)",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 0,
+    "y": 43
+   },
+   "id": 36,
+   "options": {
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_calls_by_agency_total{agency=\"APD\"}[30m]) * 3600",
+     "legendFormat": "APD",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_calls_by_agency_total{agency=\"AFD\"}[30m]) * 3600",
+     "legendFormat": "AFD",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_calls_by_agency_total{agency=\"TCEMS\"}[30m]) * 3600",
+     "legendFormat": "TCEMS",
+     "refId": "C"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "rate(battlebuddy_calls_by_agency_total{agency=\"TCSO\"}[30m]) * 3600",
+     "legendFormat": "TCSO",
+     "refId": "D"
+    }
+   ],
+   "title": "Radio Calls by Agency (rate/hr)",
+   "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 50
+   },
+   "id": 68,
+   "title": "Reliability, Backlog & Data Quality",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Ratio of successful transcription windows. Higher is better; compare with the 24h ratio to detect recent degradation.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 3,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 0.9
+       },
+       {
+        "color": "green",
+        "value": 0.95
+       }
+      ]
+     },
+     "unit": "percentunit"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 0,
+    "y": 0
+   },
+   "id": 62,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_success_ratio{window=\"1h\"}",
+     "legendFormat": "Transcription Success \u2014 1h",
+     "refId": "A"
+    }
+   ],
+   "title": "Transcription Success \u2014 1h",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Exporter-reported transcription error ratio. Lower is better; correlate with latency and service logs.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 3,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 0.02
+       },
+       {
+        "color": "red",
+        "value": 0.05
+       }
+      ]
+     },
+     "unit": "percentunit"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 4,
+    "y": 0
+   },
+   "id": 51,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_error_ratio",
+     "legendFormat": "Transcription Error Ratio",
+     "refId": "A"
+    }
+   ],
+   "title": "Transcription Error Ratio",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "95th-percentile transcription latency for the 1h window. Lower is better; use the percentile panel for drift.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 10
+       },
+       {
+        "color": "red",
+        "value": 20
+       }
+      ]
+     },
+     "unit": "s"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 8,
+    "y": 0
+   },
+   "id": 52,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_latency_seconds_p95{window=\"1h\"}",
+     "legendFormat": "Transcription p95 Latency \u2014 1h",
+     "refId": "A"
+    }
+   ],
+   "title": "Transcription p95 Latency \u2014 1h",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Share of calls with usable transcript coverage in the 1h window. Higher is better.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 3,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 0.9
+       },
+       {
+        "color": "green",
+        "value": 0.95
+       }
+      ]
+     },
+     "unit": "percentunit"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 12,
+    "y": 0
+   },
+   "id": 53,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcript_quality_coverage_ratio{window=\"1h\"}",
+     "legendFormat": "Transcript Coverage \u2014 1h",
+     "refId": "A"
+    }
+   ],
+   "title": "Transcript Coverage \u2014 1h",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Exporter quality score for transcript reliability in the 1h window. Higher is better.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 3,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 0.9
+       },
+       {
+        "color": "green",
+        "value": 0.95
+       }
+      ]
+     },
+     "unit": "percentunit"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 16,
+    "y": 0
+   },
+   "id": 54,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcript_quality_reliability_score{window=\"1h\"}",
+     "legendFormat": "Transcript Reliability \u2014 1h",
+     "refId": "A"
+    }
+   ],
+   "title": "Transcript Reliability \u2014 1h",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Current transcription backlog depth. Sustained growth indicates insufficient worker capacity.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 10
+       },
+       {
+        "color": "red",
+        "value": 50
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 20,
+    "y": 0
+   },
+   "id": 55,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_backlog_queue_depth",
+     "legendFormat": "Backlog Queue Depth",
+     "refId": "A"
+    }
+   ],
+   "title": "Backlog Queue Depth",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Short-window reliability signals. Compare the three series to separate transcription failures from broader transcript-quality problems.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 3,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 0.9
+       },
+       {
+        "color": "green",
+        "value": 0.95
+       }
+      ]
+     },
+     "unit": "percentunit"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 0,
+    "y": 4
+   },
+   "id": 56,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_success_ratio{window=\"1h\"}",
+     "legendFormat": "success 1h",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcript_quality_coverage_ratio{window=\"1h\"}",
+     "legendFormat": "coverage 1h",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcript_quality_reliability_score{window=\"1h\"}",
+     "legendFormat": "reliability 1h",
+     "refId": "C"
+    }
+   ],
+   "title": "Success, Coverage & Reliability",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Exporter-reported transcription error ratio over the dashboard window. Lower is better.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 3,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 0.02
+       },
+       {
+        "color": "red",
+        "value": 0.05
+       }
+      ]
+     },
+     "unit": "percentunit"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 12,
+    "y": 4
+   },
+   "id": 57,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_error_ratio",
+     "legendFormat": "error ratio",
+     "refId": "A"
+    }
+   ],
+   "title": "Transcription Error Ratio Over Time",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "p95 latency for 15m, 1h, and 24h windows. A widening gap between 15m and 24h indicates a current slowdown.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 10
+       },
+       {
+        "color": "red",
+        "value": 20
+       }
+      ]
+     },
+     "unit": "s"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 0,
+    "y": 11
+   },
+   "id": 58,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_latency_seconds_p95{window=\"15m\"}",
+     "legendFormat": "p95 15m",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_latency_seconds_p95{window=\"1h\"}",
+     "legendFormat": "p95 1h",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_latency_seconds_p95{window=\"24h\"}",
+     "legendFormat": "p95 24h",
+     "refId": "C"
+    }
+   ],
+   "title": "Transcription Latency Percentiles",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Counts of missing, short, and low-density transcript calls. These are quality investigation leads, not confirmed system failures.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 10
+       },
+       {
+        "color": "red",
+        "value": 25
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 12,
+    "y": 11
+   },
+   "id": 59,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcript_quality_missing_calls{window=\"24h\"}",
+     "legendFormat": "missing",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcript_quality_short_calls{window=\"24h\"}",
+     "legendFormat": "short",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcript_quality_low_density_calls{window=\"24h\"}",
+     "legendFormat": "low density",
+     "refId": "C"
+    }
+   ],
+   "title": "Quality Exceptions \u2014 24h",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Queue depth, active transcription work, and failed/pending files. Correlate spikes with latency and memory panels.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 10
+       },
+       {
+        "color": "red",
+        "value": 50
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 0,
+    "y": 18
+   },
+   "id": 60,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_backlog_queue_depth",
+     "legendFormat": "queue depth",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_transcription_in_progress",
+     "legendFormat": "in progress",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_backlog_files_pending",
+     "legendFormat": "files pending",
+     "refId": "C"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_backlog_files_failed",
+     "legendFormat": "files failed",
+     "refId": "D"
+    }
+   ],
+   "title": "Backlog & Active Work",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Calls monitored, incident creation/merge rates, and active incidents. Use for capacity and incident-engine trend analysis.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "decimals": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "yellow",
+        "value": 100
+       },
+       {
+        "color": "red",
+        "value": 500
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 12,
+    "y": 18
+   },
+   "id": 61,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_calls_24h",
+     "legendFormat": "calls 24h",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_created_1h",
+     "legendFormat": "incidents created 1h",
+     "refId": "B"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_incidents_merged_1h",
+     "legendFormat": "incidents merged 1h",
+     "refId": "C"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "battlebuddy_active_incidents",
+     "legendFormat": "active incidents",
+     "refId": "D"
+    }
+   ],
+   "title": "Operational Throughput",
+   "type": "timeseries"
+  }
+ ],
+ "preload": false,
+ "refresh": "30s",
+ "schemaVersion": 42,
+ "tags": [
+  "backlog",
+  "battlebuddy",
+  "ops",
+  "private",
+  "reliability",
+  "transcription"
+ ],
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "timepicker": {
+  "refresh_intervals": [
+   "5s",
+   "10s",
+   "30s",
+   "1m",
+   "5m",
+   "15m",
+   "30m",
+   "1h",
+   "2h",
+   "1d"
+  ]
+ },
+ "timezone": "America/Chicago",
+ "title": "Battle Buddy \u2014 Ops & Health (Private)",
+ "uid": "bb-ops-private",
+ "version": 9
+}
