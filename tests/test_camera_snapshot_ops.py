@@ -483,6 +483,37 @@ class TestFrameProbeUsesHead:
 # ---------------------------------------------------------------------------
 
 
+class TestTheSLOAlertCountMatchesReality:
+    """ops_verify emits 19 gates; the Telegram SLO page says a hardcoded number.
+
+    It said 13 for months after the camera gates landed, so an operator reading
+    a breach page was told a smaller number than the run actually produced.
+    Counted by running main(), not by counting gate() call sites: one of those
+    sites is inside the HTTP-surface loop and emits five gates, so the static
+    count comes out at 18 and would be its own quiet lie.
+    """
+
+    def test_the_number_in_the_alert_is_the_number_of_gates_that_run(
+        self, tmp_path, monkeypatch
+    ):
+        _write_snapshot(tmp_path, generated=_fresh_stamp())
+        mod = _load_ops_verify(monkeypatch, tmp_path)
+        _run_ops_verify(mod, monkeypatch)
+
+        ran = len(mod.RESULTS)
+        assert ran >= 19, f"expected the camera gates to be present, got {ran}"
+
+        workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        m = re.search(r"SLOs green \((\d+) gates\)", workflow)
+        assert m, "the SLO notifier no longer states a gate count"
+        assert int(m.group(1)) == ran, (
+            f"the SLO page claims {m.group(1)} gates but ops_verify.py ran "
+            f"{ran}"
+        )
+
+
 class TestTheRefreshIsScheduled:
     SERVICE = SYSTEMD / "bb-camera-snapshot.service"
     TIMER = SYSTEMD / "bb-camera-snapshot.timer"

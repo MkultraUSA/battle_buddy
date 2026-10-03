@@ -33,19 +33,38 @@ jobs:
             systemctl is-active battlebuddy
             test -z "$(git status --porcelain)"
 
+      # The commit message is arbitrary text controlled by whoever pushed, so it
+      # is never interpolated into the script. A backtick in a commit message
+      # used to become a shell command substitution here: merging a message that
+      # mentioned write_text made bash run `write_text: command not found`,
+      # exit non-zero, and fire a "deploy FAILED" page for a deploy that had
+      # just succeeded and already sent its success page. Passing the message
+      # through the environment and using --data-urlencode means no shell ever
+      # parses it, and newlines, quotes and ampersands survive intact.
       - name: Notify Telegram — success
         if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="✅ Battle Buddy deployed successfully%0A${{ github.event.head_commit.message }}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=✅ Battle Buddy deployed successfully
+          ${COMMIT_MESSAGE}"
 
       - name: Notify Telegram — failure
         if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="❌ Battle Buddy deploy FAILED%0A${{ github.event.head_commit.message }}%0ASee: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=❌ Battle Buddy deploy FAILED
+          ${COMMIT_MESSAGE}
+          See: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   smoke-test:
     name: post-deploy smoke test
@@ -63,23 +82,38 @@ jobs:
           pytest tests/test_smoke.py -v --tb=short --override-ini="addopts=" 2>&1 | tee /tmp/smoke_results.txt
           echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
         env:
-          SMOKE_TEST_BASE_URL: https://battlebuddy.new
+          # .news, not .new. The typo meant this job pointed at a domain that
+          # does not resolve, so the smoke test was validating nothing while
+          # reporting itself as a real post-deploy check.
+          SMOKE_TEST_BASE_URL: https://battlebuddy.news
           PYTEST_ADDOPTS: ""
 
       - name: Notify Telegram — smoke tests passed
         if: steps.smoke.outputs.exit_code == 0
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="✅ Smoke tests passed after deploy%0A${{ github.event.head_commit.message }}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=✅ Smoke tests passed after deploy
+          ${COMMIT_MESSAGE}"
 
       - name: Notify Telegram — smoke tests FAILED
         if: steps.smoke.outputs.exit_code != 0
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          RESULTS=$(cat /tmp/smoke_results.txt | tail -20 | sed 's/[&<>]/\\&/g')
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "text=❌ Smoke tests FAILED after deploy%0A${{ github.event.head_commit.message }}%0A%0A${RESULTS}"
+          RESULTS=$(tail -20 /tmp/smoke_results.txt)
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=❌ Smoke tests FAILED after deploy
+          ${COMMIT_MESSAGE}
+
+          ${RESULTS}"
 
   ops-verify:
     name: post-deploy SLO verification
@@ -100,10 +134,26 @@ jobs:
 
       - name: Notify Telegram — SLOs green
         if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage"             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}"             -d text="✅ Post-deploy SLOs green (13 gates)%0A${{ github.event.head_commit.message }}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=✅ Post-deploy SLOs green (19 gates)
+          ${COMMIT_MESSAGE}"
 
       - name: Notify Telegram — SLO BREACH
         if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage"             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}"             -d text="🚨 Post-deploy SLO BREACH — check Grafana Ops board%0ASee: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=🚨 Post-deploy SLO BREACH — check Grafana Ops board
+          ${COMMIT_MESSAGE}
+          See: ${RUN_URL}"
