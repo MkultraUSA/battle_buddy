@@ -621,6 +621,33 @@ def _sanitize_pi_tag(raw) -> str:
     return s
 
 
+def _js_str(value) -> str:
+    """Render a Python value as a JavaScript string literal, safely.
+
+    For values that reach a `<script>` block in an f-string template. Two
+    separate escapes are needed and it is worth being explicit about why,
+    because `json.dumps` alone is the usual half-fix:
+
+      * **JSON encoding** stops the value ending the string literal. Without it,
+        `token=";alert(1);//` closes the quote and the rest becomes script.
+      * **`<` escaped as `<`** stops `</script>` terminating the block
+        early. JSON does not require this -- `<` and `>` are legal inside a JSON
+        string -- so `json.dumps` alone leaves an HTML parser free to end the
+        script element at a place the author did not choose, and whatever follows
+        is parsed as markup.
+
+    `json.dumps` also escapes U+2028 and U+2029 in string values, which are
+    newline terminators in JavaScript but not in JSON, so that part is handled.
+
+    Used for the Google Maps key as well as the share token: it is a config
+    value today, but it lives in the same blast radius and the same line of
+    template, so it gets the same treatment rather than a note that it is safe.
+    """
+    import json as _json
+
+    return _json.dumps("" if value is None else str(value)).replace("<", "\\u003c")
+
+
 def _should_backlog() -> bool:
     """Decide whether to queue a call or drop it, based on queue depth.
 
@@ -3287,8 +3314,20 @@ def premium_commute():
 <div id="map"></div>
 
 <script>
-const TOKEN = "{token or ''}";
-const MAPS_KEY = "{maps_key}";
+// `token` and `maps_key` are attacker-influenced: `token` is request.args, straight
+// off the query string, and this page is reachable by anyone with a link. Neither
+// may be interpolated raw into a script block.
+//
+// `_js_str` is JSON encoding (so a quote or backslash cannot end the string
+// literal) with `<` escaped to < (so a closing script tag cannot terminate
+// this block early). json.dumps alone is not sufficient for the second half --
+// that is the detail that makes most hand-rolled fixes incomplete.
+//
+// NB: do not write a literal closing script tag anywhere above. An HTML parser
+// ends the element on the tag, not on the line, so prose about it ends the
+// script just as effectively as an attacker's payload would.
+const TOKEN = {_js_str(token or '')};
+const MAPS_KEY = {_js_str(maps_key)};
 let map, directionsRenderer, incidentMarkers = [];
 
 function initMap() {{
@@ -3683,7 +3722,7 @@ async function doSetup() {{
     const r = await fetch('/api/premium/setpassword', {{
       method: 'POST',
       headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{token: '{token}', password: pw1}})
+      body: JSON.stringify({{token: {_js_str(token)}, password: pw1}})
     }});
     const d = await r.json();
     if (r.ok) {{
