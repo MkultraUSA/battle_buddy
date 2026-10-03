@@ -2961,15 +2961,10 @@ def api_me():
 # Commute travel time — premium feature
 # ---------------------------------------------------------------------------
 
-_COMMUTE_ALERT_ITYPES = {
-    "SHOOTING", "OFFICER DOWN", "PURSUIT", "STRUCTURE FIRE",
-    "HAZMAT", "WEAPONS", "CRASH/COLLISION", "STABBING", "MASS CASUALTY",
-}
-_COMMUTE_CORRIDOR_MILES = 3.0  # incident must be within this distance of route line
-
-
-
-
+# `_COMMUTE_ALERT_ITYPES` and `_COMMUTE_CORRIDOR_MILES` used to be defined
+# here as well, a third copy alongside modules/alerts.py and modules/commute.py.
+# All three were written and only the other two read; these two were never
+# read at all. They now live once, in modules/commute_alerts.py.
 
 @app.route("/api/commute/save", methods=["POST"])
 @_require_premium
