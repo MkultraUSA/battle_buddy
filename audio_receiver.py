@@ -52,8 +52,8 @@ from modules.atak import (  # noqa: E402
     _atak_resync_on_startup,
 )
 from modules.audio_dedup import is_duplicate_and_mark  # noqa: E402
-from modules.commute import *  #noqa: E402
-from modules.commute import _routes_travel_time  #noqa: E402
+from modules.commute import _commute_route_info  # noqa: E402
+from modules.commute import _routes_travel_time  # noqa: E402
 # Underscore-prefixed names are NOT brought in by `from x import *`, so any
 # private helper used from here has to be imported explicitly. Three were not,
 # and each was a live NameError -> HTTP 500:
@@ -62,10 +62,17 @@ from modules.commute import _routes_travel_time  #noqa: E402
 #   _commute_route_info                /api/commute/incidents  -> 500
 #   _point_to_segment_distance_miles   nearby-incident query  -> 500
 #
-# The last is duplicated identically in modules/commute.py and modules/alerts.py;
-# imported from alerts, which is the domain of the call site (distance from an
-# incident to a point).
-from modules.commute import _commute_route_info  # noqa: E402
+# The last now has one home, modules/commute_alerts.py, re-exported by both
+# modules/alerts.py and modules/commute.py (#188); imported from alerts, which is
+# the domain of the call site (distance from an incident to a point).
+#
+# A fourth was hidden the same way and did not crash, which was worse: the !status
+# Talk command read `globals().get("_current_hold_tgid")`, a name that lives in
+# modules/incident_engine.py and that no star import could ever have brought here.
+# The `.get()` turned a NameError into a silent always-None, so the command
+# reported "No hold active" no matter what the Pi was doing. Fixed below by
+# reading the attribute off the module, which is also the only way to see a
+# global that the owning module rebinds.
 from modules.alerts import _point_to_segment_distance_miles  # noqa: E402
 from modules.database import _fill_incident_coords  # noqa: E402
 
@@ -75,25 +82,88 @@ from modules.database import _fill_incident_coords  # noqa: E402
 # ---------------------------------------------------------------------------
 # Modules
 # ---------------------------------------------------------------------------
-from modules.config import *  # noqa: E402
-from modules.config import _state  # noqa: E402
-from modules.database import *  # noqa: E402
-from modules.geocoding import *  # noqa: E402
-from modules.incident_engine import *  # noqa: E402
+#
+# Every import below is written out. This file used to open nine modules with
+# `from x import *`, which cost three ways, all of them realised here:
+#
+#   * A private helper called from here was unreachable, because star imports skip
+#     underscore names. Three handlers 500'd on that (#175).
+#   * `globals().get("_current_hold_tgid")` never found anything, and a `.get()`
+#     with a default turns a crash into a wrong answer rather than a fixed bug.
+#   * The wildcards also dragged in each module's *own* imports. `modules.llm`
+#     imports json, os, re, sqlite3, threading and time for itself, and this file
+#     was reading all of them through that stranger's namespace. The real API
+#     surface was 45 names; the rest was somebody else's stdlib.
+#
+# The 45 below are exactly the names this file uses that nothing else provided,
+# each from the module that defines it. tests/test_import_resolution.py resolves
+# every call here, so a name that goes missing is a test failure rather than a
+# 500 — that guard is what made this change safe to make.
+from modules.config import (  # noqa: E402
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_ENABLED,
+    DB_PATH,
+    GOOGLE_MAPS_JS_KEY,
+    GOOGLE_ROUTES_KEY,
+    NC_PASS,
+    NC_REPORT_DIR,
+    NC_USER,
+    NC_WEBDAV,
+    OPENROUTER_API_KEY,
+    TALK_BOT_SECRET,
+    TALK_ROOM,
+    TALK_USER,
+    TGID_TSV,
+    _state,
+)
+from modules.database import (  # noqa: E402
+    ACTIVE_INCIDENT_POPULATION_SQL,
+    active_incidents,
+    add_subscription,
+    bump_counter,
+    calls_since,
+    get_all_incidents,
+    init_db,
+    insert_call,
+    public_active_incidents,
+    read_counters,
+    recent_calls,
+    remove_subscription,
+)
+from modules.geocoding import extract_location  # noqa: E402
+# Bound as a module, not imported by name: `_current_hold_tgid` is rebound by
+# incident_engine as holds change, so a from-import would capture the value at
+# import time and then read stale forever.
+import modules.incident_engine as incident_engine_mod  # noqa: E402
 from modules.incident_engine import (  # noqa: E402
     _active_incidents,
     _incident_lock,
+    analyze_for_incident,
+    clear_stale_incidents,
+    hold_watchdog_thread,
+    incident_cleanup_thread,
 )
 from modules.kg_integration import _get_kg as __kg_get_kg  # noqa: E402
 from modules.kg_integration import kg_write_call  # noqa: E402
-from modules.llm import *  # noqa: E402
-from modules.llm import _TGID_ID_MIN_LEN  # noqa: E402
+from modules.llm import _TGID_ID_MIN_LEN, llm_analyze, llm_identify_tgid  # noqa: E402
 from modules.pi_watchdog import (  # noqa: E402
     PiWatchdogService,
     _pi_command_queue,
     _pi_watchdog_alert,
 )
-from modules.pollers import *  # noqa: E402
+# modules/pollers/__init__.py is a deliberate facade — it exists so this file can
+# start pollers without knowing which impl module each class lives in. The
+# wildcard over it also re-exported send_dm_alert and post_to_talk, neither of
+# which is used here; post_to_talk is imported from its home below.
+from modules.pollers import (  # noqa: E402
+    ADSBAirAssetPoller,
+    AFDOpenDataPoller,
+    APDCADPoller,
+    APDNewsPoller,
+    ATXFloodsPoller,
+    AustinEventsPoller,
+    TrafficOpenDataPoller,
+)
 from modules.raw_audio_queue import (  # noqa: E402
     claim_queued_audio,
     enqueue_raw_audio,
@@ -105,11 +175,14 @@ from modules.raw_audio_queue import (  # noqa: E402
 )
 from modules.sitrep import build_sitrep, build_voice_sitrep  # noqa: E402
 from modules.talk import _bot_reply  # noqa: E402
-from modules.talk_post import post_to_talk  # noqa: E402  # noqa: E402
-from modules.talkgroups import *  # noqa: E402
-# star-import skips underscore names, so these need naming explicitly
+from modules.talk_post import post_to_talk  # noqa: E402
+from modules.talkgroups import (  # noqa: E402
+    CAT_COLORS,
+    IGNORE_TGIDS,
+    TGID_META,
+    load_talkgroups,
+)
 from modules.talkgroups import _tag_is_ignored, _tag_to_category  # noqa: E402,F401
-from modules.transcription import *  # noqa: E402
 from modules.transcription import (  # noqa: E402
     _BROADCASTIFY_MAX,  # noqa: F401
     _MAX_PROCESS_THREADS,  # noqa: F401
@@ -117,6 +190,7 @@ from modules.transcription import (  # noqa: E402
     _get_fw_model,
     _process_sem,
     get_transcription_observability,
+    transcribe,
 )
 
 app = Flask(__name__, static_folder="/opt/battlebuddy/static", static_url_path="/static")
@@ -2127,7 +2201,7 @@ def bot_talk():
         calls_1h  = len(calls_since(time.time() - 3600))
         calls_15m = len(calls_since(time.time() - 900))
         incs      = active_incidents()
-        held      = globals().get("_current_hold_tgid")
+        held      = incident_engine_mod._current_hold_tgid
         hold_str  = f"Holding TGID {held}" if held else "No hold active"
         respond(
             f"🛰 Battle Buddy Status\n"
