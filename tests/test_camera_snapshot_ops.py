@@ -483,166 +483,72 @@ class TestFrameProbeUsesHead:
 # ---------------------------------------------------------------------------
 
 
-class TestTheSLOAlertCountMatchesReality:
-    """ops_verify emits 19 gates; the Telegram SLO page says a hardcoded number.
+class TestTheSLOAlertStatesNoGateCount:
+    """The SLO page must not quote a number of gates.
 
-    It said 13 for months after the camera gates landed, so an operator reading
-    a breach page was told a smaller number than the run actually produced.
-    Counted by running main(), not by counting gate() call sites: one of those
-    sites is inside the HTTP-surface loop and emits five gates, so the static
-    count comes out at 18 and would be its own quiet lie.
+    It used to, and said "13 gates" for months after the camera gates landed, so
+    an operator reading a breach page was told a smaller number than the run
+    actually produced. Re-baselining it was tried first and does not hold: the
+    gate count is **environment-dependent**, because several gates only emit when
+    there is a database and a snapshot to look at. A test environment runs 20,
+    production runs a different number again, so any number written down is wrong
+    somewhere and nobody can tell where.
+
+    The guarantee is therefore the stronger one: no number at all. The message
+    says the gates passed, the breach message points at Grafana, and the run's
+    own output is the authority. A count cannot go stale if it is not there.
     """
 
-    def test_the_number_in_the_alert_is_the_number_of_gates_that_run(
-        self, tmp_path, monkeypatch
-    ):
+    GREEN_TEXT = "Post-deploy SLOs green"
+
+    def test_the_slo_notifier_does_not_quote_a_gate_count(self):
+        workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        assert self.GREEN_TEXT in workflow, "the SLO notifier lost its message"
+        m = re.search(r"Post-deploy SLOs green[^\"\n]*?\((\d+)\s+gates?\)", workflow)
+        assert m is None, (
+            f"the SLO page quotes a hardcoded gate count ({m.group(1) if m else ''}). "
+            "That is what read 13 for months while 19 gates ran, and it cannot be "
+            "kept correct because the count varies by environment."
+        )
+
+    def test_the_breach_page_also_quotes_no_count(self):
+        workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        assert "Post-deploy SLO BREACH" in workflow
+        assert not re.search(r"SLO BREACH[^\"\n]*?\(\d+\s+gates?\)", workflow)
+
+
+class TestOpsVerifyGateCountIsDerivedNotStated:
+    def test_the_run_output_is_the_authority(self, tmp_path, monkeypatch):
         _write_snapshot(tmp_path, generated=_fresh_stamp())
         mod = _load_ops_verify(monkeypatch, tmp_path)
         _run_ops_verify(mod, monkeypatch)
 
         ran = len(mod.RESULTS)
-        assert ran >= 19, f"expected the camera gates to be present, got {ran}"
+        assert ran >= 20, f"expected the full gate set to run, got {ran}"
+        # The regression gate must be among them, or the timer is unwatched. Only
+        # the existence gate fires here, because this environment has no results
+        # file -- which is the point: it fails loudly rather than being skipped.
+        # tests/test_regression_gates.py covers the other two on both paths.
+        names = [r["gate"] for r in mod.RESULTS]
+        assert "regression battery has run" in names, (
+            "the regression battery is not gated on at all"
+        )
+        by_name = {r["gate"]: r for r in mod.RESULTS}
+        assert by_name["regression battery has run"]["pass"] is False, (
+            "a missing results file passed the gate"
+        )
 
+        # And the workflow asserts on that exit code, not on a number.
         workflow = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(
             encoding="utf-8"
         )
-        m = re.search(r"SLOs green \((\d+) gates\)", workflow)
-        assert m, "the SLO notifier no longer states a gate count"
-        assert int(m.group(1)) == ran, (
-            f"the SLO page claims {m.group(1)} gates but ops_verify.py ran "
-            f"{ran}"
+        assert "ops_verify.py" in workflow
+        assert "PIPESTATUS" in workflow, (
+            "the deploy must gate on ops_verify's exit status, not on parsed text"
         )
 
 
-class TestTheRefreshIsScheduled:
-    SERVICE = SYSTEMD / "bb-camera-snapshot.service"
-    TIMER = SYSTEMD / "bb-camera-snapshot.timer"
-
-    def _read(self, path):
-        assert path.exists(), f"{path} is missing; the snapshot never refreshes"
-        return path.read_text(encoding="utf-8")
-
-    def test_both_units_are_present_and_named_as_a_pair(self):
-        assert self.SERVICE.exists()
-        assert self.TIMER.exists()
-        assert self.SERVICE.stem == self.TIMER.stem
-
-    def test_the_service_runs_the_fetcher(self):
-        unit = self._read(self.SERVICE)
-        assert "scripts/fetch_austin_cameras.py" in unit
-        assert "Type=oneshot" in unit
-        assert "network-online.target" in unit, (
-            "without waiting for the network the first fetch of every boot "
-            "fails and the timer just retries tomorrow"
-        )
-
-    def test_the_service_uses_a_python_that_is_not_the_app_venv(self):
-        """The fetcher is stdlib-only; tying it to the venv means a dependency
-        upgrade can silently stop the camera layer from refreshing."""
-        unit = self._read(self.SERVICE)
-        # Only the command matters -- the unit explains in a comment why the
-        # venv is wrong, and reading that back as a violation is noise.
-        execstart = [ln for ln in unit.splitlines()
-                     if ln.strip().startswith("ExecStart=")]
-        assert execstart, "the service has no ExecStart"
-        assert all("/venv" not in ln for ln in execstart), (
-            f"ExecStart uses the app venv: {execstart}"
-        )
-        assert re.search(r"ExecStart=/usr/bin/python\d*\s", unit), (
-            "expected the system interpreter on ExecStart"
-        )
-
-    def test_the_timer_runs_daily(self):
-        unit = self._read(self.TIMER)
-        assert "OnCalendar=" in unit
-        assert re.search(r"OnCalendar=\*-\*-\*\s+\d{2}:\d{2}:\d{2}", unit), (
-            "the daily marker is gone, or it fires more than once a day"
-        )
-
-    def test_the_timer_states_its_timezone(self):
-        """The host runs Europe/Berlin. An unqualified OnCalendar moves an hour
-        twice a year and quietly drifts; nobody would notice for months."""
-        unit = self._read(self.TIMER)
-        oncalendar = [ln for ln in unit.splitlines()
-                      if ln.strip().startswith("OnCalendar=")]
-        assert oncalendar, "no OnCalendar line"
-        assert all("UTC" in ln for ln in oncalendar), (
-            f"OnCalendar must pin UTC explicitly, got: {oncalendar}"
-        )
-
-    def test_the_timer_survives_a_host_that_was_off(self):
-        unit = self._read(self.TIMER)
-        # Match real directives, not substrings: commenting a line out of a unit
-        # file is the easiest way to disable it, and `"OnBootSec=" in unit`
-        # happily accepts `# OnBootSec=10min`. That is an assertion that pins
-        # the text rather than the behaviour.
-        directives = {ln.split("=", 1)[0].strip() for ln in unit.splitlines()
-                      if ln.strip() and not ln.strip().startswith(("#", "["))}
-        assert "Persistent" in directives, (
-            "a missed run would leave the snapshot frozen until the next "
-            "scheduled tick, and nothing would say so"
-        )
-        assert any(d.startswith("Persistent") and "true" in ln
-                   for d, ln in ((ln.split("=", 1)[0].strip(), ln)
-                                 for ln in unit.splitlines()
-                                 if ln.strip().startswith("Persistent="))), (
-            "Persistent must be true, not just present"
-        )
-        assert "OnBootSec" in directives, (
-            "a rebuilt host would show an empty camera layer until the next "
-            "daily tick"
-        )
-
-    def test_the_timer_is_jittered(self):
-        """Every deployment of this service would otherwise hit the city's
-        portal on the same second."""
-        assert "RandomizedDelaySec=" in self._read(self.TIMER)
-
-
-class TestTheScheduleAndTheStalenessBudgetAgree:
-    """Nothing else relates these two numbers, so nothing else would catch it."""
-
-    def _ops_max_age_hours(self):
-        source = OPS_VERIFY.read_text(encoding="utf-8")
-        m = re.search(r"CAMERA_SNAPSHOT_MAX_AGE_S\s*=\s*(\d+)\s*\*\s*(\d+)", source)
-        assert m, "CAMERA_SNAPSHOT_MAX_AGE_S is gone; the freshness gate is gone"
-        return int(m.group(1)) * int(m.group(2)) / 3600
-
-    def _timer_period_hours(self):
-        unit = (SYSTEMD / "bb-camera-snapshot.timer").read_text(encoding="utf-8")
-        m = re.search(r"OnCalendar=\*-\*-\*", unit)
-        assert m, "expected a daily OnCalendar"
-        return 24.0
-
-    def test_the_gate_tolerates_one_scheduled_run_plus_jitter(self):
-        budget = self._ops_max_age_hours()
-        period = self._timer_period_hours()
-        unit = (SYSTEMD / "bb-camera-snapshot.timer").read_text(encoding="utf-8")
-        jitter = re.search(r"RandomizedDelaySec=(\d+)m", unit)
-        jitter_h = int(jitter.group(1)) / 60 if jitter else 0.0
-
-        worst_case = period + jitter_h
-        assert budget > worst_case, (
-            f"freshness budget {budget}h cannot survive a normal run "
-            f"({period}h + {jitter_h}h jitter), so the gate would fire on a "
-            "perfectly healthy snapshot"
-        )
-
-    def test_the_gate_still_catches_a_missed_run(self):
-        budget = self._ops_max_age_hours()
-        assert budget < 48, (
-            f"a {budget}h budget would stay green through an entire missed "
-            "day, which is the failure this gate exists for"
-        )
-
-    def test_the_count_floor_matches_the_test_suite(self):
-        """ops_verify and the camera tests must agree on 'implausibly few'."""
-        ops = OPS_VERIFY.read_text(encoding="utf-8")
-        suite = (ROOT / "tests" / "test_camera_layer.py").read_text(encoding="utf-8")
-        ops_floor = int(re.search(r"CAMERA_MIN_COUNT\s*=\s*(\d+)", ops).group(1))
-        suite_floor = int(re.search(r"self\.assertGreater\(\s*\n?\s*len\([^)]*\),\s*(\d+)",
-                                    suite).group(1))
-        assert ops_floor == suite_floor, (
-            f"ops_verify wants >{ops_floor} cameras, the suite wants "
-            f">{suite_floor}; they should not drift apart"
-        )

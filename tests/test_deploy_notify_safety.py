@@ -183,15 +183,21 @@ class TestTheSmokeTestPointsAtTheRealSite:
             f"these workflow hosts are not the production site: {bad}"
         )
 
-    def test_the_notifier_gate_count_is_not_stale(self):
-        """The SLO page hardcoded '13 gates'; it is 19 now.
+    def test_the_notifier_quotes_no_gate_count(self):
+        """The SLO page hardcoded '13 gates'; it is more now, and it kept moving.
 
-        A stale number in an alert is small, but it is the same failure as a
-        stale metric name: the reader trusts a value nobody maintains. The
-        runtime count is asserted in test_camera_snapshot_ops.py, which has the
-        stub harness needed to run main() -- it cannot be derived by counting
-        gate() call sites here, because one of them is inside a loop that emits
-        five gates.
+        A stale number in an alert is small, but it is the same failure as a stale
+        metric name: the reader trusts a value nobody maintains. Re-baselining it
+        does not work, because **the gate count is environment-dependent** --
+        several gates only emit when there is a database and a snapshot to read,
+        so a test environment and production legitimately produce different totals.
+        Any number written down is therefore wrong somewhere and nobody can tell
+        where.
+
+        So the notifier states no count at all. That is a stronger guarantee than
+        "the number matches": a value that is not there cannot go stale. The gates
+        still run, the workflow still gates on their exit status, and the count is
+        visible in the run output and on the Grafana ops board.
         """
         raw = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(
             encoding="utf-8"
@@ -199,8 +205,17 @@ class TestTheSmokeTestPointsAtTheRealSite:
         assert "13 gates" not in raw, (
             "the SLO notifier is still claiming the pre-camera gate count"
         )
-        assert re.search(r"SLOs green \(\d+ gates\)", raw), (
-            "the SLO notifier should state how many gates ran"
+        assert not re.search(r"SLOs green \(\d+ gates?\)", raw), (
+            "the SLO notifier is quoting a hardcoded gate count again; it cannot be "
+            "kept correct because the total varies by environment"
+        )
+        assert not re.search(r"SLO BREACH[^\"\n]*\(\d+\s+gates?\)", raw), (
+            "the breach page is quoting a hardcoded gate count"
+        )
+        # The work must still be there: the gates run and the deploy keys off them.
+        assert "ops_verify.py" in raw
+        assert "PIPESTATUS" in raw, (
+            "the deploy must gate on ops_verify's exit status, not on parsed text"
         )
 
 
