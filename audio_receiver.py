@@ -43,7 +43,7 @@ urllib.request.install_opener(
     urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ssl_ctx))
 )
 
-from flask import Flask, jsonify, render_template_string, request  # noqa: E402, I001
+from flask import Flask, jsonify, redirect, render_template_string, request  # noqa: E402, I001
 
 from modules import atak as _atak_mod  # noqa: E402
 from modules import maintenance as __maintenance_mod  # noqa: E402
@@ -3483,7 +3483,9 @@ def api_intel_query():
 def premium_welcome():
     sess = _get_session(request)
     if sess and sess.get("is_premium"):
-        from flask import redirect
+        # `redirect` used to be imported here and nowhere else, so
+        # premium_commute -- which also calls it -- raised NameError and 500'd.
+        # It is imported at module level now; this local import is redundant.
         return redirect("/premium/")
     username = sess["username"] if sess else ""
     html = f"""<!DOCTYPE html>
