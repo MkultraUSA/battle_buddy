@@ -2,8 +2,8 @@
  "__meta__": {
   "fetched_from": "https://kevinwatkins.grafana.net",
   "uid": "bb-transcription-quality",
-  "updated": "2026-09-25T05:20:17Z",
-  "version": 18
+  "updated": "2026-10-04T01:10:10Z",
+  "version": 25
  },
  "annotations": {
   "list": [
@@ -44,7 +44,8 @@
     "content": "Use this dashboard from left to right. First check **coverage**: low coverage means calls are arriving but not producing transcript text. Then check **STT runtime**: high in-progress workers, high p95 latency, lock timeouts, exceptions, or empty outputs point to faster-whisper backlog/model contention rather than bad radio audio. Finally check **mangled proxies**: low text density, very short text, and repeated short phrases are not proof of bad transcription, but they mark calls that deserve review. The raw log panel at the bottom shows the exact Whisper timeout/error lines behind the metrics.",
     "mode": "markdown"
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [],
    "title": "How To Use This Dashboard",
    "type": "text"
@@ -106,9 +107,11 @@
     },
     "showUnfilled": true,
     "sizing": "auto",
+    "textMode": "auto",
     "valueMode": "color"
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -182,9 +185,11 @@
     },
     "showUnfilled": true,
     "sizing": "auto",
+    "textMode": "auto",
     "valueMode": "color"
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -258,9 +263,11 @@
     },
     "showUnfilled": true,
     "sizing": "auto",
+    "textMode": "auto",
     "valueMode": "color"
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -330,7 +337,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -400,7 +408,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -460,7 +469,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -520,7 +530,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -588,7 +599,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -656,7 +668,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -755,7 +768,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -876,7 +890,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -984,9 +999,11 @@
     },
     "showUnfilled": true,
     "sizing": "auto",
+    "textMode": "auto",
     "valueMode": "color"
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1085,7 +1102,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1172,8 +1190,8 @@
    "gridPos": {
     "h": 10,
     "w": 12,
-    "x": 12,
-    "y": 32
+    "x": 0,
+    "y": 34
    },
    "id": 13,
    "options": {
@@ -1195,7 +1213,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1273,7 +1292,7 @@
     "h": 8,
     "w": 24,
     "x": 0,
-    "y": 42
+    "y": 44
    },
    "id": 14,
    "options": {
@@ -1295,7 +1314,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1329,9 +1349,10 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 50
+    "y": 52
    },
-   "id": 35,
+   "id": 38,
+   "panels": [],
    "title": "STT Stage - faster-whisper Runtime",
    "type": "row"
   },
@@ -1366,7 +1387,7 @@
     "h": 4,
     "w": 4,
     "x": 0,
-    "y": 51
+    "y": 53
    },
    "id": 16,
    "options": {
@@ -1386,7 +1407,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1436,7 +1458,7 @@
     "h": 4,
     "w": 4,
     "x": 4,
-    "y": 51
+    "y": 53
    },
    "id": 17,
    "options": {
@@ -1456,7 +1478,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1504,7 +1527,7 @@
     "h": 4,
     "w": 4,
     "x": 8,
-    "y": 51
+    "y": 53
    },
    "id": 18,
    "options": {
@@ -1524,7 +1547,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1572,7 +1596,7 @@
     "h": 4,
     "w": 4,
     "x": 12,
-    "y": 51
+    "y": 53
    },
    "id": 19,
    "options": {
@@ -1592,7 +1616,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1640,7 +1665,7 @@
     "h": 4,
     "w": 4,
     "x": 16,
-    "y": 51
+    "y": 53
    },
    "id": 20,
    "options": {
@@ -1660,7 +1685,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1700,7 +1726,7 @@
     "h": 4,
     "w": 4,
     "x": 20,
-    "y": 51
+    "y": 53
    },
    "id": 21,
    "options": {
@@ -1720,7 +1746,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1797,7 +1824,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 55
+    "y": 57
    },
    "id": 22,
    "options": {
@@ -1819,7 +1846,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -1948,7 +1976,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 55
+    "y": 57
    },
    "id": 23,
    "options": {
@@ -1970,7 +1998,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -2078,7 +2107,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 63
+    "y": 65
    },
    "id": 27,
    "options": {
@@ -2100,7 +2129,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -2155,7 +2185,7 @@
     "type": "prometheus",
     "uid": "grafanacloud-prom"
    },
-   "description": "Loki count of Whisper timeout/error/model-lock log lines.",
+   "description": "Share of transcription requests that ended in a **fault**: exception|lock_timeout|timeout. `empty` is excluded on purpose -- it is a recorded outcome rather than a failure, and it has its own panel.\n\nMaintained by scripts/build_error_panels.py.",
    "fieldConfig": {
     "defaults": {
      "color": {
@@ -2212,7 +2242,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 63
+    "y": 65
    },
    "id": 28,
    "options": {
@@ -2234,14 +2264,14 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
       "type": "prometheus",
       "uid": "grafanacloud-prom"
      },
-     "expr": "sum(rate(battlebuddy_transcription_requests_total{status=~\"lock_timeout|exception|timeout|empty\"}[$__rate_interval]))\n  /\n  clamp_min(sum(rate(battlebuddy_transcription_requests_total[$__rate_interval])), 1e-9)",
+     "expr": "sum(rate(battlebuddy_transcription_requests_total{status=~\"exception|lock_timeout|timeout\"}[$__rate_interval]))\n  /\n  clamp_min(sum(rate(battlebuddy_transcription_requests_total[$__rate_interval])), 1e-9)",
      "refId": "A"
     }
    ],
@@ -2253,12 +2283,12 @@
     "type": "loki",
     "uid": "grafanacloud-logs"
    },
-   "description": "Raw log evidence for hard STT failures. This is where to look when the STT hard-failure alert fires.",
+   "description": "Whisper and transcription **faults** only: exceptions, timeouts, a hung thread, a model lock. Deliberately excludes empty transcripts -- a clip that yields no text is a recorded outcome (status=\"empty\"), and for non-speech audio it is the correct one. Those are counted on their own panel, \"Non-speech clips\", rather than inflating this one.\n\nMaintained by scripts/build_error_panels.py.",
    "gridPos": {
-    "h": 10,
+    "h": 4,
     "w": 24,
     "x": 0,
-    "y": 71
+    "y": 95
    },
    "id": 29,
    "options": {
@@ -2278,7 +2308,8 @@
     "unwrappedColumns": false,
     "wrapLogMessage": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -2287,13 +2318,80 @@
      },
      "direction": "backward",
      "editorMode": "code",
-     "expr": "{host=\"kevcloud\", job=\"battlebuddy.service\"} |~ \"(?i)(whisper.*(error|timeout|hung|dropping)|transcription thread hung|model lock|empty transcript)\"",
+     "expr": "{host=\"kevcloud\", job=\"battlebuddy.service\"} |~ \"(?i)(whisper.*(error|timeout|hung|dropping)|transcription thread hung|model lock)\"",
      "queryType": "range",
      "refId": "A"
     }
    ],
+   "timeFrom": "7d",
    "title": "Recent Whisper / Transcription Error Logs",
    "type": "logs"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "grafanacloud-prom"
+   },
+   "description": "Share of transcribed clips for which the model returned **no text**. This is not an error rate. It is the non-speech fraction of the audio, and it is the number to watch when judging whether the transcription quality panels are being dragged down by silence rather than by mangling.\n\nMaintained by scripts/build_error_panels.py.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "decimals": 2,
+     "max": 1,
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "blue",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 0.15
+       }
+      ]
+     },
+     "unit": "percentunit"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 4,
+    "w": 6,
+    "x": 0,
+    "y": 99
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto"
+   },
+   "pluginVersion": "",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "expr": "sum(rate(battlebuddy_transcription_requests_total{status=\"empty\"}[$__rate_interval]))\n  /\n  clamp_min(sum(rate(battlebuddy_transcription_requests_total[$__rate_interval])), 1e-9)",
+     "legendFormat": "non-speech share",
+     "refId": "A"
+    }
+   ],
+   "title": "Non-speech clips (no transcript) \u2014 share of audio",
+   "type": "stat"
   },
   {
    "datasource": {
@@ -2330,7 +2428,7 @@
     "h": 6,
     "w": 8,
     "x": 0,
-    "y": 81
+    "y": 83
    },
    "id": 32,
    "options": {
@@ -2350,7 +2448,8 @@
     "textMode": "auto",
     "wideLayout": true
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -2427,7 +2526,7 @@
     "h": 6,
     "w": 8,
     "x": 8,
-    "y": 81
+    "y": 83
    },
    "id": 33,
    "options": {
@@ -2449,7 +2548,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -2558,7 +2658,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 81
+    "y": 83
    },
    "id": 34,
    "options": {
@@ -2580,7 +2680,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -2658,7 +2759,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 87
+    "y": 89
    },
    "id": 31,
    "options": {
@@ -2680,7 +2781,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -2764,7 +2866,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 89
+    "y": 91
    },
    "id": 8,
    "options": {
@@ -2786,7 +2888,8 @@
      "sort": "none"
     }
    },
-   "pluginVersion": "13.1.0-25668120414",
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
    "targets": [
     {
      "datasource": {
@@ -2824,6 +2927,270 @@
    ],
    "title": "Coverage and Reliability",
    "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "s"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 4,
+    "x": 0,
+    "y": 97
+   },
+   "id": 36,
+   "options": {
+    "colorMode": "none",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "quantile_over_time(0.5, {host=\"kevcloud\", job=\"battlebuddy.service\"} |= \"empty transcript\" |= \"[recv] DROP\" | regexp \"\\\\((?P<secs>[0-9.]+)s\\\\)\" | __error__=\"\" | unwrap secs | __error__=\"\" [$__range]) by (job)",
+     "queryType": "instant",
+     "refId": "A"
+    }
+   ],
+   "timeFrom": "7d",
+   "title": "recv DROP clip length p50 (7d)",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "s"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 4,
+    "x": 4,
+    "y": 97
+   },
+   "id": 37,
+   "options": {
+    "colorMode": "none",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "percentChangeColorMode": "standard",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showPercentChange": false,
+    "textMode": "auto",
+    "wideLayout": true
+   },
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "quantile_over_time(0.9, {host=\"kevcloud\", job=\"battlebuddy.service\"} |= \"empty transcript\" |= \"[recv] DROP\" | regexp \"\\\\((?P<secs>[0-9.]+)s\\\\)\" | __error__=\"\" | unwrap secs | __error__=\"\" [$__range]) by (job)",
+     "queryType": "instant",
+     "refId": "A"
+    }
+   ],
+   "timeFrom": "7d",
+   "title": "recv DROP clip length p90 (7d)",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "loki",
+    "uid": "grafanacloud-logs"
+   },
+   "description": "Clip lengths in whole seconds (truncated) for scanner clips dropped with an empty transcript.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "fixedColor": "blue",
+      "mode": "fixed"
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "fillOpacity": 80,
+      "gradientMode": "none",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "lineWidth": 1,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": 0
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "unit": "short"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 16,
+    "x": 8,
+    "y": 99
+   },
+   "id": 35,
+   "options": {
+    "barRadius": 0,
+    "barWidth": 0.97,
+    "fullHighlight": false,
+    "groupWidth": 0.7,
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": false
+    },
+    "orientation": "vertical",
+    "showValue": "auto",
+    "stacking": "none",
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "single",
+     "sort": "none"
+    },
+    "xField": "Clip length (s)",
+    "xTickLabelRotation": 0,
+    "xTickLabelSpacing": 0
+   },
+   "panels": [],
+   "pluginVersion": "13.3.0-36682826569",
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "grafanacloud-logs"
+     },
+     "expr": "sum by (secs) (count_over_time({host=\"kevcloud\", job=\"battlebuddy.service\"} |= \"empty transcript\" |= \"[recv] DROP\" | regexp \"\\\\((?P<secs>[0-9]+)\\\\.[0-9]+s\\\\)\" | __error__=\"\" [$__range]))",
+     "format": "table",
+     "legendFormat": "{{secs}}s",
+     "queryType": "instant",
+     "refId": "A"
+    }
+   ],
+   "timeFrom": "7d",
+   "title": "Empty-transcript recv DROP clips by duration (7d)",
+   "transformations": [
+    {
+     "id": "convertFieldType",
+     "options": {
+      "conversions": [
+       {
+        "destinationType": "number",
+        "targetField": "secs"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "desc": false,
+        "field": "secs"
+       }
+      ]
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "renameByName": {
+       "Value #A": "Clips",
+       "secs": "Clip length (s)"
+      }
+     }
+    }
+   ],
+   "type": "barchart"
   }
  ],
  "preload": false,
@@ -2855,5 +3222,5 @@
  "timezone": "America/Chicago",
  "title": "Battle Buddy - Transcription Quality",
  "uid": "bb-transcription-quality",
- "version": 18
+ "version": 25
 }
