@@ -247,7 +247,19 @@ def check_remote(b: Battery, host: str) -> None:
         return
 
     try:
-        out = ssh(host, "cd /opt/battlebuddy && git rev-parse --short HEAD").strip()
+        # `-c safe.directory` inline, and not because git complained once.
+        #
+        # /opt/battlebuddy/.git is owned by the app user, so git refuses to read
+        # it as "dubious ownership" unless the path is whitelisted. The whitelist
+        # lives in /root/.gitconfig -- and the systemd unit sets ProtectHome=true,
+        # which makes /root unreadable. So under the timer git cannot see its own
+        # whitelist and the check silently skipped itself every hour while passing
+        # the run from an interactive shell, where /root is readable.
+        #
+        # The flag does not depend on any config file being visible.
+        out = ssh(host,
+                  "git -c safe.directory=/opt/battlebuddy "
+                  "-C /opt/battlebuddy rev-parse --short HEAD").strip()
         b.record(f"{host}: deployed HEAD recorded", bool(re.fullmatch(r"[0-9a-f]{7,}", out)),
                  f"HEAD={out or '(none)'}")
     except Unreachable as exc:
