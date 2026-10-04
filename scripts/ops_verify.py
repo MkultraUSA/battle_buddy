@@ -17,6 +17,7 @@ Exit codes: 0 all gates pass, 1+ count of failed gates (capped at 10).
 import datetime
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -30,6 +31,36 @@ RESULTS = []
 REGRESSION_MAX_AGE_S = 2 * 3600
 REGRESSION_RESULTS_PATH = os.environ.get("BB_REGRESSION_RESULTS_PATH") or \
     "/opt/battlebuddy-data/regression/latest.json"
+
+#: Sentinel for a missing metric: worse than any real failure count.
+POLLER_MAX_FAILURES = 3
+
+#: A poller that has not succeeded in this many seconds is considered stale.
+#: The longest poll interval is 6h, so three missed cycles.
+POLLER_MAX_AGE_S = 3 * 6 * 3600
+
+#: Recognised poller metrics, and the label that carries the poller's name.
+_POLLER_METRIC_RE = re.compile(r'^battlebuddy_poller_[a-z_]+\{poller="([^"]+)"\}')
+
+
+def poller_names(metrics_keys) -> list[str]:
+    """Poller names taken from the metrics the app actually exported.
+
+    Derived, not hardcoded. The previous hardcoded list carried `reddit-intel`,
+    whose ``.start()`` is commented out, so it emits nothing -- and because a
+    missing metric is correctly treated as a failure, three gates for it would
+    have failed forever. A list that cannot drift is worth more than one that is
+    easy to read.
+
+    Sorted so gate ordering is stable between runs, which matters because a
+    dashboard that reshuffles is harder to read than one that does not.
+    """
+    names = set()
+    for key in metrics_keys:
+        match = _POLLER_METRIC_RE.match(key)
+        if match:
+            names.add(match.group(1))
+    return sorted(names)
 
 # ---------------------------------------------------------------------------
 # Runtime configuration
@@ -116,6 +147,36 @@ def regression_results():
     if not isinstance(data, dict) or "checks" not in data:
         return None, "results file has no checks key"
     return data, "ok"
+
+
+def poller_health(m: dict, names=None) -> dict[str, dict]:
+    """Extract poller health from metrics dict.
+
+    Returns a dict mapping poller name to {"active": bool, "failures": int,
+    "age_s": float}. Missing metrics are reported as unhealthy -- a poller that
+    has stopped reporting must fail the gate, not quietly pass it.
+
+    `names` defaults to the pollers found in `m`. Passing it explicitly is only
+    for tests that need to model a poller which has gone entirely silent.
+    """
+    if names is None:
+        names = poller_names(m.keys())
+    health = {}
+    for name in names:
+        active_key = f'battlebuddy_poller_active{{poller="{name}"}}'
+        failures_key = f'battlebuddy_poller_consecutive_failures{{poller="{name}"}}'
+        age_key = f'battlebuddy_poller_last_success_age_seconds{{poller="{name}"}}'
+
+        active = m.get(active_key)
+        failures = m.get(failures_key)
+        age_s = m.get(age_key)
+
+        health[name] = {
+            "active": bool(active == 1.0) if active is not None else False,
+            "failures": int(failures) if failures is not None else POLLER_MAX_FAILURES + 1,
+            "age_s": age_s if age_s is not None else float("inf"),
+        }
+    return health
 
 
 def gate(name, ok, detail=""):
@@ -315,6 +376,43 @@ def main():
         gate("regression battery all green", not failed_checks,
              "ok" if not failed_checks
              else "; ".join(c.get("check", "?") for c in failed_checks)[:160])
+
+    # 3c. Poller health -- the check that says whether the *pollers* are still
+    # running and succeeding. Three failure modes, and they are different problems:
+    #
+    #   * a poller thread stopped           -> active=0, silent loss of coverage
+    #   * a poller is failing repeatedly    -> consecutive_failures > threshold
+    #   * a poller hasn't succeeded in too  -> last_success_age > threshold
+    #     long (including never: age=-1)
+    #
+    # So each condition is gated separately. A poller that stops is the failure
+    # this gate exists to catch -- the same defect class as the regression battery
+    # freshness gate: a stopped alarm and a healthy system look identical from
+    # the outside.
+    # Derived from the live scrape, so a poller that is disabled cannot leave a
+    # permanently red gate behind. If NOTHING reports, that is itself the failure
+    # and must say so -- an empty set that produced zero gates would read as a
+    # clean bill of health.
+    _poller_names = poller_names(m.keys())
+    if not _poller_names:
+        gate("pollers reporting", False,
+             "no battlebuddy_poller_* metrics in the scrape at all")
+    health = poller_health(m, _poller_names)
+    for name in _poller_names:
+        h = health[name]
+        # Has-run: the poller metrics exist at all (they always do if service is up,
+        # but we gate on active=1 as the "has-run" equivalent for a continuous poller)
+        gate(f"poller {name} active", h["active"],
+             "running" if h["active"] else "STOPPED")
+        # Freshness: last success within threshold, and not -1 (never succeeded)
+        fresh = h["age_s"] >= 0 and h["age_s"] < POLLER_MAX_AGE_S
+        gate(f"poller {name} fresh (<{POLLER_MAX_AGE_S // 3600}h)",
+             fresh,
+             f"age={h['age_s']:.0f}s" if fresh else f"age={h['age_s']:.0f}s (threshold={POLLER_MAX_AGE_S}s)")
+        # All-green: zero consecutive failures
+        gate(f"poller {name} zero failures",
+             h["failures"] == 0,
+             f"failures={h['failures']}")
 
     # 4. No fresh tracebacks in service logs
     tbs = journal_tracebacks()
