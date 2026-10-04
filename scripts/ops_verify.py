@@ -31,6 +31,24 @@ REGRESSION_MAX_AGE_S = 2 * 3600
 REGRESSION_RESULTS_PATH = os.environ.get("BB_REGRESSION_RESULTS_PATH") or \
     "/opt/battlebuddy-data/regression/latest.json"
 
+#: Poller health thresholds.
+#: Longest poll interval is 6h (austin-events, apd-cad). Three missed cycles = 18h.
+POLLER_MAX_AGE_S = 3 * 6 * 3600
+#: Consecutive failures above this is a hard failure.
+POLLER_MAX_FAILURES = 3
+#: Known poller names (from the NAME attribute in each poller class).
+#: This list must match scripts/build_poller_panels.py.
+KNOWN_POLLERS = (
+    "adsb-air-asset",
+    "afd",
+    "apd-cad",
+    "apd_news",
+    "atxfloods",
+    "austin-events",
+    "reddit-intel",
+    "traffic-open-data",
+)
+
 # ---------------------------------------------------------------------------
 # Runtime configuration
 # ---------------------------------------------------------------------------
@@ -116,6 +134,30 @@ def regression_results():
     if not isinstance(data, dict) or "checks" not in data:
         return None, "results file has no checks key"
     return data, "ok"
+
+
+def poller_health(m: dict) -> dict[str, dict]:
+    """Extract poller health from metrics dict.
+
+    Returns a dict mapping poller name to {"active": bool, "failures": int,
+    "age_s": float}. Missing metrics are reported as unhealthy.
+    """
+    health = {}
+    for name in KNOWN_POLLERS:
+        active_key = f'battlebuddy_poller_active{{poller="{name}"}}'
+        failures_key = f'battlebuddy_poller_consecutive_failures{{poller="{name}"}}'
+        age_key = f'battlebuddy_poller_last_success_age_seconds{{poller="{name}"}}'
+
+        active = m.get(active_key)
+        failures = m.get(failures_key)
+        age_s = m.get(age_key)
+
+        health[name] = {
+            "active": bool(active == 1.0) if active is not None else False,
+            "failures": int(failures) if failures is not None else POLLER_MAX_FAILURES + 1,
+            "age_s": age_s if age_s is not None else float("inf"),
+        }
+    return health
 
 
 def gate(name, ok, detail=""):
@@ -315,6 +357,35 @@ def main():
         gate("regression battery all green", not failed_checks,
              "ok" if not failed_checks
              else "; ".join(c.get("check", "?") for c in failed_checks)[:160])
+
+    # 3c. Poller health -- the check that says whether the *pollers* are still
+    # running and succeeding. Three failure modes, and they are different problems:
+    #
+    #   * a poller thread stopped           -> active=0, silent loss of coverage
+    #   * a poller is failing repeatedly    -> consecutive_failures > threshold
+    #   * a poller hasn't succeeded in too  -> last_success_age > threshold
+    #     long (including never: age=-1)
+    #
+    # So each condition is gated separately. A poller that stops is the failure
+    # this gate exists to catch -- the same defect class as the regression battery
+    # freshness gate: a stopped alarm and a healthy system look identical from
+    # the outside.
+    health = poller_health(m)
+    for name in KNOWN_POLLERS:
+        h = health[name]
+        # Has-run: the poller metrics exist at all (they always do if service is up,
+        # but we gate on active=1 as the "has-run" equivalent for a continuous poller)
+        gate(f"poller {name} active", h["active"],
+             "running" if h["active"] else "STOPPED")
+        # Freshness: last success within threshold, and not -1 (never succeeded)
+        fresh = h["age_s"] >= 0 and h["age_s"] < POLLER_MAX_AGE_S
+        gate(f"poller {name} fresh (<{POLLER_MAX_AGE_S // 3600}h)",
+             fresh,
+             f"age={h['age_s']:.0f}s" if fresh else f"age={h['age_s']:.0f}s (threshold={POLLER_MAX_AGE_S}s)")
+        # All-green: zero consecutive failures
+        gate(f"poller {name} zero failures",
+             h["failures"] == 0,
+             f"failures={h['failures']}")
 
     # 4. No fresh tracebacks in service logs
     tbs = journal_tracebacks()

@@ -53,16 +53,6 @@ _METRIC = re.compile(r"\b(battlebuddy_[a-z_0-9]+)\b")
 #: the count rises — so "one more orphaned metric" cannot happen quietly. Fixing
 #: one means deleting its entry, which is the point.
 KNOWN_ORPHANS = {
-    "battlebuddy_poller_active":
-        "KNOWN GAP, and the one worth fixing first. Poller liveness is exported "
-        "but no dashboard, ops_verify gate or Telegram watcher reads it, so a "
-        "poller that stops produces no signal anywhere. Exported since #170.",
-    "battlebuddy_poller_consecutive_failures":
-        "KNOWN GAP, as above. Consecutive-failure counts are the natural input "
-        "to an alert and nothing consumes them.",
-    "battlebuddy_poller_last_success_age_seconds":
-        "KNOWN GAP, as above. This is the stalest-signal metric the app exports "
-        "and the most obviously alertable of the three.",
     "battlebuddy_llm":
         "Label-free alias emitted alongside the real counter; unused by design.",
     "battlebuddy_llm_total":
