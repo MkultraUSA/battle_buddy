@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS calls (
     coords_approx INTEGER DEFAULT 0,
     is_test       INTEGER DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_calls_ts_is_test ON calls(ts, is_test);
+CREATE INDEX IF NOT EXISTS idx_calls_tag_ts ON calls(tag, ts);
 
 -- Incidents: clustered events synthesized from one or more related calls,
 -- representing a real-world situation (fire, pursuit, shooting, etc.).
@@ -43,6 +45,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     flagged     INTEGER NOT NULL DEFAULT 0,
     article_url TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_incidents_status_ts_updated_is_test ON incidents(status, ts_updated, is_test);
+CREATE INDEX IF NOT EXISTS idx_incidents_itype_ts_start_is_test ON incidents(itype, ts_start, is_test);
 
 -- Talk room subscriptions: maps a Nextcloud user to the beats (sectors,
 -- categories) they want to be notified about.

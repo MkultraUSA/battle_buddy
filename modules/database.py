@@ -24,6 +24,8 @@ def init_db():
             is_test     INTEGER DEFAULT 0
         )
     """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_calls_ts_is_test ON calls(ts, is_test)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_calls_tag_ts ON calls(tag, ts)")
     conn.execute("ALTER TABLE calls ADD COLUMN coords_approx INTEGER DEFAULT 0") if False else None
     try:
         # is_test marks synthetic injections so they can be excluded from
@@ -80,6 +82,8 @@ def init_db():
             flagged     INTEGER DEFAULT 0
         )
     """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_status_ts_updated_is_test ON incidents(status, ts_updated, is_test)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_itype_ts_start_is_test ON incidents(itype, ts_start, is_test)")
     # is_test and flagged are read and written by audio_receiver but were never
     # created here, so they exist only where someone ran the ALTER by hand. A
     # from-scratch database therefore had no such columns: /metrics aborted with
