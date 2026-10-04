@@ -18,8 +18,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parent.parent
 PANELS = ROOT / "scripts" / "build_poller_panels.py"
 OPS = ROOT / "scripts" / "ops_verify.py"

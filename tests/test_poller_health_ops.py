@@ -30,8 +30,6 @@ so any FAIL is attributable to the poller gates.
 from __future__ import annotations
 
 import importlib.util
-import json
-import os
 import subprocess
 import sys
 import time
@@ -369,9 +367,12 @@ class TestPollerHealthFunction:
 
     def test_missing_metric_is_reported_unhealthy(self, monkeypatch):
         """A poller whose metrics are absent from /metrics is reported as unhealthy."""
-        mod = _load_ops_verify(monkeypatch, poller_metrics={})  # No override
+        # This test used to call `_load_ops_verify(...)` and bind the result to
+        # `mod`, then never use it -- the assertions go through a direct
+        # `import scripts.ops_verify`. Dead setup is worse than none: it reads as
+        # though the stubbed loader mattered here.
 
-        # Now manually construct a metrics dict WITHOUT one poller's metrics
+        # Manually construct a metrics dict WITHOUT one poller's metrics
         import scripts.ops_verify as ov
         metrics = {
             "battlebuddy_backlog_queue_depth": 0.0,
