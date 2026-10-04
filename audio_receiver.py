@@ -103,6 +103,7 @@ from modules.config import (  # noqa: E402
     ANTHROPIC_API_KEY,
     ANTHROPIC_ENABLED,
     DB_PATH,
+    DEBUG_TRANSCRIPTS,
     GOOGLE_MAPS_JS_KEY,
     GOOGLE_ROUTES_KEY,
     NC_PASS,
@@ -866,7 +867,8 @@ def receive():
                 coords_approx = 1
             else:
                 coords_approx = 0
-            print(f"[recv] {tag}: {transcript[:80]}", flush=True)
+            if DEBUG_TRANSCRIPTS:
+                print(f"[recv] {tag}: {transcript[:80]}", flush=True)
             call_id = insert_call(ts, tgid, tag, category, node, duration, transcript, lat, lon, location, coords_approx, accuracy)
             call = dict(id=call_id, ts=ts, tgid=tgid, tag=tag, category=category,
                         transcript=transcript, lat=lat, lon=lon, location=location)
@@ -1024,7 +1026,8 @@ def api_backlog_complete():
         pass
 
     ts = time.time()
-    print(f"[backlog] {tag}: {transcript[:80]}", flush=True)
+    if DEBUG_TRANSCRIPTS:
+        print(f"[backlog] {tag}: {transcript[:80]}", flush=True)
     try:
         call_id = insert_call(ts, tgid, tag, category, node,
                               duration, transcript, def_lat, def_lon, location,
@@ -2269,7 +2272,8 @@ def bot_talk():
     if actor in ("Battle Buddy", TALK_USER):
         return jsonify({"status": "ignored"}), 200
 
-    print(f"[bot] received from {actor}: '{content[:80]}'", flush=True)
+    if DEBUG_TRANSCRIPTS:
+        print(f"[bot] received from {actor}: '{content[:80]}'", flush=True)
 
     def respond(msg):
         def _send_reply():

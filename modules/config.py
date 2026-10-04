@@ -246,3 +246,11 @@ STRIPE_PRICE_TO_TIER = {v["price_id"]: v["tier"] for v in STRIPE_PLANS.values() 
 # Shared mutable state — used across modules that cannot directly import each other.
 # audio_receiver.py writes _state["last_call_ts"]; pollers.py reads it.
 _state = {"last_call_ts": __import__("time").time()}
+
+# ---------------------------------------------------------------------------
+# Debug / verbosity controls
+# ---------------------------------------------------------------------------
+
+DEBUG_TRANSCRIPTS = os.environ.get("DEBUG_TRANSCRIPTS", "false").lower() in (
+    "1", "true", "yes", "on"
+)
