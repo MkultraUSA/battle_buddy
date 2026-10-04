@@ -2,8 +2,8 @@
  "__meta__": {
   "fetched_from": "https://kevinwatkins.grafana.net",
   "uid": "bb-ops-private",
-  "updated": "2026-09-25T05:20:16Z",
-  "version": 9
+  "updated": "2026-10-04T00:39:59Z",
+  "version": 11
  },
  "annotations": {
   "list": [
@@ -31,6 +31,7 @@
   {
    "collapsed": false,
    "id": 63,
+   "panels": [],
    "title": "System Health \u2014 All Hosts",
    "type": "row"
   },
@@ -43,6 +44,7 @@
     "y": 0
    },
    "id": 64,
+   "panels": [],
    "title": "Map & Investigation Health",
    "type": "row"
   },
@@ -71,6 +73,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -110,6 +113,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -149,6 +153,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -188,6 +193,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -221,6 +227,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -254,6 +261,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -310,6 +318,7 @@
      "mode": "multi"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -384,6 +393,7 @@
      "mode": "multi"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -460,6 +470,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -518,6 +529,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -576,6 +588,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -613,6 +626,7 @@
      "mode": "multi"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -655,6 +669,7 @@
     "y": 12
    },
    "id": 65,
+   "panels": [],
    "title": "Error Rates \u2014 Refactor Health Gauge",
    "type": "row"
   },
@@ -701,6 +716,7 @@
      "mode": "multi"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -743,6 +759,7 @@
     "y": 21
    },
    "id": 66,
+   "panels": [],
    "title": "Live Error Logs",
    "type": "row"
   },
@@ -765,6 +782,7 @@
     "sortOrder": "Descending",
     "wrapLogMessage": true
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -798,6 +816,7 @@
     "sortOrder": "Descending",
     "wrapLogMessage": true
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -832,6 +851,7 @@
     "sortOrder": "Descending",
     "wrapLogMessage": true
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -865,6 +885,7 @@
     "sortOrder": "Descending",
     "wrapLogMessage": true
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -888,6 +909,7 @@
     "y": 38
    },
    "id": 67,
+   "panels": [],
    "title": "Battle Buddy \u2014 Operations",
    "type": "row"
   },
@@ -934,6 +956,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -984,6 +1007,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1042,6 +1066,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1082,6 +1107,7 @@
      ]
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1119,6 +1145,7 @@
      "mode": "multi"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1192,6 +1219,7 @@
      "mode": "multi"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1243,6 +1271,7 @@
     "y": 50
    },
    "id": 68,
+   "panels": [],
    "title": "Reliability, Backlog & Data Quality",
    "type": "row"
   },
@@ -1299,6 +1328,7 @@
     },
     "textMode": "auto"
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1367,6 +1397,7 @@
     },
     "textMode": "auto"
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1435,6 +1466,7 @@
     },
     "textMode": "auto"
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1503,6 +1535,7 @@
     },
     "textMode": "auto"
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1571,6 +1604,7 @@
     },
     "textMode": "auto"
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1639,6 +1673,7 @@
     },
     "textMode": "auto"
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1711,6 +1746,7 @@
      "sort": "none"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1801,6 +1837,7 @@
      "sort": "none"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1873,6 +1910,7 @@
      "sort": "none"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -1963,6 +2001,7 @@
      "sort": "none"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -2053,6 +2092,7 @@
      "sort": "none"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -2152,6 +2192,7 @@
      "sort": "none"
     }
    },
+   "panels": [],
    "pluginVersion": "",
    "targets": [
     {
@@ -2193,6 +2234,574 @@
    ],
    "title": "Operational Throughput",
    "type": "timeseries"
+  },
+  {
+   "collapsed": false,
+   "description": "[battlebuddy-regression-battery-v1] Hourly read-only regression battery (scripts/prod_regression.py, run by bb-prod-regression.timer on kevcloud). Reads nothing, writes nothing. Generated by scripts/build_regression_panels.py -- edit that, not the UI, or the next install will overwrite this row. ops_verify gates on the same three conditions.",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 52
+   },
+   "id": 900,
+   "panels": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "description": "1 only when the battery ran, ran recently, and every check passed. Failing here means one of three things: a check failed, the timer stopped, or the results file is unreadable -- the headline cannot tell you which, the panels to the right can.",
+     "fieldConfig": {
+      "defaults": {
+       "color": {
+        "mode": "thresholds"
+       },
+       "decimals": 0,
+       "mappings": [
+        {
+         "options": {
+          "0": {
+           "color": "red",
+           "index": 0,
+           "text": "FAILING"
+          },
+          "1": {
+           "color": "green",
+           "index": 1,
+           "text": "OK"
+          }
+         },
+         "type": "value"
+        }
+       ],
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "red",
+          "value": null
+         },
+         {
+          "color": "green",
+          "value": 1
+         }
+        ]
+       },
+       "unit": "short"
+      },
+      "overrides": []
+     },
+     "gridPos": {
+      "h": 4,
+      "w": 5,
+      "x": 0,
+      "y": 53
+     },
+     "options": {
+      "colorMode": "background",
+      "graphMode": "area",
+      "justifyMode": "auto",
+      "orientation": "auto",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      },
+      "textMode": "auto"
+     },
+     "pluginVersion": "",
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+       },
+       "expr": "(battlebuddy_regression_failed == bool 0) * (battlebuddy_regression_last_run_age_seconds < 7200) * (battlebuddy_regression_error == bool 0)",
+       "refId": "A"
+      }
+     ],
+     "title": "Regression Battery",
+     "type": "stat"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "description": "How many checks passed in the last run.",
+     "fieldConfig": {
+      "defaults": {
+       "color": {
+        "mode": "thresholds"
+       },
+       "decimals": 0,
+       "mappings": [],
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "text",
+          "value": null
+         }
+        ]
+       },
+       "unit": "short"
+      },
+      "overrides": []
+     },
+     "gridPos": {
+      "h": 4,
+      "w": 4,
+      "x": 5,
+      "y": 53
+     },
+     "options": {
+      "colorMode": "background",
+      "graphMode": "area",
+      "justifyMode": "auto",
+      "orientation": "auto",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      },
+      "textMode": "auto"
+     },
+     "pluginVersion": "",
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+       },
+       "expr": "sum(battlebuddy_regression_check)",
+       "refId": "A"
+      }
+     ],
+     "title": "Checks Passed",
+     "type": "stat"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "description": "How many checks executed. A drop means the battery is finding less to check, which is worth noticing.",
+     "fieldConfig": {
+      "defaults": {
+       "color": {
+        "mode": "thresholds"
+       },
+       "decimals": 0,
+       "mappings": [],
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "text",
+          "value": null
+         }
+        ]
+       },
+       "unit": "short"
+      },
+      "overrides": []
+     },
+     "gridPos": {
+      "h": 4,
+      "w": 3,
+      "x": 9,
+      "y": 53
+     },
+     "options": {
+      "colorMode": "background",
+      "graphMode": "area",
+      "justifyMode": "auto",
+      "orientation": "auto",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      },
+      "textMode": "auto"
+     },
+     "pluginVersion": "",
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+       },
+       "expr": "battlebuddy_regression_ran",
+       "refId": "A"
+      }
+     ],
+     "title": "Checks Run",
+     "type": "stat"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "description": "Zero means green. Anything above zero is a regression the battery has already caught.",
+     "fieldConfig": {
+      "defaults": {
+       "color": {
+        "mode": "thresholds"
+       },
+       "decimals": 0,
+       "mappings": [],
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "green",
+          "value": null
+         },
+         {
+          "color": "red",
+          "value": 1
+         }
+        ]
+       },
+       "unit": "short"
+      },
+      "overrides": []
+     },
+     "gridPos": {
+      "h": 4,
+      "w": 4,
+      "x": 12,
+      "y": 53
+     },
+     "options": {
+      "colorMode": "background",
+      "graphMode": "area",
+      "justifyMode": "auto",
+      "orientation": "auto",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      },
+      "textMode": "auto"
+     },
+     "pluginVersion": "",
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+       },
+       "expr": "battlebuddy_regression_failed",
+       "refId": "A"
+      }
+     ],
+     "title": "Checks Failed",
+     "type": "stat"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "description": "Minutes since the battery last wrote results. Amber at 75, red at 120, matching the ops_verify staleness gate -- a battery that stops is the failure this panel exists to catch.",
+     "fieldConfig": {
+      "defaults": {
+       "color": {
+        "mode": "thresholds"
+       },
+       "decimals": 1,
+       "mappings": [],
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "green",
+          "value": null
+         },
+         {
+          "color": "yellow",
+          "value": 75
+         },
+         {
+          "color": "red",
+          "value": 120
+         }
+        ]
+       },
+       "unit": "short"
+      },
+      "overrides": []
+     },
+     "gridPos": {
+      "h": 4,
+      "w": 4,
+      "x": 16,
+      "y": 53
+     },
+     "options": {
+      "colorMode": "background",
+      "graphMode": "area",
+      "justifyMode": "auto",
+      "orientation": "auto",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      },
+      "textMode": "auto"
+     },
+     "pluginVersion": "",
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+       },
+       "expr": "battlebuddy_regression_last_run_age_seconds / 60",
+       "refId": "A"
+      }
+     ],
+     "title": "Battery Age (min)",
+     "type": "stat"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "description": "1 when the battery's results file could be read. 0 means the collector has nothing to report and every other panel in this row is showing its zero value rather than a measurement.",
+     "fieldConfig": {
+      "defaults": {
+       "color": {
+        "mode": "thresholds"
+       },
+       "decimals": 0,
+       "mappings": [
+        {
+         "options": {
+          "0": {
+           "color": "red",
+           "index": 0,
+           "text": "UNREADABLE"
+          },
+          "1": {
+           "color": "green",
+           "index": 1,
+           "text": "READABLE"
+          }
+         },
+         "type": "value"
+        }
+       ],
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "red",
+          "value": null
+         },
+         {
+          "color": "green",
+          "value": 1
+         }
+        ]
+       },
+       "unit": "short"
+      },
+      "overrides": []
+     },
+     "gridPos": {
+      "h": 4,
+      "w": 3,
+      "x": 20,
+      "y": 53
+     },
+     "options": {
+      "colorMode": "background",
+      "graphMode": "area",
+      "justifyMode": "auto",
+      "orientation": "auto",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      },
+      "textMode": "auto"
+     },
+     "pluginVersion": "",
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+       },
+       "expr": "battlebuddy_regression_error",
+       "refId": "A"
+      }
+     ],
+     "title": "Results Readable",
+     "type": "stat"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "description": "Which check is red, right now, without clicking anything. Each bar is one check; a bar at zero is a regression.",
+     "fieldConfig": {
+      "defaults": {
+       "color": {
+        "mode": "thresholds"
+       },
+       "mappings": [],
+       "max": 1,
+       "min": 0,
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "red",
+          "value": null
+         },
+         {
+          "color": "green",
+          "value": 1
+         }
+        ]
+       },
+       "unit": "short"
+      },
+      "overrides": []
+     },
+     "gridPos": {
+      "h": 6,
+      "w": 12,
+      "x": 0,
+      "y": 57
+     },
+     "options": {
+      "displayMode": "gradient",
+      "maxVizHeight": 300,
+      "minVizHeight": 16,
+      "minVizWidth": 8,
+      "namePlacement": "left",
+      "orientation": "horizontal",
+      "reduceOptions": {
+       "calcs": [
+        "lastNotNull"
+       ],
+       "fields": "",
+       "values": false
+      },
+      "showUnfilled": true,
+      "sizing": "auto",
+      "valueMode": "text"
+     },
+     "pluginVersion": "",
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+       },
+       "expr": "battlebuddy_regression_check",
+       "legendFormat": "{{check}}",
+       "refId": "A"
+      }
+     ],
+     "title": "Per-check status",
+     "type": "bargauge"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "grafanacloud-prom"
+     },
+     "description": "The strip. One row per check, 30 days. Answers the question a screenshot cannot: when did this start, and how long did it last. Grafana defaults to 6h, so widen the time range to see it.",
+     "fieldConfig": {
+      "defaults": {
+       "color": {
+        "mode": "thresholds"
+       },
+       "custom": {
+        "fillOpacity": 70,
+        "lineWidth": 0,
+        "spanNulls": false
+       },
+       "mappings": [],
+       "max": 1,
+       "min": 0,
+       "thresholds": {
+        "mode": "absolute",
+        "steps": [
+         {
+          "color": "red",
+          "value": null
+         },
+         {
+          "color": "green",
+          "value": 1
+         }
+        ]
+       }
+      },
+      "overrides": []
+     },
+     "gridPos": {
+      "h": 8,
+      "w": 12,
+      "x": 12,
+      "y": 57
+     },
+     "options": {
+      "alignValue": "left",
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "showLegend": true
+      },
+      "mergeValues": true,
+      "rowHeight": 0.85,
+      "showValue": "never",
+      "tooltip": {
+       "mode": "single",
+       "sort": "none"
+      }
+     },
+     "pluginVersion": "",
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+       },
+       "expr": "battlebuddy_regression_check",
+       "legendFormat": "{{check}}",
+       "refId": "A"
+      }
+     ],
+     "title": "Check history (30d)",
+     "type": "state-timeline"
+    }
+   ],
+   "title": "Regression Battery \u2014 hourly, read-only, against production",
+   "type": "row"
   }
  ],
  "preload": false,
@@ -2227,5 +2836,5 @@
  "timezone": "America/Chicago",
  "title": "Battle Buddy \u2014 Ops & Health (Private)",
  "uid": "bb-ops-private",
- "version": 9
+ "version": 11
 }

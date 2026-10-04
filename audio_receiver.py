@@ -546,7 +546,14 @@ def _regression_metric_specs() -> tuple:
     """
     path = os.environ.get("BB_REGRESSION_RESULTS_PATH") or \
         "/opt/battlebuddy-data/regression/latest.json"
-    specs: list = []
+    specs: list = [(
+        "battlebuddy_regression_error",
+        "1 when the regression results file could not be read at all; 0 when it "
+        "was read. Always emitted, so a Grafana panel can AND it with the other "
+        "gauges -- a gauge that only appears in the failure case cannot be "
+        "combined with one that only appears in the healthy case.",
+        0.0,
+    )]
     try:
         with open(path, encoding="utf-8") as fh:
             payload = json.load(fh)
@@ -564,20 +571,12 @@ def _regression_metric_specs() -> tuple:
     except FileNotFoundError:
         ran, failed = 0, 0
         age = -1.0                      # -1 means "never run", per the poller gauge
-        specs.append((
-            "battlebuddy_regression_error",
-            "1 when no regression results file could be read at all",
-            1.0,
-        ))
+        specs[0] = (specs[0][0], specs[0][1], 1.0)
     except Exception as exc:
         print(f"[metrics] regression results unreadable: {exc}", flush=True)
         ran, failed = 0, 0
         age = -1.0
-        specs.append((
-            "battlebuddy_regression_error",
-            "1 when no regression results file could be read at all",
-            1.0,
-        ))
+        specs[0] = (specs[0][0], specs[0][1], 1.0)
 
     specs.extend((
         ("battlebuddy_regression_ran",
