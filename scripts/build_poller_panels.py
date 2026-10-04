@@ -69,19 +69,14 @@ def app_poller_names() -> list[str]:
     because the poller set is stable and the metric validation below will
     catch any mismatch. If a new poller is added, add its NAME here.
     """
-    # These names come from the NAME attribute in each poller class:
-    # modules/pollers/impl/adsb_air_asset.py: NAME = "adsb-air-asset"
-    # modules/pollers/impl/afd_news.py: NAME = "afd"
-    # modules/pollers/impl/apd_cad.py: NAME = "apd-cad"
-    # modules/pollers/impl/apd_news.py: NAME = "apd_news"
-    # modules/pollers/impl/atxfloods.py: NAME = "atxfloods"
-    # modules/pollers/impl/austin_events.py: NAME = "austin-events"
-    # modules/pollers/impl/reddit_intel.py: NAME = "reddit-intel"
-    # modules/pollers/impl/traffic_open_data.py: NAME = "traffic-open-data"
+    # ops_verify derives the same set from the live scrape; a test asserts the two
+    # agree, so this list cannot quietly drift from reality.
     #
-    # Note: RedditIntelPoller is currently disabled in audio_receiver.py
-    # (commented out), but its metrics will still be exported if the class
-    # is imported. We include it here for completeness.
+    # `reddit-intel` was here and has been removed. Its `.start()` is commented out
+    # in audio_receiver.py, so it emits no metrics at all -- and the comment claiming
+    # its metrics "will still be exported if the class is imported" was a guess that
+    # the live scrape disproved. A panel row for a poller that does not exist reads
+    # as "no data" forever, which is indistinguishable from a stopped poller.
     return [
         "adsb-air-asset",
         "afd",
@@ -89,7 +84,6 @@ def app_poller_names() -> list[str]:
         "apd_news",
         "atxfloods",
         "austin-events",
-        "reddit-intel",
         "traffic-open-data",
     ]
 
@@ -172,9 +166,14 @@ def _poller_row(poller_name: str, y: int) -> dict:
     # Headline: 1 only when active=1 AND age<fresh AND failures==0
     # Written as a product so "stopped" and "failing" read the same way.
     headline = (
+        # Every comparison carries `bool`, so each yields 0 or 1 and the product
+        # is ALWAYS present. Without it, `age >= 0 AND age < 18h` acts as a filter:
+        # a stale poller's sample is dropped, the product is an empty vector, and
+        # the stat renders "No data" instead of FAILING -- which is the one thing
+        # this panel exists to make visible.
         f'(battlebuddy_poller_active{{poller="{poller_name}"}} == bool 1)'
-        f' * (battlebuddy_poller_last_success_age_seconds{{poller="{poller_name}"}} >= 0'
-        f' AND battlebuddy_poller_last_success_age_seconds{{poller="{poller_name}"}} < {fresh})'
+        f' * (battlebuddy_poller_last_success_age_seconds{{poller="{poller_name}"}} >= bool 0)'
+        f' * (battlebuddy_poller_last_success_age_seconds{{poller="{poller_name}"}} < bool {fresh})'
         f' * (battlebuddy_poller_consecutive_failures{{poller="{poller_name}"}} == bool 0)'
     )
 

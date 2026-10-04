@@ -17,6 +17,7 @@ Exit codes: 0 all gates pass, 1+ count of failed gates (capped at 10).
 import datetime
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -31,23 +32,35 @@ REGRESSION_MAX_AGE_S = 2 * 3600
 REGRESSION_RESULTS_PATH = os.environ.get("BB_REGRESSION_RESULTS_PATH") or \
     "/opt/battlebuddy-data/regression/latest.json"
 
-#: Poller health thresholds.
-#: Longest poll interval is 6h (austin-events, apd-cad). Three missed cycles = 18h.
-POLLER_MAX_AGE_S = 3 * 6 * 3600
-#: Consecutive failures above this is a hard failure.
+#: Sentinel for a missing metric: worse than any real failure count.
 POLLER_MAX_FAILURES = 3
-#: Known poller names (from the NAME attribute in each poller class).
-#: This list must match scripts/build_poller_panels.py.
-KNOWN_POLLERS = (
-    "adsb-air-asset",
-    "afd",
-    "apd-cad",
-    "apd_news",
-    "atxfloods",
-    "austin-events",
-    "reddit-intel",
-    "traffic-open-data",
-)
+
+#: A poller that has not succeeded in this many seconds is considered stale.
+#: The longest poll interval is 6h, so three missed cycles.
+POLLER_MAX_AGE_S = 3 * 6 * 3600
+
+#: Recognised poller metrics, and the label that carries the poller's name.
+_POLLER_METRIC_RE = re.compile(r'^battlebuddy_poller_[a-z_]+\{poller="([^"]+)"\}')
+
+
+def poller_names(metrics_keys) -> list[str]:
+    """Poller names taken from the metrics the app actually exported.
+
+    Derived, not hardcoded. The previous hardcoded list carried `reddit-intel`,
+    whose ``.start()`` is commented out, so it emits nothing -- and because a
+    missing metric is correctly treated as a failure, three gates for it would
+    have failed forever. A list that cannot drift is worth more than one that is
+    easy to read.
+
+    Sorted so gate ordering is stable between runs, which matters because a
+    dashboard that reshuffles is harder to read than one that does not.
+    """
+    names = set()
+    for key in metrics_keys:
+        match = _POLLER_METRIC_RE.match(key)
+        if match:
+            names.add(match.group(1))
+    return sorted(names)
 
 # ---------------------------------------------------------------------------
 # Runtime configuration
@@ -136,14 +149,20 @@ def regression_results():
     return data, "ok"
 
 
-def poller_health(m: dict) -> dict[str, dict]:
+def poller_health(m: dict, names=None) -> dict[str, dict]:
     """Extract poller health from metrics dict.
 
     Returns a dict mapping poller name to {"active": bool, "failures": int,
-    "age_s": float}. Missing metrics are reported as unhealthy.
+    "age_s": float}. Missing metrics are reported as unhealthy -- a poller that
+    has stopped reporting must fail the gate, not quietly pass it.
+
+    `names` defaults to the pollers found in `m`. Passing it explicitly is only
+    for tests that need to model a poller which has gone entirely silent.
     """
+    if names is None:
+        names = poller_names(m.keys())
     health = {}
-    for name in KNOWN_POLLERS:
+    for name in names:
         active_key = f'battlebuddy_poller_active{{poller="{name}"}}'
         failures_key = f'battlebuddy_poller_consecutive_failures{{poller="{name}"}}'
         age_key = f'battlebuddy_poller_last_success_age_seconds{{poller="{name}"}}'
@@ -370,8 +389,16 @@ def main():
     # this gate exists to catch -- the same defect class as the regression battery
     # freshness gate: a stopped alarm and a healthy system look identical from
     # the outside.
-    health = poller_health(m)
-    for name in KNOWN_POLLERS:
+    # Derived from the live scrape, so a poller that is disabled cannot leave a
+    # permanently red gate behind. If NOTHING reports, that is itself the failure
+    # and must say so -- an empty set that produced zero gates would read as a
+    # clean bill of health.
+    _poller_names = poller_names(m.keys())
+    if not _poller_names:
+        gate("pollers reporting", False,
+             "no battlebuddy_poller_* metrics in the scrape at all")
+    health = poller_health(m, _poller_names)
+    for name in _poller_names:
         h = health[name]
         # Has-run: the poller metrics exist at all (they always do if service is up,
         # but we gate on active=1 as the "has-run" equivalent for a continuous poller)

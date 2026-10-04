@@ -55,7 +55,11 @@ def _load_ops_verify(monkeypatch, *, poller_metrics: dict | None = None):
         lambda *a, **k: subprocess.CompletedProcess(a[0] if a else "", 0, "", ""),
     )
 
-    # Build a metrics dict with the poller metrics
+    # Only pollers that are actually started appear here. `reddit-intel` was
+    # fabricated here as active=1.0, which cannot happen in production because
+    # its `.start()` is commented out -- so the suite was green about an invented
+    # world while three gates would have been permanently red. If a poller is
+    # disabled, REMOVE it. Do not fake it healthy.
     default_pollers = {
         "adsb-air-asset": {"active": 1.0, "failures": 0.0, "age_s": 100.0},
         "afd": {"active": 1.0, "failures": 0.0, "age_s": 100.0},
@@ -63,14 +67,23 @@ def _load_ops_verify(monkeypatch, *, poller_metrics: dict | None = None):
         "apd_news": {"active": 1.0, "failures": 0.0, "age_s": 100.0},
         "atxfloods": {"active": 1.0, "failures": 0.0, "age_s": 100.0},
         "austin-events": {"active": 1.0, "failures": 0.0, "age_s": 100.0},
-        "reddit-intel": {"active": 1.0, "failures": 0.0, "age_s": 100.0},
         "traffic-open-data": {"active": 1.0, "failures": 0.0, "age_s": 100.0},
     }
 
     if poller_metrics:
         for name, vals in poller_metrics.items():
-            if name in default_pollers:
-                default_pollers[name].update(vals)
+            # Raise rather than ignore. This used to skip unknown names silently,
+            # so a test could configure a poller that was not in the list and
+            # nothing at all happened -- the test then failed for a reason unrelated
+            # to what it was testing. A fixture that cannot fail cannot tell you
+            # anything.
+            if name not in default_pollers:
+                raise KeyError(
+                    f"fixture has no poller {name!r}; known: {sorted(default_pollers)}. "
+                    f"If it is genuinely started, add it. If it is disabled, remove "
+                    f"it -- do not fabricate it as healthy."
+                )
+            default_pollers[name].update(vals)
 
     metrics_dict = {
         "battlebuddy_backlog_queue_depth": 0.0,
@@ -158,14 +171,22 @@ class TestPollerGatesPassWhenAllHealthy:
         failed = {n: r["detail"] for n, r in gates.items() if not r["pass"]}
         assert failed == {}, f"healthy pollers failed gates: {failed}"
 
-        # Verify we have the expected three gates per poller
-        # 8 pollers * 3 gates = 24 gates
-        assert len(gates) == 24, f"expected 24 poller gates, got {len(gates)}"
+        # Three gates per poller. The count is derived from the gate names rather
+        # than asserted as a literal: the old comment read "8 pollers * 3 gates =
+        # 24" and both halves were stale, because seven pollers start and the set is
+        # now derived from the scrape. A hardcoded count is how a test and reality
+        # drift apart without anyone noticing.
+        gated = [n for n in gates if n.startswith("poller ")]
+        poller_names = {n.split(" ", 2)[1] for n in gated}
+        assert len(gates) == 3 * len(poller_names), (
+            f"expected exactly 3 gates per poller for {sorted(poller_names)}, "
+            f"got {len(gates)} gates: {sorted(gates)}"
+        )
 
         # Check gate naming pattern
         for name in [
             "adsb-air-asset", "afd", "apd-cad", "apd_news",
-            "atxfloods", "austin-events", "reddit-intel", "traffic-open-data",
+            "atxfloods", "austin-events", "traffic-open-data",
         ]:
             assert f"poller {name} active" in gates
             # Freshness gate includes threshold in name
@@ -327,13 +348,19 @@ class TestPollerGateWitness:
     def test_all_three_gates_can_fail_simultaneously(self, monkeypatch):
         """A completely dead poller fails all three gates."""
         mod = _load_ops_verify(monkeypatch, poller_metrics={
-            "reddit-intel": {"active": 0.0, "failures": 10.0, "age_s": -1.0},
+            "afd": {"active": 0.0, "failures": 10.0, "age_s": -1.0},
         })
         gates = _poller_gates(_run_ops_verify(mod))
 
-        assert not gates["poller reddit-intel active"]["pass"]
-        assert not gates["poller reddit-intel zero failures"]["pass"]
-        fresh_key = _fresh_gate_key(gates, "reddit-intel")
+        # Which poller went silent is not the point; the point is that a poller we
+        # know about and cannot see must FAIL rather than pass. `afd` is used
+        # because it genuinely starts in production. The previous version of this
+        # test used reddit-intel, whose .start() is commented out -- with the set
+        # derived it is simply not gated, which is the correct behaviour and made
+        # the old assertion meaningless.
+        assert not gates["poller afd active"]["pass"]
+        assert not gates["poller afd zero failures"]["pass"]
+        fresh_key = _fresh_gate_key(gates, "afd")
         assert not gates[fresh_key]["pass"]
 
 
@@ -358,12 +385,34 @@ class TestPollerHealthFunction:
             metrics[f'battlebuddy_poller_consecutive_failures{{poller="{name}"}}'] = 0.0
             metrics[f'battlebuddy_poller_last_success_age_seconds{{poller="{name}"}}'] = 100.0
 
-        health = ov.poller_health(metrics)
+        # Names passed explicitly: this models a poller we KNEW existed whose
+        # metrics have vanished mid-run, which is a failure. Deriving from the
+        # metrics alone would simply not know about apd_news -- the other case,
+        # covered by the test below.
+        health = ov.poller_health(
+            metrics, names=["adsb-air-asset", "afd", "apd_news"])
 
         # The missing poller should be reported as unhealthy
         assert not health["apd_news"]["active"]
         assert health["apd_news"]["failures"] > ov.POLLER_MAX_FAILURES
         assert health["apd_news"]["age_s"] == float("inf")
+
+    def test_poller_absent_from_scrape_is_not_invented(self, monkeypatch):
+        """A poller that was never started is absent, not failing.
+
+        Deriving the set from the scrape is what stops a disabled poller leaving a
+        permanently red gate behind. The deliberate cost: a poller that never
+        started is invisible -- correct, because it is not failing, it is not
+        running.
+        """
+        ov = _load_ops_verify(monkeypatch)
+        metrics = {
+            'battlebuddy_poller_active{poller="afd"}': 1.0,
+            'battlebuddy_poller_consecutive_failures{poller="afd"}': 0.0,
+            'battlebuddy_poller_last_success_age_seconds{poller="afd"}': 100.0,
+        }
+        assert ov.poller_names(metrics.keys()) == ["afd"]
+        assert set(ov.poller_health(metrics)) == {"afd"}
 
 
 if __name__ == "__main__":
