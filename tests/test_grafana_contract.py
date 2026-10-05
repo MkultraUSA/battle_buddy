@@ -46,6 +46,34 @@ _OPS = _ROOT / "scripts" / "ops_verify.py"
 
 _METRIC = re.compile(r"\b(battlebuddy_[a-z_0-9]+)\b")
 
+#: PromQL silently drops a binary operation whose two sides carry different label
+#: sets, and it does so **without an error**: the panel renders empty and looks
+#: exactly like a calm week.
+#:
+#: `bb-intel-public`'s DETECTION RATIO was `sum(battlebuddy_incidents_24h) /
+#: (battlebuddy_calls_24h > 0) * 100`. The left side aggregates to a label-free
+#: vector; the right side keeps whatever labels the call counter carries, and
+#: `battlebuddy_incidents_24h` exports twelve separate series. Nothing matched, so
+#: the query returned no data at any point in its life — a detection-ratio panel
+#: that had never once reported a detection ratio.
+#:
+#: Every existing check here missed it. Both metric names are real, so the
+#: dangling check passed; nothing consumes nothing, so the orphan check passed;
+#: and the query is valid PromQL, so it raises nothing. The defect was invisible
+#: to all three directions because all three ask "is this name emitted", and the
+#: bug is not about names — it is about whether the two sides can ever join.
+#:
+#: The fix is `on() group_left`, `scalar()`, or aggregating both sides. This
+#: catches the shape that needs one of those, which is the shape that was shipped.
+_AGGREGATOR = r"(?:sum|avg|min|max|count|stddev|stdvar|topk|bottomk|quantile)"
+#: A bare vector filtered by a comparison, e.g. `(battlebuddy_calls_24h > 0)`.
+_FILTERED_VECTOR = r"\(\s*[a-z_][a-z_0-9]*\s*[<>=!]+\s*-?[\d.]+\s*\)"
+_SILENT_EMPTY = re.compile(
+    rf"(?:\b{_AGGREGATOR}\s*\([^()]*\)\s*[/%*]\s*{_FILTERED_VECTOR}"
+    rf"|{_FILTERED_VECTOR}\s*[/%*]\s*\b{_AGGREGATOR}\s*\([^()]*\))",
+    re.IGNORECASE,
+)
+
 #: Metrics the app exports that nothing consumes, with the reason each is allowed.
 #:
 #: This is a ratchet, not a list of permissions. A name may only be added here
@@ -110,6 +138,20 @@ def _walk(panels, names: set[str]) -> None:
                     if isinstance(value, str):
                         names.update(_METRIC.findall(value))
         _walk(panel.get("panels"), names)
+
+
+def _panels_with_exprs(doc: dict):
+    """Yield (panel, target) for every target carrying a PromQL expression.
+
+    Unlike `_walk`, which collects names into a set, this hands back the panel
+    and the query, because this direction has to report *where* the bad
+    expression is rather than only that one exists.
+    """
+    for panel in doc.get("panels") or []:
+        for target in panel.get("targets") or []:
+            if isinstance(target, dict) and isinstance(target.get("expr"), str):
+                yield panel, target
+        yield from _panels_with_exprs(panel)
 
 
 def _dashboard_names() -> tuple[dict[str, set[str]], set[str]]:
@@ -358,6 +400,53 @@ class TestTheContractCheckCanFail(unittest.TestCase):
         names: set[str] = set()
         _walk([{"targets": [{"expr": "node_cpu_seconds_total and up"}]}], names)
         self.assertEqual(set(), names)
+
+
+class TestNoPanelIsSilentlyEmptyByLabelMismatch(unittest.TestCase):
+    """Direction C. Valid PromQL whose two sides can never join renders nothing.
+
+    The other two directions ask whether a metric name is emitted. This one asks
+    whether the query can produce a value at all, which is the question that
+    would have caught the detection-ratio panel on the day it was written rather
+    than the day somebody noticed the graph was blank.
+    """
+
+    def test_no_dashboard_divides_an_aggregate_by_a_labelled_vector(self):
+        offenders = []
+        for name, doc in _fixtures().items():
+            for panel, target in _panels_with_exprs(doc):
+                expr = " ".join(target["expr"].split())
+                if _SILENT_EMPTY.search(expr):
+                    offenders.append(f"{name}: {panel.get('title')!r} -> {expr}")
+        self.assertEqual(
+            [], offenders,
+            "these panels join an aggregate to a filtered vector with no on()/"
+            "group_left or scalar(), so PromQL drops the result and they render "
+            "empty forever: " + "; ".join(offenders),
+        )
+
+    def test_the_detector_catches_the_expression_that_was_shipped(self):
+        """A regex nobody has seen fail is a regex nobody should trust."""
+        self.assertTrue(_SILENT_EMPTY.search(
+            "sum(battlebuddy_incidents_24h) / (battlebuddy_calls_24h > 0) * 100"))
+
+    def test_the_three_accepted_fixes_are_not_flagged(self):
+        for expr in (
+            "sum(battlebuddy_incidents_24h) / on() group_left sum(battlebuddy_calls_24h) * 100",
+            "sum(battlebuddy_incidents_24h) / scalar(battlebuddy_calls_24h) * 100",
+            "100 * sum(battlebuddy_incidents_24h) / sum(battlebuddy_calls_24h)",
+        ):
+            with self.subTest(expr=expr):
+                self.assertIsNone(_SILENT_EMPTY.search(expr))
+
+    def test_an_ordinary_ratio_is_not_flagged(self):
+        """The common shape — both sides aggregated — is the fix, not the bug."""
+        for expr in (
+            "battlebuddy_direct / battlebuddy_calls",
+            "sum(rate(battlebuddy_errors_total[5m])) / sum(rate(battlebuddy_requests_total[5m]))",
+        ):
+            with self.subTest(expr=expr):
+                self.assertIsNone(_SILENT_EMPTY.search(expr))
 
 
 if __name__ == "__main__":

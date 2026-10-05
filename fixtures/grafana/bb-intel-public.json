@@ -2,8 +2,8 @@
  "__meta__": {
   "fetched_from": "https://kevinwatkins.grafana.net",
   "uid": "bb-intel-public",
-  "updated": "2026-08-12T00:30:07Z",
-  "version": 5
+  "updated": "2026-10-04T23:28:39Z",
+  "version": 6
  },
  "annotations": {
   "list": [
@@ -417,7 +417,7 @@
       "type": "prometheus",
       "uid": "grafanacloud-prom"
      },
-     "expr": "sum(battlebuddy_incidents_24h) / (battlebuddy_calls_24h > 0) * 100",
+     "expr": "100 * sum(battlebuddy_incidents_24h) / sum(battlebuddy_calls_24h)",
      "instant": true,
      "refId": "A"
     }
@@ -2613,5 +2613,5 @@
  "timezone": "America/Chicago",
  "title": "Battle Buddy \u2014 Austin Public Safety Intelligence",
  "uid": "bb-intel-public",
- "version": 5
+ "version": 6
 }
