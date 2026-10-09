@@ -221,22 +221,29 @@ def get_health_snapshot(db_path: str) -> dict:
     """Return a health snapshot for monitoring (Prometheus-compatible)."""
     import sys
 
+    # Each metric is settled independently. The previous version wrapped all
+    # four in one try/except, so a single bad query (it did: status=active is
+    # not valid SQLite -- it needs quotes) discarded total_calls and
+    # calls_24h too, and reported all three as -1. A sentinel that means
+    # "something, anything went wrong" cannot tell a reader whether the
+    # number it replaced was healthy. -1 now means only "this one failed".
+    def _count(sql, params=()):
+        try:
+            conn = sqlite3.connect(db_path, timeout=2.0)
+            try:
+                return conn.execute(sql, params).fetchone()[0]
+            finally:
+                conn.close()
+        except Exception:
+            return -1
+
+    total_calls = _count("SELECT COUNT(*) FROM calls")
+    calls_24h = _count("SELECT COUNT(*) FROM calls WHERE ts > ?",
+                       (time.time() - 86400,))
+    active_incidents = _count("SELECT COUNT(*) FROM incidents WHERE status = 'active'")
     try:
-        conn = sqlite3.connect(db_path, timeout=2.0)
-        total_calls = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
-        calls_24h = conn.execute(
-            "SELECT COUNT(*) FROM calls WHERE ts > ?",
-            (time.time() - 86400,)
-        ).fetchone()[0]
-        active_incidents = conn.execute(
-            "SELECT COUNT(*) FROM incidents WHERE status=active"
-        ).fetchone()[0]
-        db_size_mb = os.path.getsize(db_path) / (1024 * 1024)
-        conn.close()
-    except Exception:
-        total_calls = -1
-        calls_24h = -1
-        active_incidents = -1
+        db_size_mb = round(os.path.getsize(db_path) / (1024 * 1024), 1)
+    except OSError:
         db_size_mb = -1
 
     kg = _get_kg()
