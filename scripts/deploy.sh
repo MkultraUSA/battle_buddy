@@ -57,7 +57,11 @@ echo -e "  ${GRN}✓${RST} Now at $(git rev-parse --short HEAD) — $(git log -1
 # the older ones, and if neither works, FAIL rather than claim a deploy that
 # did not take effect.
 echo "→ Restarting ${BB_SERVICE}…"
-if command -v systemctl &>/dev/null && systemctl list-unit-files "${BB_SERVICE}.service" &>/dev/null | grep -q "${BB_SERVICE}.service"; then
+# Note the parentheses: `systemctl ... &>/dev/null | grep -q ...` parses as
+# `systemctl ... &` (backgrounded) piped into grep, because `&>` binds to the
+# simple command, not to the pipeline. The unit check then never ran and every
+# deploy took the "no supervisor" branch. Subshell the pipeline instead.
+if command -v systemctl &>/dev/null && (systemctl list-unit-files "${BB_SERVICE}.service" 2>/dev/null | grep -q "${BB_SERVICE}.service"); then
     systemctl restart "$BB_SERVICE" 2>&1
     # `restart` returns 0 even when the unit immediately dies, so confirm it is
     # actually up rather than trusting the exit code.
