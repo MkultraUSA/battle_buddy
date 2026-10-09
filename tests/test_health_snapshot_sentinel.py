@@ -17,8 +17,8 @@ defect was a SQL error and a mock would not have caught it.
 from __future__ import annotations
 
 import sqlite3
-import time
 import sys
+import time
 from pathlib import Path
 
 import pytest
