@@ -172,24 +172,31 @@ FW_RUNNING=$(ps aux | grep "$BB_PROCESS" | grep -v grep | wc -l | tr -d ' ')
 [ "${FW_RUNNING:-0}" -gt 0 ] && ok "transcription process appears to be running" \
   || warn "transcription process not running"
 
+# Probe the endpoint the app actually calls. These mirror the defaults in
+# modules/config.py so an OpenRouter deployment behaves exactly as it did before,
+# and a deployment that has moved hosts (opencode Zen) is no longer misreported
+# as an auth failure.
 if [ -f "$BB_ENV_FILE" ] && grep -q '^OPENROUTER_API_KEY=' "$BB_ENV_FILE" && has_cmd curl; then
-  OR_KEY=$(grep '^OPENROUTER_API_KEY=' "$BB_ENV_FILE" | cut -d= -f2-)
-  OR_RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
-    -H "Authorization: Bearer $OR_KEY" \
+  LLM_BASE="${OPENROUTER_API_BASE:-https://openrouter.ai/api/v1}"
+  LLM_MODEL="${OPENROUTER_MODEL:-google/gemini-2.5-flash}"
+  LLM_HOST=$(echo "$LLM_BASE" | sed -E 's|https?://([^/]+).*|\1|')
+  LLM_BODY=$(printf '{"model":"%s","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' "$LLM_MODEL")
+  LLM_RESULT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
+    -H "Authorization: Bearer ${OPENROUTER_API_KEY:-}" \
     -H "Content-Type: application/json" \
     -H "User-Agent: BattleBuddyHealthCheck/1.0" \
     -H "HTTP-Referer: https://battlebuddy.news" \
-    -d '{"model":"google/gemini-2.5-flash","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
-    "https://openrouter.ai/api/v1/chat/completions" 2>/dev/null || true)
-  case "$OR_RESULT" in
-    200) ok "OpenRouter LLM API: reachable" ;;
-    429) warn "OpenRouter LLM API: reachable but rate-limited" ;;
-    401) fail "OpenRouter LLM API: auth failed — check API key" ;;
-    403) fail "OpenRouter LLM API: blocked by provider or network policy" ;;
-    *)   warn "OpenRouter LLM API: unexpected HTTP ${OR_RESULT:-timeout}" ;;
+    -d "$LLM_BODY" \
+    "${LLM_BASE%/}/chat/completions" 2>/dev/null || true)
+  case "$LLM_RESULT" in
+    200) ok "$LLM_HOST LLM API: reachable" ;;
+    429) warn "$LLM_HOST LLM API: reachable but rate-limited" ;;
+    401) fail "$LLM_HOST LLM API: auth failed — check API key" ;;
+    403) fail "$LLM_HOST LLM API: blocked by provider or network policy" ;;
+    *)   warn "$LLM_HOST LLM API: unexpected HTTP ${LLM_RESULT:-timeout}" ;;
   esac
 else
-  warn "OpenRouter live check skipped — no env file/key or curl unavailable"
+  warn "LLM live check skipped — no env file/key or curl unavailable"
 fi
 
 LAST_TRANSCRIPT=$(sqlite_count "SELECT CAST((strftime('%s','now') - MAX(ts)) AS INTEGER) FROM calls WHERE transcript != '' AND LENGTH(transcript) > 10;")
