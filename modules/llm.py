@@ -291,6 +291,19 @@ def _adjust_throttle(model_id: str, success: bool) -> None:
 # Core LLM call with retry
 # ---------------------------------------------------------------------------
 
+# Completion budget per call. The model's reasoning tokens count against it, so
+# 300 cut real answers off mid-JSON (2026-10-16: a normal call used 232 of 300,
+# 128 of them reasoning). 1200 leaves headroom for long transcripts.
+_LLM_MAX_TOKENS = 1200
+
+
+class _OutputTruncated(Exception):
+    """The model stopped at max_tokens before finishing its answer.
+
+    The same request is truncated the same way on retry, so it is not retried.
+    """
+
+
 def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3) -> dict:
     """Call OpenRouter chat/completions with adaptive backoff retry.
     Applies inter-call throttling for free models, records health outcomes
@@ -310,7 +323,7 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": user_msg},
                 ],
-                "max_tokens":      300,
+                "max_tokens":      _LLM_MAX_TOKENS,
                 "temperature":     0.1,
                 "response_format": {"type": "json_object"},
             }).encode()
@@ -338,7 +351,11 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
                     _adjust_throttle(model, False)
                     raise Exception(f"429 rate limit: {err_msg}")
                 raise Exception(f"API error ({err_code}): {err_msg}")
-            content = data["choices"][0]["message"]["content"]
+            choice = data["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise _OutputTruncated(
+                    f"output truncated at max_tokens={_LLM_MAX_TOKENS}: {model}")
+            content = choice["message"]["content"]
             if content is None:
                 _runtime_ban_model(model, reason="null content")
                 _record_model_failure(model)
@@ -351,6 +368,9 @@ def _call_openrouter_llm(system_prompt: str, user_msg: str, max_retries: int = 3
             return result
         except Exception as exc:
             last_exc = exc
+            if isinstance(exc, _OutputTruncated):
+                # Not a model fault and not transient: do not retry or penalise.
+                raise
             if not success:  # only record failure if we didn't already above
                 if "429" in str(exc) or "null content" in str(exc):
                     pass  # already recorded in the specific handler
