@@ -181,6 +181,29 @@ _PURSUIT_WORDS = (
     "pursuit", "pursuing", "chase", "chased", "chasing",
     "flee", "flees", "fled", "fleeing",
 )
+
+# Eyes-on police-ACTIVITY sightings (Kevin, 2026-11-02): people REPORTING
+# police presence/scene activity — distinct from crime reports. Two tiers:
+# scene-strong (the literal phrase "police activity", standoffs, lockdowns —
+# alert-worthy) and scene-medium (unit swarms, helicopters circling, K9,
+# perimeter/tape — stored, never alerts). Deliberately NOT the bare word
+# "sighting/spotted" (celebrity-chatter guard) and "Helicopter over Austin"
+# (place-only) still never captures: every branch requires
+# _DETAIL_SPECIFIC_RE (street/time/number) per the strict-filter doctrine.
+_ACTIVITY_STRONG_WORDS = (
+    "police activity", "police presence", "standoff", "stand-off",
+    "shelter in place", "lockdown", "shelter-in-place",
+)
+_ACTIVITY_MEDIUM_WORDS = (
+    "helicopter circling", "helicopters circling", "chopper circling",
+    "air unit", "air one", "air1", "spotlight", "search light",
+    "k9 unit", "canine unit", "k9 units", "canine units",
+    "cop cars", "cop car", "police cars", "police car", "patrol cars",
+    "squad cars", "unmarked units", "unmarked unit",
+    "cops everywhere", "cops all over", "police everywhere",
+    "tons of cops", "so many cops", "half the austin police",
+    "roadblock", "road block", "blockade", "crime scene tape", "perimeter",
+)
 _AGENCY_WORDS = (
     "police", "apd", "officer", "officers", "deputy", "deputies",
     "trooper", "troopers", "dps",
@@ -206,6 +229,38 @@ _MEDIUM_RES = tuple(
 _TOPIC_RES = tuple((kw, _phrase_re(kw)) for kw in _REDDIT_TOPIC_EXCLUDE)
 _PURSUIT_RES = tuple((kw, _phrase_re(kw)) for kw in _PURSUIT_WORDS)
 _AGENCY_RES = tuple((kw, _phrase_re(kw)) for kw in _AGENCY_WORDS)
+_ACTIVITY_STRONG_RES = tuple((kw, _phrase_re(kw)) for kw in _ACTIVITY_STRONG_WORDS)
+_ACTIVITY_MEDIUM_RES = tuple((kw, _phrase_re(kw)) for kw in _ACTIVITY_MEDIUM_WORDS)
+
+# Unit-count signal: a NUMBER next to unit/cop-car vocabulary — "6 cop cars",
+# "three patrol units", "a dozen officers". Lets a sighting clear the bar
+# without naming an agency word twice.
+_UNIT_COUNT_RE = re.compile(
+    r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|dozen)\s+"
+    r"(?:cop|police|patrol|squad|unit|units|officer|officers|deputy|deputies|cars?|trucks?)\b",
+    re.IGNORECASE,
+)
+
+# Proximity detail: the eyewitness's own specificity. "Next door",
+# "overhead", "down the street from me" pin the report to the poster's
+# location even without a street name — the classic r/Austin genre
+# ("why is a chopper circling overhead?", "SWAT team next door").
+_PROXIMITY_DETAIL_RE = re.compile(
+    r"\b(?:overhead|next\s+door|down\s+the\s+street|outside\s+my"
+    r"|in\s+front\s+of\s+my|behind\s+my|across\s+the\s+street\s+from\s+my"
+    r"|my\s+(?:street|block|apartment|apt|complex|neighborhood|neighbourhood|building|backyard|house))\b",
+    re.IGNORECASE,
+)
+
+# Question-form sighting: the "what are the police doing at <place>?" /
+# "why is a chopper circling?" genre — a question aimed at cop-vocabulary.
+# Needs the SAME detail gates as every other sighting branch (specific or
+# proximity) before it captures.
+_ACTIVITY_QUESTION_RE = re.compile(
+    r"\b(?:what(?:'s|is| are)|why(?:'s|is| are)|anyone\s+know\s+(?:why|what))"
+    r"[^?!?.]{0,80}?\b(?:police|cops?|chopper|helicopter|swat|deputies?|officers?)\b",
+    re.IGNORECASE,
+)
 
 # Concrete detail, split in two tiers. _DETAIL_SPECIFIC_RE is the load-bearing
 # one: street/highway tokens, suffix-less Austin corridors (Ben White has no
@@ -393,6 +448,42 @@ def reddit_matches(title: str, body: str | None) -> RedditVerdict:
     # topic/chatter guards (a false negative is worse than a false positive).
     if strong:
         return RedditVerdict(True, "high", _kw(strong, medium))
+
+    # A1. EYES-ON police-activity sighting (Kevin, 2026-11-02). Scene-strong
+    # phrases ("police activity", standoff, shelter in place, lockdown) are
+    # alert-worthy HIGH when a specific detail corroborates them; they also
+    # outrank the topic filter (a standoff at a festival is still a standoff).
+    activity_strong = _matched(_ACTIVITY_STRONG_RES, low)
+    if activity_strong and _DETAIL_SPECIFIC_RE.search(low):
+        return RedditVerdict(True, "high", _kw(activity_strong, medium, prop))
+
+    # A2. scene-medium sightings (cop cars, helicopter circling, K9 unit,
+    # perimeter/tape): stored as MEDIUM, never alerts, only with specific
+    # detail AND an agency/unit/proximity signal in the same post —
+    # "helicopter over Austin" and celebrity-spotting chatter still never
+    # capture.
+    activity_medium = _matched(_ACTIVITY_MEDIUM_RES, low)
+    if (
+        activity_medium
+        and (
+            _matched(_AGENCY_RES, low)
+            or _UNIT_COUNT_RE.search(low)
+            or _PROXIMITY_DETAIL_RE.search(low)
+        )
+        and (_DETAIL_SPECIFIC_RE.search(low) or _PROXIMITY_DETAIL_RE.search(low))
+    ):
+        return RedditVerdict(True, "medium", _kw(activity_medium, medium, prop))
+
+    # A2b. question-form sighting: "what are the police doing at <place>?",
+    # "why is a chopper circling overhead?" — a question aimed at
+    # cop-vocabulary, captured as MEDIUM when grounded by specific or
+    # proximity detail. Bare "why is there a helicopter?" (no grounding)
+    # still drops.
+    if (
+        _ACTIVITY_QUESTION_RE.search(low)
+        and (_DETAIL_SPECIFIC_RE.search(low) or _PROXIMITY_DETAIL_RE.search(low))
+    ):
+        return RedditVerdict(True, "medium", "activity-question")
 
     # C. topic filter: everyday subjects are not crime reports.
     if topic:

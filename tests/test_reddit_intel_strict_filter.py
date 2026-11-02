@@ -129,13 +129,16 @@ class StrictFilterRegressionTests(unittest.TestCase):
 
     # -- B. bare medium words alone must not capture --------------------------
 
-    def test_bare_medium_word_is_not_high_confidence(self):
+    def test_helicopter_overhead_question_is_now_captured(self):
+        # POLICY CHANGE 2026-11-02 (Kevin): question-form activity sightings
+        # ("why is a chopper circling overhead?") are exactly the genre the
+        # poller exists to catch. Was: bare-medium, not captured.
         v = _verdict(
             "Helicopter overhead",
             "Just hearing a helicopter circling, anyone know why?",
         )
-        self.assertNotEqual(v.confidence, "high", f"bare medium word: {v!r}")
-        self.assertFalse(v.captured, f"bare medium word alone must not capture: {v!r}")
+        self.assertTrue(v.captured, f"question-form sighting: {v!r}")
+        self.assertEqual(v.confidence, "medium")
 
     # -- F. tuned false negatives: real reports must be captured --------------
 
@@ -423,6 +426,83 @@ class StrictFilterRegressionTests(unittest.TestCase):
         v = _verdict("APD investigating homicide in Northeast Austin", "")
         self.assertTrue(v.captured, f"genuine homicide report: {v!r}")
         self.assertEqual(v.confidence, "high")
+
+    # -- M. eyes-on police-ACTIVITY sightings (Kevin, 2026-11-02) ------------
+
+    def test_police_activity_literal_is_high(self):
+        v = _verdict("Police activity on I-35 northbound, all lanes blocked", "")
+        self.assertTrue(v.captured, f"police-activity scene: {v!r}")
+        self.assertEqual(v.confidence, "high")
+
+    def test_standoff_with_shelter_in_place_is_high(self):
+        v = _verdict("SWAT standoff on Congress, shelter in place for the block", "")
+        self.assertTrue(v.captured, f"standoff scene: {v!r}")
+        self.assertEqual(v.confidence, "high")
+
+    def test_helicopter_circling_over_riverside_is_medium(self):
+        v = _verdict("Helicopter circling over Riverside for 20 minutes", "")
+        self.assertTrue(v.captured, f"air-unit sighting with detail: {v!r}")
+        self.assertEqual(v.confidence, "medium")
+
+    def test_helicopter_over_austin_still_never_captures(self):
+        v = _verdict("Helicopter over Austin", "")
+        self.assertFalse(v.captured, f"place-only must stay out: {v!r}")
+
+    def test_six_cop_cars_on_manor_is_medium(self):
+        v = _verdict("Anyone know why there are 6 cop cars on Manor?", "")
+        self.assertTrue(v.captured, f"unit-count sighting: {v!r}")
+        self.assertEqual(v.confidence, "medium")
+
+    def test_cops_everywhere_near_burnet_is_medium(self):
+        v = _verdict("Cops everywhere near Burnet tonight, lights everywhere", "")
+        self.assertTrue(v.captured, f"scene sighting with detail: {v!r}")
+        self.assertEqual(v.confidence, "medium")
+
+    def test_cop_cars_without_detail_never_captures(self):
+        v = _verdict("Cop cars downtown", "")
+        self.assertFalse(v.captured, f"no specific detail: {v!r}")
+
+    def test_copied_my_homework_still_never_captures(self):
+        v = _verdict("Copied my homework from a friend", "")
+        self.assertFalse(v.captured, f"copy boundary: {v!r}")
+
+    def test_spotted_celebrity_still_never_captures(self):
+        v = _verdict("Spotted a famous actor at Barton Springs", "")
+        self.assertFalse(v.captured, f"celebrity spotting: {v!r}")
+
+    def test_taste_buds_assault_guard_still_wins(self):
+        v = _verdict("Assault on my taste buds at this taco truck", "")
+        self.assertFalse(v.captured, f"benign guard: {v!r}")
+
+    def test_perimeter_with_time_detail_is_medium(self):
+        v = _verdict("Police set up a perimeter near the mall an hour ago", "")
+        self.assertTrue(v.captured, f"perimeter sighting: {v!r}")
+        self.assertEqual(v.confidence, "medium")
+
+    # -- N. question-form sightings (Kevin's real r/Austin examples) ---------
+
+    def test_what_are_police_doing_at_address_is_medium(self):
+        v = _verdict("What are the police doing at the corner of 4th and Lamar?", "")
+        self.assertTrue(v.captured, f"question-form sighting w/ address: {v!r}")
+        self.assertEqual(v.confidence, "medium")
+
+    def test_why_is_chopper_circling_overhead_is_medium(self):
+        v = _verdict("Why is a chopper circling overhead right now?", "")
+        self.assertTrue(v.captured, f"question-form + proximity: {v!r}")
+        self.assertEqual(v.confidence, "medium")
+
+    def test_swat_team_next_door_is_high(self):
+        v = _verdict("There is a SWAT team next door and they won't let me out", "")
+        self.assertTrue(v.captured, f"swat next door: {v!r}")
+        self.assertEqual(v.confidence, "high")
+
+    def test_bare_chopper_question_without_grounding_still_drops(self):
+        v = _verdict("Why is there always a helicopter around here?", "")
+        self.assertFalse(v.captured, f"ungrounded question: {v!r}")
+
+    def test_question_about_police_policy_still_never_captures(self):
+        v = _verdict("What are the police doing about the budget?", "")
+        self.assertFalse(v.captured, f"policy question: {v!r}")
 
 
 if __name__ == "__main__":
